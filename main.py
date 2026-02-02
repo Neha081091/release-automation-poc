@@ -154,9 +154,9 @@ def step2_create_release_notes(tickets: list, release_date: str = None) -> Tuple
         # Generate TL;DR
         tldr = formatter.generate_tldr()
         print(f"\n[Step 2] TL;DR Generated:")
-        print(f"  - Deployments by: {tldr['deployments_by']}")
-        print(f"  - Major Feature: {tldr['major_feature'][:60]}...")
-        print(f"  - Key Enhancement: {tldr['key_enhancement'][:60]}...")
+        print(f"  - Key Deployments: {tldr['total_pls']} product lines")
+        for deployment in tldr.get('key_deployments', [])[:3]:
+            print(f"    • {deployment['pl']}: {deployment['summary'][:50]}...")
 
         # Generate plain text notes
         plain_text = formatter.get_plain_text_notes()
