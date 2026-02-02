@@ -235,26 +235,55 @@ class ReleaseNotesFormatter:
 
         return bullets[:2]  # Limit additional bullets
 
-    def generate_tldr(self) -> Dict[str, str]:
+    def generate_tldr(self) -> Dict[str, Any]:
         """
-        Generate TL;DR summary for the release notes.
+        Generate TL;DR summary for the release notes with Key Deployments per PL.
 
         Returns:
-            Dictionary with TL;DR components
+            Dictionary with TL;DR components including key deployments by PL
         """
-        # Get list of deployed product lines
-        deployed_pls = [pl for pl in PRODUCT_LINE_ORDER if pl in self.grouped_data]
+        # Get list of deployed product lines with their key deployments
+        key_deployments = []
 
-        # Find major feature (look for stories with most story points or priority)
-        major_feature = self._find_major_feature()
+        for pl in PRODUCT_LINE_ORDER:
+            if pl not in self.grouped_data:
+                continue
 
-        # Find key enhancement
-        key_enhancement = self._find_key_enhancement()
+            epics = self.grouped_data[pl]
+
+            # Collect summaries for this PL
+            pl_summaries = []
+            for epic_name, items in epics.items():
+                for item in items:
+                    ticket = item["ticket"]
+                    summary = ticket.get("summary", "")
+                    if summary:
+                        pl_summaries.append(summary)
+
+            # Get fix version for this PL
+            first_ticket = list(epics.values())[0][0]["ticket"]
+            fix_version = first_ticket.get("fix_version", "")
+
+            # Create deployment entry
+            if pl_summaries:
+                # Use first 2-3 key summaries
+                deployment_text = "; ".join(pl_summaries[:2])
+                if fix_version:
+                    key_deployments.append({
+                        "pl": pl,
+                        "version": fix_version,
+                        "summary": deployment_text
+                    })
+                else:
+                    key_deployments.append({
+                        "pl": pl,
+                        "version": "",
+                        "summary": deployment_text
+                    })
 
         return {
-            "deployments_by": ", ".join(deployed_pls) if deployed_pls else "Multiple teams",
-            "major_feature": major_feature or "Various feature improvements and enhancements",
-            "key_enhancement": key_enhancement or "Platform stability improvements and bug fixes"
+            "key_deployments": key_deployments,
+            "total_pls": len(key_deployments)
         }
 
     def _find_major_feature(self) -> str:
@@ -323,19 +352,55 @@ class ReleaseNotesFormatter:
         })
         current_index += len(tldr_header)
 
-        # TL;DR content
-        tldr_content = f"""   * Deployments by: {tldr['deployments_by']}
-   * Major Feature: {tldr['major_feature']}
-   * Key Enhancement: {tldr['key_enhancement']}
-
-"""
+        # Key Deployments header
+        key_deploy_header = "Key Deployments:\n"
+        key_deploy_start = current_index
         requests.append({
             "insertText": {
                 "location": {"index": current_index},
-                "text": tldr_content
+                "text": key_deploy_header
             }
         })
-        current_index += len(tldr_content)
+        # Bold "Key Deployments:"
+        requests.append({
+            "updateTextStyle": {
+                "range": {
+                    "startIndex": key_deploy_start,
+                    "endIndex": key_deploy_start + len("Key Deployments:")
+                },
+                "textStyle": {"bold": True},
+                "fields": "bold"
+            }
+        })
+        current_index += len(key_deploy_header)
+
+        # TL;DR content - Key Deployments per PL
+        for deployment in tldr.get("key_deployments", []):
+            pl_name = deployment["pl"]
+            version = deployment.get("version", "")
+            summary = deployment.get("summary", "")
+
+            if version:
+                deploy_line = f"   * {pl_name} ({version}): {summary}\n"
+            else:
+                deploy_line = f"   * {pl_name}: {summary}\n"
+
+            requests.append({
+                "insertText": {
+                    "location": {"index": current_index},
+                    "text": deploy_line
+                }
+            })
+            current_index += len(deploy_line)
+
+        # Add blank line after TL;DR
+        requests.append({
+            "insertText": {
+                "location": {"index": current_index},
+                "text": "\n"
+            }
+        })
+        current_index += 1
 
         # Process each product line in order
         for pl in PRODUCT_LINE_ORDER:
@@ -344,7 +409,7 @@ class ReleaseNotesFormatter:
 
             epics = self.grouped_data[pl]
 
-            # Product line header
+            # Product line header with separator
             pl_header = f"------------------{pl}------------------\n\n"
             requests.append({
                 "insertText": {
@@ -389,6 +454,32 @@ class ReleaseNotesFormatter:
                             "fields": "link,foregroundColor"
                         }
                     })
+
+            # Add approval checkboxes for this PL
+            approval_text = "☐ Yes   ☐ No   ☐ Release Tomorrow\n\n"
+            approval_start = current_index
+            requests.append({
+                "insertText": {
+                    "location": {"index": current_index},
+                    "text": approval_text
+                }
+            })
+            # Style the approval checkboxes with gray color
+            requests.append({
+                "updateTextStyle": {
+                    "range": {
+                        "startIndex": approval_start,
+                        "endIndex": approval_start + len(approval_text) - 2  # Exclude newlines
+                    },
+                    "textStyle": {
+                        "foregroundColor": {
+                            "color": {"rgbColor": {"red": 0.4, "green": 0.4, "blue": 0.4}}
+                        }
+                    },
+                    "fields": "foregroundColor"
+                }
+            })
+            current_index += len(approval_text)
 
             # Process each epic
             for epic_name, items in epics.items():
@@ -460,18 +551,55 @@ class ReleaseNotesFormatter:
                         })
                         current_index += len(bullet)
 
-                # Add release type tag for stories
+                # Add release type tag for stories with colors
                 story_tickets = [i["ticket"] for i in items if i["ticket"].get("issue_type") == "Story"]
                 if story_tickets:
                     release_type = story_tickets[0].get("release_type")
                     if release_type:
-                        tag_text = f"\n`{release_type}`\n"
+                        tag_text = f"\n{release_type}\n"
+                        tag_start = current_index + 1  # After the newline
                         requests.append({
                             "insertText": {
                                 "location": {"index": current_index},
                                 "text": tag_text
                             }
                         })
+
+                        # Apply color based on release type
+                        # Feature Flag = blue, General Availability = green
+                        if "feature flag" in release_type.lower():
+                            requests.append({
+                                "updateTextStyle": {
+                                    "range": {
+                                        "startIndex": tag_start,
+                                        "endIndex": tag_start + len(release_type)
+                                    },
+                                    "textStyle": {
+                                        "foregroundColor": {
+                                            "color": {"rgbColor": {"red": 0.0, "green": 0.0, "blue": 1.0}}
+                                        },
+                                        "bold": True
+                                    },
+                                    "fields": "foregroundColor,bold"
+                                }
+                            })
+                        elif "general availability" in release_type.lower() or "ga" in release_type.lower():
+                            requests.append({
+                                "updateTextStyle": {
+                                    "range": {
+                                        "startIndex": tag_start,
+                                        "endIndex": tag_start + len(release_type)
+                                    },
+                                    "textStyle": {
+                                        "foregroundColor": {
+                                            "color": {"rgbColor": {"red": 0.0, "green": 0.6, "blue": 0.0}}
+                                        },
+                                        "bold": True
+                                    },
+                                    "fields": "foregroundColor,bold"
+                                }
+                            })
+
                         current_index += len(tag_text)
 
                 # Add spacing between epics
@@ -511,9 +639,17 @@ class ReleaseNotesFormatter:
         tldr = self.generate_tldr()
         lines.append("------------------TL;DR:------------------")
         lines.append("")
-        lines.append(f"   * Deployments by: {tldr['deployments_by']}")
-        lines.append(f"   * Major Feature: {tldr['major_feature']}")
-        lines.append(f"   * Key Enhancement: {tldr['key_enhancement']}")
+        lines.append("*Key Deployments:*")
+
+        for deployment in tldr.get("key_deployments", []):
+            pl_name = deployment["pl"]
+            version = deployment.get("version", "")
+            summary = deployment.get("summary", "")
+            if version:
+                lines.append(f"   • {pl_name} ({version}): {summary}")
+            else:
+                lines.append(f"   • {pl_name}: {summary}")
+
         lines.append("")
 
         # Process each product line
@@ -557,9 +693,18 @@ class ReleaseNotesFormatter:
     def get_tldr_for_slack(self) -> str:
         """Get TL;DR formatted for Slack message."""
         tldr = self.generate_tldr()
-        return f"""*Deployments by:* {tldr['deployments_by']}
-*Major Feature:* {tldr['major_feature']}
-*Key Enhancement:* {tldr['key_enhancement']}"""
+
+        lines = ["*Key Deployments:*"]
+        for deployment in tldr.get("key_deployments", []):
+            pl_name = deployment["pl"]
+            version = deployment.get("version", "")
+            summary = deployment.get("summary", "")
+            if version:
+                lines.append(f"   • {pl_name} ({version}): {summary}")
+            else:
+                lines.append(f"   • {pl_name}: {summary}")
+
+        return "\n".join(lines)
 
 
 def main():
