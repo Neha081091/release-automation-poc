@@ -269,8 +269,9 @@ def step3_send_slack_notification(release_date: str, doc_url: str,
 
         if result:
             print(f"\n[Step 3] COMPLETE: Notification sent successfully")
-            print(f"[Step 3] Message timestamp: {result['ts']}")
-            print(f"[Step 3] Channel: {result['channel']}")
+            print(f"[Step 3] Message timestamp: {result.get('ts', 'N/A')}")
+            if result.get('channel'):
+                print(f"[Step 3] Channel: {result['channel']}")
             return True, result
         else:
             print("[Step 3] ERROR: Failed to send notification")
