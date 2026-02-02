@@ -362,20 +362,55 @@ def create_formatted_requests(release_date: str, grouped_data: Dict,
     })
     current_index += len(tldr_header)
 
-    # TL;DR content
-    tldr_lines = [
-        f"   * Deployments by: {tldr['deployments_by']}",
-        f"   * Major Feature: {tldr['major_feature']}",
-        f"   * Key Enhancement: {tldr['key_enhancement']}"
-    ]
-    tldr_content = "\n".join(tldr_lines) + "\n\n"
+    # Key Deployments header
+    key_deploy_header = "Key Deployments:\n"
+    key_deploy_start = current_index
     requests.append({
         "insertText": {
             "location": {"index": current_index},
-            "text": tldr_content
+            "text": key_deploy_header
         }
     })
-    current_index += len(tldr_content)
+    # Bold "Key Deployments:"
+    requests.append({
+        "updateTextStyle": {
+            "range": {
+                "startIndex": key_deploy_start,
+                "endIndex": key_deploy_start + len("Key Deployments:")
+            },
+            "textStyle": {"bold": True},
+            "fields": "bold"
+        }
+    })
+    current_index += len(key_deploy_header)
+
+    # TL;DR content - Key Deployments per PL
+    for deployment in tldr.get("key_deployments", []):
+        pl_name = deployment["pl"]
+        version = deployment.get("version", "")
+        summary = deployment.get("summary", "")
+
+        if version:
+            deploy_line = f"   * {pl_name} ({version}): {summary}\n"
+        else:
+            deploy_line = f"   * {pl_name}: {summary}\n"
+
+        requests.append({
+            "insertText": {
+                "location": {"index": current_index},
+                "text": deploy_line
+            }
+        })
+        current_index += len(deploy_line)
+
+    # Add blank line after TL;DR
+    requests.append({
+        "insertText": {
+            "location": {"index": current_index},
+            "text": "\n"
+        }
+    })
+    current_index += 1
 
     # Process each product line
     for pl in product_line_order:
@@ -429,6 +464,32 @@ def create_formatted_requests(release_date: str, grouped_data: Dict,
                 })
 
             current_index += len(version_line)
+
+        # Add approval checkboxes for this PL
+        approval_text = "☐ Yes   ☐ No   ☐ Release Tomorrow\n\n"
+        approval_start = current_index
+        requests.append({
+            "insertText": {
+                "location": {"index": current_index},
+                "text": approval_text
+            }
+        })
+        # Style the approval checkboxes with gray color
+        requests.append({
+            "updateTextStyle": {
+                "range": {
+                    "startIndex": approval_start,
+                    "endIndex": approval_start + len(approval_text) - 2
+                },
+                "textStyle": {
+                    "foregroundColor": {
+                        "color": {"rgbColor": {"red": 0.4, "green": 0.4, "blue": 0.4}}
+                    }
+                },
+                "fields": "foregroundColor"
+            }
+        })
+        current_index += len(approval_text)
 
         # Process epics
         for epic_name, items in epics.items():
