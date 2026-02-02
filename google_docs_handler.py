@@ -9,11 +9,12 @@ This module handles all Google Docs operations:
 """
 
 import os
+import json
 import pickle
 from typing import List, Dict, Optional
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import InstalledAppFlow, Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -50,6 +51,7 @@ class GoogleDocsHandler:
     def authenticate(self) -> bool:
         """
         Authenticate with Google OAuth.
+        Supports both 'web' and 'installed' (Desktop) credential types.
 
         Returns:
             True if authentication successful, False otherwise
@@ -74,9 +76,29 @@ class GoogleDocsHandler:
                         print("[Google Docs] Please download credentials.json from Google Cloud Console")
                         return False
 
-                    print("[Google Docs] Starting OAuth flow...")
-                    flow = InstalledAppFlow.from_client_secrets_file(
-                        self.credentials_path, SCOPES)
+                    # Detect credential type (web vs installed)
+                    with open(self.credentials_path, 'r') as f:
+                        creds_data = json.load(f)
+
+                    if 'web' in creds_data:
+                        print("[Google Docs] Detected 'web' credentials, using web flow...")
+                        # Convert web credentials to work with local server
+                        web_creds = creds_data['web']
+                        installed_format = {
+                            "installed": {
+                                "client_id": web_creds["client_id"],
+                                "client_secret": web_creds["client_secret"],
+                                "auth_uri": web_creds["auth_uri"],
+                                "token_uri": web_creds["token_uri"],
+                                "redirect_uris": ["http://localhost"]
+                            }
+                        }
+                        flow = InstalledAppFlow.from_client_config(installed_format, SCOPES)
+                    else:
+                        print("[Google Docs] Starting OAuth flow...")
+                        flow = InstalledAppFlow.from_client_secrets_file(
+                            self.credentials_path, SCOPES)
+
                     self.creds = flow.run_local_server(port=0)
 
                 # Save the credentials for next run
