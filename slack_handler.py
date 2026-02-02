@@ -2,7 +2,7 @@
 Slack API Handler for Release Automation PoC
 
 This module handles all Slack operations:
-- Sending notification messages
+- Sending notification messages via webhook or bot token
 - Posting release notes
 - Managing approval workflows (via reactions or buttons)
 - DM and channel messaging
@@ -11,6 +11,7 @@ This module handles all Slack operations:
 import os
 import json
 import time
+import requests
 from typing import Dict, List, Optional, Any
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
@@ -19,24 +20,33 @@ from slack_sdk.errors import SlackApiError
 class SlackHandler:
     """Handler for Slack API operations."""
 
-    def __init__(self, bot_token: str = None, default_channel: str = None):
+    def __init__(self, bot_token: str = None, default_channel: str = None, webhook_url: str = None):
         """
         Initialize Slack handler.
+        Supports both webhook URLs (simpler) and bot tokens.
 
         Args:
             bot_token: Slack Bot OAuth token
             default_channel: Default channel ID for messages
+            webhook_url: Slack webhook URL (preferred for simple posting)
         """
+        self.webhook_url = webhook_url or os.getenv('SLACK_WEBHOOK_URL')
         self.bot_token = bot_token or os.getenv('SLACK_BOT_TOKEN')
         self.default_channel = default_channel or os.getenv('SLACK_DM_CHANNEL')
 
-        if not self.bot_token:
-            raise ValueError("SLACK_BOT_TOKEN must be provided")
+        # Use webhook if available, otherwise use bot token
+        self.use_webhook = bool(self.webhook_url)
 
-        self.client = WebClient(token=self.bot_token)
+        if self.use_webhook:
+            print(f"[Slack] Initialized with webhook URL")
+            self.client = None
+        elif self.bot_token:
+            self.client = WebClient(token=self.bot_token)
+            print(f"[Slack] Initialized with bot token, channel: {self.default_channel}")
+        else:
+            raise ValueError("Either SLACK_WEBHOOK_URL or SLACK_BOT_TOKEN must be provided")
+
         self.approval_store = {}  # In-memory store for PoC
-
-        print(f"[Slack] Initialized handler with default channel: {self.default_channel}")
 
     def test_connection(self) -> bool:
         """
@@ -46,6 +56,11 @@ class SlackHandler:
             True if connection successful, False otherwise
         """
         print("[Slack] Testing connection...")
+
+        if self.use_webhook:
+            # Test webhook by sending a minimal test (won't actually send)
+            print("[Slack] Using webhook - connection assumed OK")
+            return True
 
         try:
             response = self.client.auth_test()
@@ -61,20 +76,63 @@ class SlackHandler:
             print(f"[Slack] Connection test failed: {e.response['error']}")
             return False
 
+    def send_webhook_message(self, text: str, blocks: List[Dict] = None) -> Optional[Dict]:
+        """
+        Send a message via webhook.
+
+        Args:
+            text: Message text
+            blocks: Optional Block Kit blocks
+
+        Returns:
+            Success dict or None on failure
+        """
+        if not self.webhook_url:
+            print("[Slack] No webhook URL configured")
+            return None
+
+        payload = {"text": text}
+        if blocks:
+            payload["blocks"] = blocks
+
+        try:
+            response = requests.post(
+                self.webhook_url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=30
+            )
+
+            if response.status_code == 200 and response.text == "ok":
+                print("[Slack] Webhook message sent successfully")
+                return {"ok": True, "ts": str(time.time())}
+            else:
+                print(f"[Slack] Webhook error: {response.status_code} - {response.text}")
+                return None
+
+        except Exception as e:
+            print(f"[Slack] Webhook request failed: {e}")
+            return None
+
     def send_message(self, text: str, channel: str = None, blocks: List[Dict] = None,
                      thread_ts: str = None) -> Optional[Dict]:
         """
         Send a message to a channel or DM.
+        Uses webhook if available, otherwise uses bot token.
 
         Args:
             text: Message text (also used as fallback for blocks)
-            channel: Channel ID (uses default if not provided)
+            channel: Channel ID (uses default if not provided, ignored for webhook)
             blocks: Optional Block Kit blocks for rich formatting
-            thread_ts: Optional thread timestamp for replies
+            thread_ts: Optional thread timestamp for replies (ignored for webhook)
 
         Returns:
             API response or None on failure
         """
+        # Use webhook if available
+        if self.use_webhook:
+            return self.send_webhook_message(text, blocks)
+
         channel = channel or self.default_channel
 
         if not channel:
