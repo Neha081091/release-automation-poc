@@ -1,6 +1,7 @@
 # Environment and credentials
 .env
 credentials.json
+service_account.json
 token.pickle
 
 # Python

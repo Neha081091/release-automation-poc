@@ -14,6 +14,7 @@ import pickle
 from typing import List, Dict, Optional
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow, Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -39,6 +40,7 @@ class GoogleDocsHandler:
         """
         self.document_id = document_id or os.getenv('GOOGLE_DOC_ID')
         self.credentials_path = credentials_path or os.getenv('GOOGLE_CREDENTIALS_PATH', 'credentials.json')
+        self.service_account_path = os.getenv('GOOGLE_SERVICE_ACCOUNT_PATH', 'service_account.json')
         self.token_path = os.getenv('GOOGLE_TOKEN_PATH', 'token.pickle')
         self.service = None
         self.creds = None
@@ -50,8 +52,8 @@ class GoogleDocsHandler:
 
     def authenticate(self) -> bool:
         """
-        Authenticate with Google OAuth.
-        Supports both 'web' and 'installed' (Desktop) credential types.
+        Authenticate with Google.
+        Supports service account, web credentials, and desktop credentials.
 
         Returns:
             True if authentication successful, False otherwise
@@ -59,13 +61,22 @@ class GoogleDocsHandler:
         print("[Google Docs] Authenticating...")
 
         try:
-            # Check for existing token
+            # First, try service account (preferred for automation)
+            if os.path.exists(self.service_account_path):
+                print("[Google Docs] Using service account authentication...")
+                self.creds = service_account.Credentials.from_service_account_file(
+                    self.service_account_path, scopes=SCOPES)
+                self.service = build('docs', 'v1', credentials=self.creds)
+                print("[Google Docs] Service account authentication successful")
+                return True
+
+            # Check for existing OAuth token
             if os.path.exists(self.token_path):
                 with open(self.token_path, 'rb') as token:
                     self.creds = pickle.load(token)
                 print("[Google Docs] Loaded existing token")
 
-            # If no valid credentials, authenticate
+            # If no valid credentials, authenticate with OAuth
             if not self.creds or not self.creds.valid:
                 if self.creds and self.creds.expired and self.creds.refresh_token:
                     print("[Google Docs] Refreshing expired token...")
@@ -82,7 +93,6 @@ class GoogleDocsHandler:
 
                     if 'web' in creds_data:
                         print("[Google Docs] Detected 'web' credentials, using web flow...")
-                        # Convert web credentials to work with local server
                         web_creds = creds_data['web']
                         installed_format = {
                             "installed": {
