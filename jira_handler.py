@@ -107,15 +107,15 @@ class JiraHandler:
         """
         print(f"[Jira] Searching for release ticket: '{summary}' in project {project}")
 
-        # Use JQL to search for the ticket
+        # Use JQL to search for the ticket (using new search/jql endpoint)
         jql = f'project = {project} AND summary ~ "{summary}"'
-        params = {
+        json_data = {
             "jql": jql,
-            "fields": "key,summary,description,issuetype,status,priority,fixVersions,labels,customfield_10014",
+            "fields": ["key", "summary", "description", "issuetype", "status", "priority", "fixVersions", "labels", "customfield_10014"],
             "maxResults": 10
         }
 
-        result = self._make_request("GET", "search", params=params)
+        result = self._make_request("POST", "search/jql", json_data=json_data)
 
         if result and result.get("issues"):
             issues = result["issues"]
