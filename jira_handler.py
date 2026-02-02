@@ -170,13 +170,14 @@ class JiraHandler:
 
         print(f"[Jira] Found {len(linked_keys)} directly linked tickets")
 
-        # If no linked tickets, try searching by Fix Version
+        # If no linked tickets, try searching by Fix Version(s)
         if not linked_keys:
             fix_versions = result.get("fields", {}).get("fixVersions", [])
             if fix_versions:
-                fix_version_name = fix_versions[0].get("name")
-                print(f"[Jira] No links found. Searching by Fix Version: {fix_version_name}")
-                return self.get_tickets_by_fix_version(fix_version_name, issue_key)
+                # Get all fix version names
+                fix_version_names = [fv.get("name") for fv in fix_versions if fv.get("name")]
+                print(f"[Jira] No links found. Searching by {len(fix_version_names)} Fix Versions: {fix_version_names}")
+                return self.get_tickets_by_fix_versions(fix_version_names, issue_key)
             else:
                 print("[Jira] No Fix Version found on release ticket. Trying to search by date...")
                 # Try to extract date from ticket summary and search
@@ -191,6 +192,57 @@ class JiraHandler:
 
         return linked_tickets
 
+    def get_tickets_by_fix_versions(self, fix_versions: List[str], exclude_key: str = None) -> List[Dict]:
+        """
+        Get all tickets with any of the specified Fix Versions.
+
+        Args:
+            fix_versions: List of Fix Version names
+            exclude_key: Issue key to exclude (the release ticket itself)
+
+        Returns:
+            List of ticket data
+        """
+        if not fix_versions:
+            return []
+
+        print(f"[Jira] Searching for tickets with Fix Versions: {fix_versions}")
+
+        # Build JQL with OR for multiple fix versions
+        fix_version_conditions = [f'fixVersion = "{fv}"' for fv in fix_versions]
+        jql = f'({" OR ".join(fix_version_conditions)})'
+        if exclude_key:
+            jql += f' AND key != {exclude_key}'
+
+        json_data = {
+            "jql": jql,
+            "fields": ["key", "summary"],
+            "maxResults": 200
+        }
+
+        result = self._make_request("POST", "search/jql", json_data=json_data)
+
+        if not result or not result.get("issues"):
+            print(f"[Jira] No tickets found with Fix Versions: {fix_versions}")
+            return []
+
+        issues = result.get("issues", [])
+        print(f"[Jira] Found {len(issues)} tickets across all Fix Versions")
+
+        # Fetch full details for each ticket
+        tickets = []
+        seen_keys = set()
+        for issue in issues:
+            key = issue["key"]
+            if key not in seen_keys:
+                seen_keys.add(key)
+                ticket = self.get_ticket_details(key)
+                if ticket:
+                    tickets.append(ticket)
+
+        print(f"[Jira] Fetched details for {len(tickets)} unique tickets")
+        return tickets
+
     def get_tickets_by_fix_version(self, fix_version: str, exclude_key: str = None) -> List[Dict]:
         """
         Get all tickets with a specific Fix Version.
@@ -202,35 +254,7 @@ class JiraHandler:
         Returns:
             List of ticket data
         """
-        print(f"[Jira] Searching for tickets with Fix Version: {fix_version}")
-
-        jql = f'fixVersion = "{fix_version}"'
-        if exclude_key:
-            jql += f' AND key != {exclude_key}'
-
-        json_data = {
-            "jql": jql,
-            "fields": ["key", "summary"],
-            "maxResults": 100
-        }
-
-        result = self._make_request("POST", "search/jql", json_data=json_data)
-
-        if not result or not result.get("issues"):
-            print(f"[Jira] No tickets found with Fix Version: {fix_version}")
-            return []
-
-        issues = result.get("issues", [])
-        print(f"[Jira] Found {len(issues)} tickets with Fix Version: {fix_version}")
-
-        # Fetch full details for each ticket
-        tickets = []
-        for issue in issues:
-            ticket = self.get_ticket_details(issue["key"])
-            if ticket:
-                tickets.append(ticket)
-
-        return tickets
+        return self.get_tickets_by_fix_versions([fix_version], exclude_key)
 
     def get_tickets_by_release_date(self, release_key: str) -> List[Dict]:
         """
