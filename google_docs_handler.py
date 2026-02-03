@@ -11,7 +11,7 @@ This module handles all Google Docs operations:
 import os
 import json
 import pickle
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google.oauth2 import service_account
@@ -300,6 +300,37 @@ class GoogleDocsHandler:
             return False
 
 
+def parse_fix_version(fix_version: str) -> Tuple[str, str]:
+    """
+    Parse fix version string to extract PL name and release version.
+
+    Examples:
+        "DSP Core PL3 2026: Release 4.0" -> ("DSP Core PL3", "Release 4.0")
+        "Developer Experience: Release 6.0" -> ("Developer Experience", "Release 6.0")
+        "Audiences PL2: Release 4.0" -> ("Audiences PL2", "Release 4.0")
+
+    Args:
+        fix_version: Fix version string from Jira
+
+    Returns:
+        Tuple of (pl_name, release_version)
+    """
+    import re
+
+    # Try to match pattern with year: "DSP Core PL3 2026: Release 4.0"
+    match = re.match(r'^(.+?)\s*\d{4}:\s*(Release\s+\d+\.\d+)$', fix_version)
+    if match:
+        return match.group(1).strip(), match.group(2).strip()
+
+    # Try to match pattern without year: "Developer Experience: Release 6.0"
+    match = re.match(r'^(.+?):\s*(Release\s+\d+\.\d+)$', fix_version)
+    if match:
+        return match.group(1).strip(), match.group(2).strip()
+
+    # Fallback: return as-is
+    return fix_version, ""
+
+
 def create_formatted_requests(release_date: str, grouped_data: Dict,
                              tldr: Dict, extract_value_adds_func) -> List[Dict]:
     """
@@ -384,23 +415,44 @@ def create_formatted_requests(release_date: str, grouped_data: Dict,
     })
     current_index += len(key_deploy_header)
 
-    # TL;DR content - Key Deployments per PL
+    # TL;DR content - Key Deployments per PL (with bold PL names)
     for deployment in tldr.get("key_deployments", []):
-        pl_name = deployment["pl"]
-        version = deployment.get("version", "")
+        fix_version = deployment.get("version", "")
         summary = deployment.get("summary", "")
 
-        if version:
-            deploy_line = f"   * {pl_name} ({version}): {summary}\n"
+        # Parse fix version to get proper PL name
+        if fix_version:
+            pl_display, release_ver = parse_fix_version(fix_version)
         else:
-            deploy_line = f"   * {pl_name}: {summary}\n"
+            pl_display = deployment["pl"]
+            release_ver = ""
 
+        # Format: "   • DSP Core PL1 - summary text"
+        bullet_prefix = "   • "
+        deploy_line = f"{bullet_prefix}{pl_display} - {summary}\n"
+
+        deploy_start = current_index
         requests.append({
             "insertText": {
                 "location": {"index": current_index},
                 "text": deploy_line
             }
         })
+
+        # Bold the PL name part
+        pl_start = current_index + len(bullet_prefix)
+        pl_end = pl_start + len(pl_display)
+        requests.append({
+            "updateTextStyle": {
+                "range": {
+                    "startIndex": pl_start,
+                    "endIndex": pl_end
+                },
+                "textStyle": {"bold": True},
+                "fields": "bold"
+            }
+        })
+
         current_index += len(deploy_line)
 
     # Add blank line after TL;DR
@@ -435,35 +487,81 @@ def create_formatted_requests(release_date: str, grouped_data: Dict,
         fix_version_url = first_ticket.get("fix_version_url")
 
         if fix_version:
-            version_line = f"{pl}: {fix_version}\n\n"
-            requests.append({
-                "insertText": {
-                    "location": {"index": current_index},
-                    "text": version_line
-                }
-            })
+            # Parse fix version to get proper display format
+            pl_display, release_ver = parse_fix_version(fix_version)
 
-            # Add hyperlink to fix version
-            if fix_version_url:
-                link_start = current_index + len(f"{pl}: ")
-                link_end = link_start + len(fix_version)
+            if release_ver:
+                # Format: "DSP Core PL3: Release 4.0" (PL bold, Release as hyperlink)
+                version_line = f"{pl_display}: {release_ver}\n\n"
                 requests.append({
-                    "updateTextStyle": {
-                        "range": {
-                            "startIndex": link_start,
-                            "endIndex": link_end
-                        },
-                        "textStyle": {
-                            "link": {"url": fix_version_url},
-                            "foregroundColor": {
-                                "color": {"rgbColor": {"red": 0.0, "green": 0.0, "blue": 1.0}}
-                            }
-                        },
-                        "fields": "link,foregroundColor"
+                    "insertText": {
+                        "location": {"index": current_index},
+                        "text": version_line
                     }
                 })
 
-            current_index += len(version_line)
+                # Bold the PL name part
+                pl_start = current_index
+                pl_end = pl_start + len(pl_display) + 1  # Include the colon
+                requests.append({
+                    "updateTextStyle": {
+                        "range": {
+                            "startIndex": pl_start,
+                            "endIndex": pl_end
+                        },
+                        "textStyle": {"bold": True},
+                        "fields": "bold"
+                    }
+                })
+
+                # Add hyperlink to release version
+                if fix_version_url:
+                    link_start = current_index + len(pl_display) + 2  # After "PL: "
+                    link_end = link_start + len(release_ver)
+                    requests.append({
+                        "updateTextStyle": {
+                            "range": {
+                                "startIndex": link_start,
+                                "endIndex": link_end
+                            },
+                            "textStyle": {
+                                "link": {"url": fix_version_url},
+                                "foregroundColor": {
+                                    "color": {"rgbColor": {"red": 0.0, "green": 0.0, "blue": 1.0}}
+                                },
+                                "underline": True
+                            },
+                            "fields": "link,foregroundColor,underline"
+                        }
+                    })
+
+                current_index += len(version_line)
+            else:
+                # Fallback to original format
+                version_line = f"{fix_version}\n\n"
+                requests.append({
+                    "insertText": {
+                        "location": {"index": current_index},
+                        "text": version_line
+                    }
+                })
+                if fix_version_url:
+                    requests.append({
+                        "updateTextStyle": {
+                            "range": {
+                                "startIndex": current_index,
+                                "endIndex": current_index + len(fix_version)
+                            },
+                            "textStyle": {
+                                "link": {"url": fix_version_url},
+                                "foregroundColor": {
+                                    "color": {"rgbColor": {"red": 0.0, "green": 0.0, "blue": 1.0}}
+                                }
+                            },
+                            "fields": "link,foregroundColor"
+                        }
+                    })
+                current_index += len(version_line)
 
         # Add approval checkboxes for this PL
         approval_text = "☐ Yes   ☐ No   ☐ Release Tomorrow\n\n"
@@ -561,19 +659,54 @@ def create_formatted_requests(release_date: str, grouped_data: Dict,
                     })
                     current_index += len(bullet)
 
-            # Release type tag for stories
+            # Release type tag for stories with colors
             story_tickets = [i["ticket"] for i in items if i["ticket"].get("issue_type") == "Story"]
             if story_tickets:
                 release_type = story_tickets[0].get("release_type")
                 if release_type:
-                    tag = f"\n`{release_type}`\n"
+                    tag_text = f"\n{release_type}\n"
+                    tag_start = current_index + 1  # After the first newline
                     requests.append({
                         "insertText": {
                             "location": {"index": current_index},
-                            "text": tag
+                            "text": tag_text
                         }
                     })
-                    current_index += len(tag)
+
+                    # Apply color based on release type
+                    # Feature Flag = blue, General Availability = green
+                    if "feature flag" in release_type.lower():
+                        requests.append({
+                            "updateTextStyle": {
+                                "range": {
+                                    "startIndex": tag_start,
+                                    "endIndex": tag_start + len(release_type)
+                                },
+                                "textStyle": {
+                                    "foregroundColor": {
+                                        "color": {"rgbColor": {"red": 0.0, "green": 0.0, "blue": 1.0}}
+                                    }
+                                },
+                                "fields": "foregroundColor"
+                            }
+                        })
+                    elif "general availability" in release_type.lower() or release_type.lower() == "ga":
+                        requests.append({
+                            "updateTextStyle": {
+                                "range": {
+                                    "startIndex": tag_start,
+                                    "endIndex": tag_start + len(release_type)
+                                },
+                                "textStyle": {
+                                    "foregroundColor": {
+                                        "color": {"rgbColor": {"red": 0.13, "green": 0.55, "blue": 0.13}}
+                                    }
+                                },
+                                "fields": "foregroundColor"
+                            }
+                        })
+
+                    current_index += len(tag_text)
 
             # Spacing
             requests.append({
