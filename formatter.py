@@ -198,7 +198,7 @@ Now consolidate for {product}:"""
 
 def consolidate_body_sections_with_claude(product: str, release: str, sections: List[Dict]) -> str:
     """
-    Consolidates raw feature sections into grouped, flowing prose body content.
+    Consolidates raw feature sections into flowing prose bullet points.
 
     Args:
         product: Product name (e.g., "DSP Core PL1")
@@ -211,7 +211,7 @@ def consolidate_body_sections_with_claude(product: str, release: str, sections: 
             }
 
     Returns:
-        Consolidated body text with grouped sections and prose
+        Consolidated body text with flowing prose bullets
     """
     if not ANTHROPIC_AVAILABLE:
         print("[Formatter] Anthropic not available, returning raw sections")
@@ -235,10 +235,10 @@ def consolidate_body_sections_with_claude(product: str, release: str, sections: 
     try:
         message = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=1500,
+            max_tokens=2000,
             messages=[{
                 "role": "user",
-                "content": f"""Consolidate these raw feature sections into grouped, flowing prose body content.
+                "content": f"""Consolidate these raw feature sections into polished, flowing prose bullet points.
 
 Product: {product}
 Release: {release}
@@ -247,23 +247,43 @@ Raw Sections:
 {sections_text}
 
 Rules for consolidation:
-1. Group related sections by feature area or theme
-2. Convert bullet points into flowing prose paragraphs
-3. Each grouped section should have a descriptive heading
-4. Use natural language, NO bullet points in output
-5. Focus on user value and impact
-6. Keep each section to 2-4 sentences of flowing prose
-7. Preserve feature status (General Availability, Feature Flag) at the end of each group
-8. Format output as:
-
-   Epic/Feature Name (as hyperlink placeholder)
+1. Keep the original section structure (one section per heading)
+2. Convert raw Jira summaries into flowing, descriptive prose bullets
+3. Each bullet should be a complete, well-written sentence
+4. Use natural language that reads smoothly and explains user value
+5. Do NOT group sections together - keep them separate with their original titles
+6. Include the status flag at the end of each section (General Availability, Feature Flag, etc.)
+7. Format output as:
+   __Section Title__
 
    Value Add:
-   [Flowing prose paragraph describing the features and their value]
 
-   [Status: General Availability or Feature Flag]
+   * Polished prose bullet point 1 explaining the feature and its impact
+   * Polished prose bullet point 2 with more context and details
+   * Polished prose bullet point 3 connecting to user value
 
-Output the consolidated sections:"""
+   Status Flag (if applicable)
+
+8. Do NOT abbreviate or use technical jargon - explain clearly for stakeholders
+9. Each bullet should be 1-2 complete sentences
+
+Example input:
+__Forecasting in Ad Groups__
+- Add Channel , Device , Inventory , Creative Unit Length Filter Extraction & Validation Logic based on Deals / Exchanges
+- One time Pixel Audience Data in DCR Clickhouse
+
+Example output:
+__Forecasting in Ad Groups__
+
+Value Add:
+
+* Enhanced forecasting filter logic now accurately derives Channel, Device, Inventory Type, and Creative Unit Length from attached Deals and Exchanges.
+* Validation errors now alert users when targeting configurations conflict (e.g., CTV deals attached to Banner ad groups or audio ad groups).
+* Pixel audience data is now available in DCR Clickhouse to support complex audience size calculations spanning HCP and patient campaigns.
+
+Feature Flag
+
+Now consolidate for {product}:"""
             }]
         )
 
@@ -607,6 +627,67 @@ class ReleaseNotesFormatter:
 
         return None
 
+    def generate_consolidated_body_sections(self, use_llm: bool = True) -> Dict[str, str]:
+        """
+        Generate consolidated body sections for each PL using LLM.
+
+        Args:
+            use_llm: Whether to use LLM consolidation (default True)
+
+        Returns:
+            Dict mapping PL name to consolidated body text
+        """
+        consolidated_bodies = {}
+
+        for pl in self._get_ordered_pls():
+            if pl not in self.grouped_data:
+                continue
+
+            epics = self.grouped_data[pl]
+
+            # Build sections list for this PL
+            sections = []
+            for epic_name, items in epics.items():
+                # Collect all summaries for this epic
+                epic_summaries = []
+                for item in items:
+                    ticket = item["ticket"]
+                    summary = ticket.get("summary", "")
+                    if summary:
+                        cleaned = self._clean_text(summary)
+                        if cleaned:
+                            epic_summaries.append(cleaned)
+
+                # Get release type/status from first story ticket
+                story_tickets = [i["ticket"] for i in items if i["ticket"].get("issue_type") == "Story"]
+                status = ""
+                if story_tickets:
+                    release_type = story_tickets[0].get("release_type", "")
+                    if release_type:
+                        status = release_type
+
+                if epic_summaries:
+                    sections.append({
+                        "title": epic_name,
+                        "items": epic_summaries,
+                        "status": status
+                    })
+
+            # Get fix version for this PL
+            first_ticket = list(epics.values())[0][0]["ticket"]
+            fix_version = first_ticket.get("fix_version", "")
+
+            # Use LLM to consolidate or fallback
+            if use_llm and sections:
+                print(f"[Formatter] Consolidating body sections for {pl}...")
+                consolidated = consolidate_body_sections_with_claude(pl, fix_version, sections)
+                consolidated_bodies[pl] = consolidated
+            else:
+                # Fallback: use raw sections
+                consolidated_bodies[pl] = _format_raw_sections_fallback(sections)
+
+        return consolidated_bodies
+
     def format_for_google_docs(self) -> List[Dict]:
         """
         Format release notes for Google Docs API.
@@ -907,9 +988,12 @@ class ReleaseNotesFormatter:
 
         return requests
 
-    def get_plain_text_notes(self) -> str:
+    def get_plain_text_notes(self, use_llm: bool = True) -> str:
         """
         Generate plain text version of release notes (for Slack).
+
+        Args:
+            use_llm: Whether to use LLM consolidation for body sections (default True)
 
         Returns:
             Plain text release notes
@@ -920,8 +1004,8 @@ class ReleaseNotesFormatter:
         lines.append(f"Daily Deployment Summary: {self.release_date}")
         lines.append("")
 
-        # TL;DR
-        tldr = self.generate_tldr()
+        # TL;DR (already uses LLM)
+        tldr = self.generate_tldr(use_llm=use_llm)
         lines.append("------------------TL;DR:------------------")
         lines.append("")
         lines.append("*Key Deployments:*")
@@ -937,8 +1021,14 @@ class ReleaseNotesFormatter:
 
         lines.append("")
 
+        # Generate consolidated body sections (uses LLM if enabled)
+        consolidated_bodies = self.generate_consolidated_body_sections(use_llm=use_llm)
+
         # Process each product line
         for pl in self._get_ordered_pls():
+            if pl not in self.grouped_data:
+                continue
+
             epics = self.grouped_data[pl]
             lines.append(f"------------------{pl}------------------")
             lines.append("")
@@ -950,25 +1040,32 @@ class ReleaseNotesFormatter:
                 lines.append(f"{pl}: {fix_version}")
                 lines.append("")
 
-            for epic_name, items in epics.items():
-                lines.append(f"{epic_name}")
-                lines.append("")
-                lines.append("**Value Add:**")
+            # Use consolidated body if available
+            if pl in consolidated_bodies:
+                lines.append(consolidated_bodies[pl])
+            else:
+                # Fallback to raw format
+                for epic_name, items in epics.items():
+                    lines.append(f"{epic_name}")
+                    lines.append("")
+                    lines.append("**Value Add:**")
 
-                for item in items:
-                    ticket = item["ticket"]
-                    value_adds = self.extract_value_adds(ticket)
-                    for value_add in value_adds:
-                        lines.append(f"   * {value_add}")
+                    for item in items:
+                        ticket = item["ticket"]
+                        value_adds = self.extract_value_adds(ticket)
+                        for value_add in value_adds:
+                            lines.append(f"   * {value_add}")
 
-                # Add release type for stories
-                story_tickets = [i["ticket"] for i in items if i["ticket"].get("issue_type") == "Story"]
-                if story_tickets:
-                    release_type = story_tickets[0].get("release_type")
-                    if release_type:
-                        lines.append(f"\n`{release_type}`")
+                    # Add release type for stories
+                    story_tickets = [i["ticket"] for i in items if i["ticket"].get("issue_type") == "Story"]
+                    if story_tickets:
+                        release_type = story_tickets[0].get("release_type")
+                        if release_type:
+                            lines.append(f"\n`{release_type}`")
 
-                lines.append("")
+                    lines.append("")
+
+            lines.append("")
 
         return "\n".join(lines)
 
