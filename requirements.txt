@@ -12,6 +12,9 @@ google-api-python-client>=2.80.0
 # Slack API
 slack-sdk>=3.19.0
 
+# Anthropic Claude API (for LLM consolidation)
+anthropic>=0.18.0
+
 # Environment variables
 python-dotenv>=1.0.0
 

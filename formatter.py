@@ -6,12 +6,22 @@ This module handles formatting of release notes:
 - Generating TL;DR summary
 - Creating formatted text for Google Docs
 - Extracting value-add bullets from descriptions
+- LLM-powered consolidation for polished prose
 """
 
 from typing import Dict, List, Any
 from collections import defaultdict
 from datetime import datetime
 import re
+import os
+
+# Try to import anthropic for LLM consolidation
+try:
+    import anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+    print("[Formatter] Warning: anthropic package not installed. LLM consolidation disabled.")
 
 
 # Product Line mapping based on components or labels
@@ -101,6 +111,184 @@ def parse_pl_from_fix_version(fix_version: str) -> str:
         return fix_version.split(":")[0].strip()
 
     return fix_version
+
+
+def consolidate_tldr_with_claude(raw_summaries_by_product: Dict[str, List[str]]) -> Dict[str, str]:
+    """
+    Consolidates raw Jira summaries into polished single-sentence TLDRs using Claude API.
+
+    Args:
+        raw_summaries_by_product: Dict like {
+            "DSP Core PL1": ["Summary 1", "Summary 2", "Summary 3"],
+            "DSP Core PL3": ["Summary A"]
+        }
+
+    Returns:
+        Dict with consolidated TLDRs: {
+            "DSP Core PL1": "Polished single-sentence prose...",
+            "DSP Core PL3": "Polished single-sentence prose..."
+        }
+    """
+    if not ANTHROPIC_AVAILABLE:
+        print("[Formatter] Anthropic not available, returning raw summaries")
+        return {product: "; ".join(summaries) for product, summaries in raw_summaries_by_product.items()}
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("[Formatter] ANTHROPIC_API_KEY not set, returning raw summaries")
+        return {product: "; ".join(summaries) for product, summaries in raw_summaries_by_product.items()}
+
+    client = anthropic.Anthropic(api_key=api_key)
+    consolidated = {}
+
+    for product, summaries in raw_summaries_by_product.items():
+        try:
+            summaries_text = "\n".join([f"- {s}" for s in summaries])
+
+            message = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=500,
+                messages=[{
+                    "role": "user",
+                    "content": f"""Consolidate these raw Jira ticket summaries into ONE polished prose sentence for TLDR.
+
+Product: {product}
+Raw Summaries:
+{summaries_text}
+
+Rules:
+1. Group related items conceptually (by feature area, not by change type)
+2. Use flowing narrative with semicolons separating major sections
+3. NO category labels like "usability improvements with", "data capabilities with"
+4. NO bullet points or lists
+5. Use natural connectors: "with", "including", "featuring", "spanning"
+6. Should read smoothly when spoken aloud
+7. Focus on feature areas and user impact
+8. Keep to ONE sentence (no paragraph breaks)
+9. Output ONLY the consolidated prose (no product name prefix)
+
+Example input:
+- Open Orders page with the last applied Status column filter
+- Deselect Order Selections when user Archives Order
+- Allow Multi-select Option for Status Column Filter on Order Listing
+- Add Channel, Device, Inventory Filter Extraction Logic
+- Fix di-creative-service critical vulnerability
+
+Example output:
+Order listing usability improvements with multi-select status filtering, persistent filter preferences across sessions, automatic selection clearing on archive; forecasting enhancements with Deal/Exchange-derived filter logic and validation; critical security vulnerability patched in di-creative-service
+
+Now consolidate for {product}:"""
+                }]
+            )
+
+            result = message.content[0].text.strip()
+            # Remove product name prefix if Claude added it
+            if result.lower().startswith(product.lower()):
+                result = result[len(product):].lstrip(" -:")
+            consolidated[product] = result
+            print(f"[Formatter] Consolidated TLDR for {product}")
+
+        except Exception as e:
+            print(f"[Formatter] Error consolidating {product}: {str(e)}")
+            # Fallback to joining with semicolons
+            consolidated[product] = "; ".join(summaries)
+
+    return consolidated
+
+
+def consolidate_body_sections_with_claude(product: str, release: str, sections: List[Dict]) -> str:
+    """
+    Consolidates raw feature sections into grouped, flowing prose body content.
+
+    Args:
+        product: Product name (e.g., "DSP Core PL1")
+        release: Release version (e.g., "Release 3.0")
+        sections: List of section dicts with structure:
+            {
+                "title": "Epic Name",
+                "items": ["item 1", "item 2"],
+                "status": "General Availability" or "Feature Flag"
+            }
+
+    Returns:
+        Consolidated body text with grouped sections and prose
+    """
+    if not ANTHROPIC_AVAILABLE:
+        print("[Formatter] Anthropic not available, returning raw sections")
+        return _format_raw_sections_fallback(sections)
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("[Formatter] ANTHROPIC_API_KEY not set, returning raw sections")
+        return _format_raw_sections_fallback(sections)
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    # Format sections for Claude
+    sections_text = ""
+    for section in sections:
+        items_list = "\n".join([f"- {item}" for item in section.get("items", [])])
+        status = section.get("status", "")
+        status_text = f" ({status})" if status else ""
+        sections_text += f"\n__{section['title']}__{status_text}\n{items_list}\n"
+
+    try:
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1500,
+            messages=[{
+                "role": "user",
+                "content": f"""Consolidate these raw feature sections into grouped, flowing prose body content.
+
+Product: {product}
+Release: {release}
+
+Raw Sections:
+{sections_text}
+
+Rules for consolidation:
+1. Group related sections by feature area or theme
+2. Convert bullet points into flowing prose paragraphs
+3. Each grouped section should have a descriptive heading
+4. Use natural language, NO bullet points in output
+5. Focus on user value and impact
+6. Keep each section to 2-4 sentences of flowing prose
+7. Preserve feature status (General Availability, Feature Flag) at the end of each group
+8. Format output as:
+
+   Epic/Feature Name (as hyperlink placeholder)
+
+   Value Add:
+   [Flowing prose paragraph describing the features and their value]
+
+   [Status: General Availability or Feature Flag]
+
+Output the consolidated sections:"""
+            }]
+        )
+
+        result = message.content[0].text.strip()
+        print(f"[Formatter] Consolidated body for {product}")
+        return result
+
+    except Exception as e:
+        print(f"[Formatter] Error consolidating body for {product}: {str(e)}")
+        return _format_raw_sections_fallback(sections)
+
+
+def _format_raw_sections_fallback(sections: List[Dict]) -> str:
+    """Fallback formatting when LLM is not available."""
+    output = []
+    for section in sections:
+        output.append(f"{section['title']}\n")
+        output.append("Value Add:")
+        for item in section.get("items", []):
+            output.append(f"   * {item}")
+        status = section.get("status", "")
+        if status:
+            output.append(f"\n{status}\n")
+        output.append("")
+    return "\n".join(output)
 
 
 class ReleaseNotesFormatter:
@@ -315,17 +503,21 @@ class ReleaseNotesFormatter:
         # Join all summaries with semicolons
         return '; '.join(cleaned)
 
-    def generate_tldr(self) -> Dict[str, Any]:
+    def generate_tldr(self, use_llm: bool = True) -> Dict[str, Any]:
         """
         Generate TL;DR summary for the release notes with Key Deployments per PL.
 
-        Creates flowing prose summaries grouped by category with descriptive connectors.
+        Uses Claude API to consolidate raw summaries into polished flowing prose.
+
+        Args:
+            use_llm: Whether to use LLM consolidation (default True)
 
         Returns:
             Dictionary with TL;DR components including key deployments by PL
         """
-        # Get list of deployed product lines with their key deployments
-        key_deployments = []
+        # Step 1: Collect all raw summaries by product
+        raw_summaries_by_product = {}
+        fix_versions_by_product = {}
 
         for pl in self._get_ordered_pls():
             if pl not in self.grouped_data:
@@ -349,22 +541,33 @@ class ReleaseNotesFormatter:
             first_ticket = list(epics.values())[0][0]["ticket"]
             fix_version = first_ticket.get("fix_version", "")
 
-            # Create deployment entry with formatted prose
             if pl_summaries:
-                # Format summaries as flowing prose
-                deployment_text = self._format_summaries_as_prose(pl_summaries)
-                if fix_version:
-                    key_deployments.append({
-                        "pl": pl,
-                        "version": fix_version,
-                        "summary": deployment_text
-                    })
-                else:
-                    key_deployments.append({
-                        "pl": pl,
-                        "version": "",
-                        "summary": deployment_text
-                    })
+                raw_summaries_by_product[pl] = pl_summaries
+                fix_versions_by_product[pl] = fix_version
+
+        # Step 2: Use LLM to consolidate summaries into polished prose
+        if use_llm and raw_summaries_by_product:
+            print("[Formatter] Consolidating TL;DR with Claude API...")
+            consolidated = consolidate_tldr_with_claude(raw_summaries_by_product)
+        else:
+            # Fallback: join with semicolons
+            consolidated = {pl: self._format_summaries_as_prose(summaries)
+                          for pl, summaries in raw_summaries_by_product.items()}
+
+        # Step 3: Build key deployments list
+        key_deployments = []
+        for pl in self._get_ordered_pls():
+            if pl not in consolidated:
+                continue
+
+            deployment_text = consolidated[pl]
+            fix_version = fix_versions_by_product.get(pl, "")
+
+            key_deployments.append({
+                "pl": pl,
+                "version": fix_version,
+                "summary": deployment_text
+            })
 
         return {
             "key_deployments": key_deployments,
