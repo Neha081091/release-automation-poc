@@ -1,183 +1,551 @@
 {
-  "exported_at": "2026-02-03T10:30:00.000000",
+  "exported_at": "2026-02-03T23:50:17.424179",
   "release_summary": "Release 2nd February 2026",
-  "release_key": "DI-12345",
+  "release_key": "DI-89456",
   "ticket_count": 25,
   "tickets": [
     {
-      "key": "DI-1001",
-      "summary": "Add real-time bidding optimization for campaign performance",
-      "fix_version": "DSP Core PL1 2026: Release 2nd February",
-      "epic_name": "Bidding Engine Improvements",
-      "release_type": "General Availability"
+      "key": "DI-89410",
+      "url": "https://deepintent.atlassian.net/browse/DI-89410",
+      "summary": "Integrating saarthi into data-jobs repo",
+      "description": "Integrating saarthi into data-jobs repo  ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Developer Experience 2026 : Release 6.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17725/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-87611",
+      "epic_name": "Saarthi Code Reviewer integration across major repositories",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-87611",
+      "components": [
+        "Developer Experience"
+      ],
+      "story_points": null,
+      "assignee": "Chirag Vohra"
     },
     {
-      "key": "DI-1002",
-      "summary": "Implement frequency capping across all channels",
-      "fix_version": "DSP Core PL1 2026: Release 2nd February",
-      "epic_name": "Bidding Engine Improvements",
-      "release_type": "General Availability"
+      "key": "DI-89405",
+      "url": "https://deepintent.atlassian.net/browse/DI-89405",
+      "summary": "Integrating saarthi into di-developer-ui repo",
+      "description": "Integrating saarthi into di-developer-ui repo  ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Developer Experience 2026 : Release 6.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17725/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-87611",
+      "epic_name": "Saarthi Code Reviewer integration across major repositories",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-87611",
+      "components": [
+        "Developer Experience"
+      ],
+      "story_points": null,
+      "assignee": "Chirag Vohra"
     },
     {
-      "key": "DI-1003",
-      "summary": "Add support for contextual targeting in DSP campaigns",
-      "fix_version": "DSP Core PL1 2026: Release 2nd February",
-      "epic_name": "Targeting Enhancements",
-      "release_type": "Feature Flag"
+      "key": "DI-89396",
+      "url": "https://deepintent.atlassian.net/browse/DI-89396",
+      "summary": "Integrating saarthi into media-reporting-service repo",
+      "description": "Integrating saarthi into media-reporting-service repo     ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Developer Experience 2026 : Release 6.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17725/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-87611",
+      "epic_name": "Saarthi Code Reviewer integration across major repositories",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-87611",
+      "components": [
+        "Developer Experience"
+      ],
+      "story_points": null,
+      "assignee": "Chirag Vohra"
     },
     {
-      "key": "DI-1004",
-      "summary": "Improve campaign dashboard load time by 40%",
-      "fix_version": "DSP Core PL1 2026: Release 2nd February",
-      "epic_name": "Performance Optimization",
-      "release_type": "General Availability"
+      "key": "DI-89394",
+      "url": "https://deepintent.atlassian.net/browse/DI-89394",
+      "summary": "Integrating saarthi into reporting-service repo",
+      "description": "Integrating saarthi into reporting-service repo     ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Developer Experience 2026 : Release 6.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17725/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-87611",
+      "epic_name": "Saarthi Code Reviewer integration across major repositories",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-87611",
+      "components": [
+        "Developer Experience"
+      ],
+      "story_points": null,
+      "assignee": "Chirag Vohra"
     },
     {
-      "key": "DI-1005",
-      "summary": "Fix budget pacing algorithm for weekend traffic",
-      "fix_version": "DSP Core PL1 2026: Release 2nd February",
-      "epic_name": "Budget Management",
-      "release_type": "General Availability"
+      "key": "DI-89389",
+      "url": "https://deepintent.atlassian.net/browse/DI-89389",
+      "summary": "Integrating saarthi into codelens repo",
+      "description": "Integrating saarthi into codelens repo  ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Developer Experience 2026 : Release 6.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17725/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-87611",
+      "epic_name": "Saarthi Code Reviewer integration across major repositories",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-87611",
+      "components": [
+        "Developer Experience"
+      ],
+      "story_points": null,
+      "assignee": "Chirag Vohra"
     },
     {
-      "key": "DI-2001",
-      "summary": "Add HCP audience segment builder with NPI targeting",
-      "fix_version": "Audiences PL2 2026: Release 2nd February",
-      "epic_name": "HCP Targeting",
-      "release_type": "General Availability"
+      "key": "DI-89383",
+      "url": "https://deepintent.atlassian.net/browse/DI-89383",
+      "summary": "Integrating saarthi into gateway-service repo",
+      "description": "Integrating saarthi into gateway-service repo https://github.com/DeepIntent/gateway-service-v2/pull/1168 ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Developer Experience 2026 : Release 6.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17725/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-87611",
+      "epic_name": "Saarthi Code Reviewer integration across major repositories",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-87611",
+      "components": [
+        "Developer Experience"
+      ],
+      "story_points": null,
+      "assignee": "Chirag Vohra"
     },
     {
-      "key": "DI-2002",
-      "summary": "Implement patient journey mapping for oncology audiences",
-      "fix_version": "Audiences PL2 2026: Release 2nd February",
-      "epic_name": "HCP Targeting",
-      "release_type": "Feature Flag"
+      "key": "DI-89359",
+      "url": "https://deepintent.atlassian.net/browse/DI-89359",
+      "summary": "Integrating saarthi into planner-ui repo",
+      "description": "Integrating saarthi into planner-ui repo  ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Developer Experience 2026 : Release 6.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17725/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-87611",
+      "epic_name": "Saarthi Code Reviewer integration across major repositories",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-87611",
+      "components": [
+        "Developer Experience"
+      ],
+      "story_points": null,
+      "assignee": "Chirag Vohra"
     },
     {
-      "key": "DI-2003",
-      "summary": "Add specialty physician filters for cardiology campaigns",
-      "fix_version": "Audiences PL2 2026: Release 2nd February",
-      "epic_name": "HCP Targeting",
-      "release_type": "General Availability"
+      "key": "DI-89351",
+      "url": "https://deepintent.atlassian.net/browse/DI-89351",
+      "summary": "Integrating saarthi into patient-planner-service repo",
+      "description": "Integrating saarthi into patient-planner-service repo  ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Developer Experience 2026 : Release 6.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17725/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-87611",
+      "epic_name": "Saarthi Code Reviewer integration across major repositories",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-87611",
+      "components": [
+        "Developer Experience"
+      ],
+      "story_points": null,
+      "assignee": "Chirag Vohra"
     },
     {
-      "key": "DI-2004",
-      "summary": "Enhance audience overlap analysis with Venn diagrams",
-      "fix_version": "Audiences PL2 2026: Release 2nd February",
-      "epic_name": "Audience Analytics",
-      "release_type": "General Availability"
+      "key": "DI-89339",
+      "url": "https://deepintent.atlassian.net/browse/DI-89339",
+      "summary": "Integrating saarthi into di-mcp-server repo",
+      "description": "Integrating saarthi into di-mcp-server repo  ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Developer Experience 2026 : Release 6.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17725/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-87611",
+      "epic_name": "Saarthi Code Reviewer integration across major repositories",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-87611",
+      "components": [
+        "Developer Experience"
+      ],
+      "story_points": null,
+      "assignee": "Chirag Vohra"
     },
     {
-      "key": "DI-2005",
-      "summary": "Add bulk audience upload via CSV with validation",
-      "fix_version": "Audiences PL2 2026: Release 2nd February",
-      "epic_name": "Audience Management",
-      "release_type": "General Availability"
+      "key": "DI-89232",
+      "url": "https://deepintent.atlassian.net/browse/DI-89232",
+      "summary": "Create anonymous client for launch darkly",
+      "description": "Create anonymous client for launch darkly instead of updating the existing one",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "DSP Core PL3 2026: Release 4.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17726/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-86848",
+      "epic_name": "Core Chat UI Shell (Cora Tab Only)",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-86848",
+      "components": [
+        "DSP Core PL3"
+      ],
+      "story_points": null,
+      "assignee": "Abhishek Mandilkar"
     },
     {
-      "key": "DI-3001",
-      "summary": "Implement cross-device graph matching for campaign attribution",
-      "fix_version": "DSP Core PL3 2026: Release 2nd February",
-      "epic_name": "Attribution & Measurement",
-      "release_type": "General Availability"
+      "key": "DI-89225",
+      "url": "https://deepintent.atlassian.net/browse/DI-89225",
+      "summary": "Fix di-creative-service critical vulnerability",
+      "description": "Fix this CVE for di-creative-service   ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "DSP Core PL1 2026: Release 3.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/16665/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-81489",
+      "epic_name": "DSP Core PL1 Maintenance Q1 2026",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-81489",
+      "components": [
+        "DSP Core PL1",
+        "Level 2"
+      ],
+      "story_points": null,
+      "assignee": "Awdhoot Lele"
     },
     {
-      "key": "DI-3002",
-      "summary": "Add multi-touch attribution model configuration",
-      "fix_version": "DSP Core PL3 2026: Release 2nd February",
-      "epic_name": "Attribution & Measurement",
-      "release_type": "Feature Flag"
+      "key": "DI-89015",
+      "url": "https://deepintent.atlassian.net/browse/DI-89015",
+      "summary": "Build Helper Scripts to Fetch and Recreate Table Schemas from DCR",
+      "description": "As a data engineer at DeepIntent,  I want to build helper scripts to fetch table schemas from the remote  DCR  and recreate them locally,  so that downstream pipelines and mock data generation can be developed and tested without direct dependency on the remote environment. These scripts will act as foundational tooling for schema alignment across environments and will support local development, testing, and mock data workflows.",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Developer Experience 2026 : Release 6.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17725/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-88192",
+      "epic_name": "Mock Data Enablement for Apache Spark setup with local setup",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-88192",
+      "components": [
+        "Developer Experience"
+      ],
+      "story_points": null,
+      "assignee": "Ashutosh Shaha"
     },
     {
-      "key": "DI-3003",
-      "summary": "Enhance reporting dashboard with custom date ranges",
-      "fix_version": "DSP Core PL3 2026: Release 2nd February",
-      "epic_name": "Reporting Enhancements",
-      "release_type": "General Availability"
+      "key": "DI-88542",
+      "url": "https://deepintent.atlassian.net/browse/DI-88542",
+      "summary": "Integrating saarthi into common-service repo",
+      "description": "Integrating saarthi into common-service repo  ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Developer Experience 2026 : Release 6.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17725/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-87611",
+      "epic_name": "Saarthi Code Reviewer integration across major repositories",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-87611",
+      "components": [
+        "Developer Experience"
+      ],
+      "story_points": null,
+      "assignee": "Chirag Vohra"
     },
     {
-      "key": "DI-3004",
-      "summary": "Add automated report scheduling with email delivery",
-      "fix_version": "DSP Core PL3 2026: Release 2nd February",
-      "epic_name": "Reporting Enhancements",
-      "release_type": "General Availability"
+      "key": "DI-88405",
+      "url": "https://deepintent.atlassian.net/browse/DI-88405",
+      "summary": "Migration for rules based on new updated Peer39 rates ",
+      "description": "Migration for rules based on new updated Peer39 rates      ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "DSP Core PL5 2026: Release 6.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17766/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-88619",
+      "epic_name": "Generic Data Ingestion Framework for Third-Party Verification Partners",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-88619",
+      "components": [
+        "DSP Core PL5"
+      ],
+      "story_points": null,
+      "assignee": "Mansi Gundre"
     },
     {
-      "key": "DI-3005",
-      "summary": "Fix data export timeout for large campaign reports",
-      "fix_version": "DSP Core PL3 2026: Release 2nd February",
-      "epic_name": "Reporting Enhancements",
-      "release_type": "General Availability"
+      "key": "DI-88040",
+      "url": "https://deepintent.atlassian.net/browse/DI-88040",
+      "summary": "Cortex Agent Entry Point (Feature Flagged)",
+      "description": "As a user,  I want to access the Cortex Agent from the application sidebar,  so that I can launch the Cortex Agent Shell UI when the feature is enabled. Figma link  https://www.figma.com/design/oUJY214eYlMmWGHIYlho2M/Cortex-Chat-AI?node-id=953-1645&m=dev",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "DSP Core PL3 2026: Release 4.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17726/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-86848",
+      "epic_name": "Core Chat UI Shell (Cora Tab Only)",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-86848",
+      "components": [
+        "DSP Core PL3"
+      ],
+      "story_points": null,
+      "assignee": "Abhishek Mandilkar"
     },
     {
-      "key": "DI-5001",
-      "summary": "Add real-time inventory forecasting for connected TV",
-      "fix_version": "DSP Core PL5 2026: Release 2nd February",
-      "epic_name": "CTV Enhancements",
-      "release_type": "General Availability"
+      "key": "DI-87946",
+      "url": "https://deepintent.atlassian.net/browse/DI-87946",
+      "summary": "Prevent Order Activation of Seats Separated from Boostr IO",
+      "description": "While the Boostr IO is no longer required per the ticket below,     the Platform Operations team will need to know if there are any self-service seats that are separated from the Boostr IO. It is important that that self-service seats only activate campaigns if they are connected to an updated and valid Boostr Insertion Order. The ticket linked allows Platform Operations and Self-Service users to begin trafficking the Orders, Campaigns, and Ad Groups before the Boostr set up is complete, however, it is critical that Ops team is made aware of SS seats that continue to exist with a null boostr ID. To provide against inadvertent activation, the Insertion Order Status should be disabled from being toggled  ON ,if the Boostr IO is still unattached. ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "DSP Core PL5 2026: Release 6.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17766/tab/release-report-all-issues",
+      "labels": [
+        "GeneralAvailability"
+      ],
+      "release_type": "General Availability",
+      "epic_key": "DI-86333",
+      "epic_name": "DSP PL5 - General Enhancements 1Q26",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-86333",
+      "components": [
+        "DSP PL5"
+      ],
+      "story_points": null,
+      "assignee": "Sanket Chandak"
     },
     {
-      "key": "DI-5002",
-      "summary": "Implement programmatic guaranteed deals for CTV publishers",
-      "fix_version": "DSP Core PL5 2026: Release 2nd February",
-      "epic_name": "CTV Enhancements",
-      "release_type": "Feature Flag"
+      "key": "DI-87787",
+      "url": "https://deepintent.atlassian.net/browse/DI-87787",
+      "summary": "Open Orders page with the last applied Status column filter",
+      "description": "As a User,  I want the last applied  Status column filter  on the Orders Listing page to be  retained  every time I reopen the Orders page, so that I don\u2019t have to reapply the same filter repeatedly.   To achieve this, save the updated state of the Status filter in  User Settings  and apply these settings every time the user opens the Orders page. If no relevant user settings exist, display all orders in the listing page without applying any status-based filtering.",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "DSP Core PL1 2026: Release 3.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/16665/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-81496",
+      "epic_name": "DSP Core PL1 Enhancements Q1 2026",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-81496",
+      "components": [
+        "DSP Core PL1"
+      ],
+      "story_points": null,
+      "assignee": "Shlok Hinge"
     },
     {
-      "key": "DI-5003",
-      "summary": "Add creative preview for CTV ad formats",
-      "fix_version": "DSP Core PL5 2026: Release 2nd February",
-      "epic_name": "CTV Enhancements",
-      "release_type": "General Availability"
+      "key": "DI-87775",
+      "url": "https://deepintent.atlassian.net/browse/DI-87775",
+      "summary": "Deselect Order Selections when user Archives Order",
+      "description": "When a user selects orders on the Order Listing page and archives them, the selection state is retained. This behavior can cause issues when a status filter is applied (for example, showing orders with status On). After the user archives selected orders, those orders are no longer visible in the list due to the applied filter, but they remain selected in the background. As a result, the user cannot see the selected orders in the listing page, even though they are still selected, which may lead to confusion or unintended actions.",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "DSP Core PL1 2026: Release 3.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/16665/tab/release-report-all-issues",
+      "labels": [
+        "GeneralAvailability"
+      ],
+      "release_type": "General Availability",
+      "epic_key": "DI-81496",
+      "epic_name": "DSP Core PL1 Enhancements Q1 2026",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-81496",
+      "components": [
+        "DSP Core PL1"
+      ],
+      "story_points": null,
+      "assignee": "Shlok Hinge"
     },
     {
-      "key": "DI-5004",
-      "summary": "Enhance OTT campaign targeting with household demographics",
-      "fix_version": "DSP Core PL5 2026: Release 2nd February",
-      "epic_name": "OTT Improvements",
-      "release_type": "General Availability"
+      "key": "DI-87772",
+      "url": "https://deepintent.atlassian.net/browse/DI-87772",
+      "summary": "Allow Muilti-select Option for Status Column Filter on Order Listing",
+      "description": " Currently, User can select only one field in Status column in Orders Page. Add support  to select  multiple fields  on  Status column  for Orders Listing Page.   For Example:   If user wants to see non-archived orders, he must be able to multi select (On, Off and Draft) filters in Status Column. ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "DSP Core PL1 2026: Release 3.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/16665/tab/release-report-all-issues",
+      "labels": [
+        "GeneralAvailability"
+      ],
+      "release_type": "General Availability",
+      "epic_key": "DI-81496",
+      "epic_name": "DSP Core PL1 Enhancements Q1 2026",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-81496",
+      "components": [
+        "DSP Core PL1"
+      ],
+      "story_points": null,
+      "assignee": "Shlok Hinge"
     },
     {
-      "key": "DI-5005",
-      "summary": "Add support for VAST 4.2 ad serving standard",
-      "fix_version": "DSP Core PL5 2026: Release 2nd February",
-      "epic_name": "Ad Serving",
-      "release_type": "General Availability"
+      "key": "DI-87639",
+      "url": "https://deepintent.atlassian.net/browse/DI-87639",
+      "summary": "Update Saarthi model integration to use production OpenWebUI instance",
+      "description": "Saarthi is currently integrated with the OpenWebUI  test  instance ( https://open-webui.data-infra.a.test.lan.didevops.com ). As per the latest guidance, production jobs must use the  prod  OpenWebUI instance ( https://openwebui.deepintent.com/ )",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Developer Experience 2026 : Release 6.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17725/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-87611",
+      "epic_name": "Saarthi Code Reviewer integration across major repositories",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-87611",
+      "components": [
+        "Developer Experience"
+      ],
+      "story_points": null,
+      "assignee": "Chirag Vohra"
     },
     {
-      "key": "DI-6001",
-      "summary": "Add new REST API endpoints for campaign management",
-      "fix_version": "Developer Experience 2026: Release 2nd February",
-      "epic_name": "API Enhancements",
-      "release_type": "General Availability"
+      "key": "DI-86778",
+      "url": "https://deepintent.atlassian.net/browse/DI-86778",
+      "summary": "Remove flags DSP PL1 Part 3",
+      "description": "Remove below flags, geofencing-place-types-to-exclude-configuration : Since Feature Flag to support Geofencing for Patient Ad-group is removed, the dependent feature flag can be removed   geofencing-state-restrictions-configuration  : Create Const for the restricted region on UI side  ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "DSP Core PL1 2026: Release 3.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/16665/tab/release-report-all-issues",
+      "labels": [
+        "GeneralAvailability"
+      ],
+      "release_type": "General Availability",
+      "epic_key": "DI-63608",
+      "epic_name": "DSP PL1 Enhancements Q4 2025",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-63608",
+      "components": [
+        "DSP Core PL1"
+      ],
+      "story_points": null,
+      "assignee": "Shlok Hinge"
     },
     {
-      "key": "DI-6002",
-      "summary": "Implement GraphQL API for audience queries",
-      "fix_version": "Developer Experience 2026: Release 2nd February",
-      "epic_name": "API Enhancements",
-      "release_type": "Feature Flag"
+      "key": "DI-86610",
+      "url": "https://deepintent.atlassian.net/browse/DI-86610",
+      "summary": "Forecasting |  Add Channel , Device , Inventory , Creative Unit Length Filter Extraction & Validation Logic based on Deals / Exchanges attached to Ad group. ",
+      "description": "Forecasting filters such as  Channel, Device, Inventory Type, and Creative Unit Length  can be derived from: Ad Group\u2013level configuration Attached  Deals Attached  Exchanges When Deals or Exchanges are attached to an Ad Group it can  override or narrow  Ad Group\u2013level targeting,  As a part of ticket  We should figure out the logic to resolve the filters (Channel , Device , Inventory , Creative Unit length ) based on what deals & exchanges are attached to ad group. Filter should be derived by taking actual bidding scenarios into account. The forecasting must run on derived filters based on. Ad Group configuration. Attached Deals. Attached Exchanges. When there is mismatch of the configuration.  e,g. CTV Deals are attached to Banner Ad Group or  CTV inventory is  attached to AUDIO Ad group, then it should throw the validation error. Validation :  If no audience is selected then user will not be able to view forecast.  If media cpm is negative, then validation error will be thrown.",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "DSP Core PL1 2026: Release 3.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/16665/tab/release-report-all-issues",
+      "labels": [
+        "FeatureFlag"
+      ],
+      "release_type": "Feature Flag",
+      "epic_key": "DI-68155",
+      "epic_name": "Forecasting in Ad Groups",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-68155",
+      "components": [
+        "DSP Core PL1"
+      ],
+      "story_points": null,
+      "assignee": "Gaurav Shinde"
     },
     {
-      "key": "DI-6003",
-      "summary": "Update SDK documentation with code examples",
-      "fix_version": "Developer Experience 2026: Release 2nd February",
-      "epic_name": "Documentation",
-      "release_type": "General Availability"
+      "key": "DI-86546",
+      "url": "https://deepintent.atlassian.net/browse/DI-86546",
+      "summary": "Create new IAM user/Role for match-service-cron",
+      "description": "Match Service Cron uses IAM user  sftp_s3_user  :  AKIA2ZWWR7WF5452BF7L  which has extensive access and more than what is needed for the service. Eventually this service should move to IRSA based auth but for time being we want to create a service user that can be used in the service with only required access. Access Required: Bucket:   sftp-dev-deepintent  / sftp-deepintent (Dev AWS/ Prod AWS) Access:  S3 Read/Write Access ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Audiences PL2 2026: Release 4.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17649/tab/release-report-all-issues",
+      "labels": [
+        "Roadmap"
+      ],
+      "release_type": null,
+      "epic_key": "DI-75222",
+      "epic_name": "Audiences PL2 - 2H 2025 Audience Improvements & Client Requests",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-75222",
+      "components": [
+        "Audiences PL2",
+        "SRE-India"
+      ],
+      "story_points": null,
+      "assignee": "Akshay Nimbalkar"
     },
     {
-      "key": "DI-6004",
-      "summary": "Add webhook support for campaign status changes",
-      "fix_version": "Developer Experience 2026: Release 2nd February",
-      "epic_name": "Integration Features",
-      "release_type": "General Availability"
+      "key": "DI-85875",
+      "url": "https://deepintent.atlassian.net/browse/DI-85875",
+      "summary": "Peer39 New 2026 Rates",
+      "description": "The Peer39 Team is updating their rate card and looking to have the new rates in place for 2026 by January 15th 2026. We are currently pending a new contract approval with P39, however, I am slotting this ticket in for refinement ahead of that so we can ready it as  TO DO  when this can be accomplished. The new rates are in the below Google Sheet.    Targeting Segments  Contextual Categories $0.25 Brand Safety Categories $0.06 Custom Categories Web $0.35 Ad Fraud Categories $0.05 Page Signal Categories $0.25 Mobile App Categories $0.18 Custom Mobile App $0.35 Specialty Categories (Interests & Trends) $0.17 Sentiment Categories $0.20 Video Player Categories $0.07 Language Categories $0.15 CTV/OTT - Channel Level $1.60 CTV/OTT - Content Level $2.00 Custom CTV/OTT \u2013 Channel Level $1.60 Custom CTV/OTT \u2013 Content Level $2.00 In-Market $0.95 Contextual Retail Media $0.75 Social Predictive Categories $0.95   Marketplace  NewsGuard Categories $0.20 Local Weather targeting $0.25 Reticle Emotional Contextual $0.90 Experian US Cookieless Purchase Affinity $1.00 Experian US Cookieless Demographic $1.00 Experian US Cookieless Mosaic $1.00 Experian UK Cookieless Demographic $1.25 Experian UK Cookieless Purchase Affinity $1.25 Experian UK Cookieless Mosaic $1.25 Experian UK Cookieless Financial Strategy $1.25 GoldfishAds $0.80 Content Score $0.10 Qortex $0.30 Deepsee $0.11 Socialcontext $0.50 Polk Cookieless $0.85 White Bullet $0.05 Scope3 $0.10 Gracenote (CTV-OTT) $2.00 Compliant $0.25 GoodLoop $0.08 BioBot $1.00 Fairshare $1.50 Ad Fontes $0.10",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "DSP Core PL5 2026: Release 6.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17766/tab/release-report-all-issues",
+      "labels": [
+        "GeneralAvailability"
+      ],
+      "release_type": "General Availability",
+      "epic_key": "DI-88619",
+      "epic_name": "Generic Data Ingestion Framework for Third-Party Verification Partners",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-88619",
+      "components": [
+        "DSP PL5"
+      ],
+      "story_points": null,
+      "assignee": "Mansi Gundre"
     },
     {
-      "key": "DI-6005",
-      "summary": "Implement rate limiting improvements for API reliability",
-      "fix_version": "Developer Experience 2026: Release 2nd February",
-      "epic_name": "API Enhancements",
-      "release_type": "General Availability"
+      "key": "DI-85474",
+      "url": "https://deepintent.atlassian.net/browse/DI-85474",
+      "summary": "Data | One time Pixel Audience Data in DCR Clickhouse",
+      "description": "We're developing a methodology to calculate audience sizes for complex audience groups that span both HCP and patient campaign groups. To support these calculations, we need PIXEL audiences available in DCR alongside the existing patient audience data.",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "DSP Core PL1 2026: Release 3.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/16665/tab/release-report-all-issues",
+      "labels": [
+        "GeneralAvailability"
+      ],
+      "release_type": "General Availability",
+      "epic_key": "DI-68155",
+      "epic_name": "Forecasting in Ad Groups",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-68155",
+      "components": [
+        "DSP PL1"
+      ],
+      "story_points": null,
+      "assignee": "Praniti Srivastava"
     }
   ]
 }
