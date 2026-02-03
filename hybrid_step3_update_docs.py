@@ -27,8 +27,21 @@ from google_docs_handler import GoogleDocsHandler
 from slack_handler import SlackHandler
 
 
+def get_pl_category(pl_name: str) -> str:
+    """Determine the category header for a product line."""
+    pl_lower = pl_name.lower()
+    if 'dsp' in pl_lower:
+        return "DSP"
+    elif 'audience' in pl_lower:
+        return "Audiences"
+    elif 'developer' in pl_lower:
+        return "Developer Experience"
+    else:
+        return pl_name
+
+
 def update_google_docs(processed_data: dict) -> bool:
-    """Update Google Docs with processed notes."""
+    """Update Google Docs with processed notes in executive style."""
     print("\n[Step 3a] Updating Google Docs...")
 
     try:
@@ -50,6 +63,7 @@ def update_google_docs(processed_data: dict) -> bool:
         tldr_by_pl = processed_data.get("tldr_by_pl", {})
         body_by_pl = processed_data.get("body_by_pl", {})
         product_lines = processed_data.get("product_lines", [])
+        release_versions = processed_data.get("release_versions", {})
 
         # Build requests for Google Docs API
         requests = []
@@ -89,7 +103,7 @@ def update_google_docs(processed_data: dict) -> bool:
         for pl in product_lines:
             if pl in tldr_by_pl:
                 summary = tldr_by_pl[pl]
-                deploy_line = f"   • {pl} - {summary}\n"
+                deploy_line = f"• {pl} - {summary}\n"
                 requests.append({
                     "insertText": {
                         "location": {"index": current_index},
@@ -107,38 +121,48 @@ def update_google_docs(processed_data: dict) -> bool:
         })
         current_index += 1
 
-        # Body sections per PL
+        # Group PLs by category for better organization
+        from collections import defaultdict
+        pl_by_category = defaultdict(list)
         for pl in product_lines:
-            # PL Header
-            pl_header = f"------------------{pl}------------------\n\n"
+            category = get_pl_category(pl)
+            pl_by_category[category].append(pl)
+
+        # Body sections per category
+        for category in pl_by_category:
+            # Category Header (e.g., ------------------DSP------------------)
+            category_header = f"------------------{category}------------------\n\n"
             requests.append({
                 "insertText": {
                     "location": {"index": current_index},
-                    "text": pl_header
+                    "text": category_header
                 }
             })
-            current_index += len(pl_header)
+            current_index += len(category_header)
 
-            # Approval checkboxes
-            approval_text = "☐ Yes   ☐ No   ☐ Release Tomorrow\n\n"
-            requests.append({
-                "insertText": {
-                    "location": {"index": current_index},
-                    "text": approval_text
-                }
-            })
-            current_index += len(approval_text)
-
-            # Body content (polished from Claude)
-            if pl in body_by_pl:
-                body_text = body_by_pl[pl] + "\n\n"
+            # Each PL in this category
+            for pl in pl_by_category[category]:
+                # PL with release version (e.g., "DSP Core PL1: Release 3.0")
+                release_ver = release_versions.get(pl, "Release 1.0")
+                pl_title = f"{pl}: {release_ver}\n\n"
                 requests.append({
                     "insertText": {
                         "location": {"index": current_index},
-                        "text": body_text
+                        "text": pl_title
                     }
                 })
-                current_index += len(body_text)
+                current_index += len(pl_title)
+
+                # Body content (polished from Claude - already formatted)
+                if pl in body_by_pl:
+                    body_text = body_by_pl[pl] + "\n\n"
+                    requests.append({
+                        "insertText": {
+                            "location": {"index": current_index},
+                            "text": body_text
+                        }
+                    })
+                    current_index += len(body_text)
 
         # Clear and update document
         google_docs.clear_document()

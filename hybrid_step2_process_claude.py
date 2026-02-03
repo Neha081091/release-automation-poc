@@ -17,7 +17,9 @@ Output:
 
 import json
 import os
+import re
 from datetime import datetime
+from collections import defaultdict
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,7 +28,7 @@ import anthropic
 
 
 def consolidate_with_claude(client, product: str, summaries: list) -> str:
-    """Consolidate summaries into polished prose using Claude."""
+    """Consolidate summaries into polished TL;DR prose using Claude."""
     summaries_text = "\n".join([f"- {s}" for s in summaries])
 
     message = client.messages.create(
@@ -34,22 +36,23 @@ def consolidate_with_claude(client, product: str, summaries: list) -> str:
         max_tokens=500,
         messages=[{
             "role": "user",
-            "content": f"""Consolidate these raw Jira ticket summaries into ONE polished prose sentence for TLDR.
+            "content": f"""Consolidate these raw Jira ticket summaries into a concise TL;DR for executive review.
 
 Product: {product}
 Raw Summaries:
 {summaries_text}
 
 Rules:
-1. Group related items conceptually (by feature area, not by change type)
-2. Use flowing narrative with semicolons separating major sections
-3. NO category labels like "usability improvements with", "data capabilities with"
+1. Write 2-3 SHORT sentences maximum
+2. Focus on major features and business impact
+3. Use semicolons to separate different feature areas
 4. NO bullet points or lists
-5. Use natural connectors: "with", "including", "featuring", "spanning"
-6. Should read smoothly when spoken aloud
-7. Focus on feature areas and user impact
-8. Keep to ONE sentence (no paragraph breaks)
-9. Output ONLY the consolidated prose (no product name prefix)
+5. Use present tense and action-oriented language
+6. Be concise - executives skim this section
+7. Output ONLY the consolidated prose (no product name prefix)
+
+Example format:
+"Order listing improvements with multi-select filtering and persistent preferences; forecasting enhancements with deal/exchange validation"
 
 Now consolidate for {product}:"""
         }]
@@ -61,47 +64,57 @@ Now consolidate for {product}:"""
     return result
 
 
-def consolidate_body_with_claude(client, product: str, sections: list) -> str:
-    """Consolidate body sections into polished prose using Claude."""
+def consolidate_body_with_claude(client, product: str, sections: list, release_version: str) -> str:
+    """Consolidate body sections into executive-style release notes using Claude."""
     sections_text = ""
     for section in sections:
         items_list = "\n".join([f"- {item}" for item in section.get("items", [])])
-        status = section.get("status", "")
-        status_text = f" ({status})" if status else ""
-        sections_text += f"\n__{section['title']}__{status_text}\n{items_list}\n"
+        status = section.get("status", "General Availability")
+        sections_text += f"\nEpic: {section['title']}\nStatus: {status}\nItems:\n{items_list}\n"
 
     message = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=2000,
         messages=[{
             "role": "user",
-            "content": f"""Consolidate these raw feature sections into polished, flowing prose bullet points.
+            "content": f"""Transform these raw Jira sections into executive-style release notes.
 
 Product: {product}
+Release Version: {release_version}
 
 Raw Sections:
 {sections_text}
 
-Rules for consolidation:
-1. Keep the original section structure (one section per heading)
-2. Convert raw Jira summaries into flowing, descriptive prose bullets
-3. Each bullet should be a complete, well-written sentence
-4. Use natural language that reads smoothly and explains user value
-5. Do NOT group sections together - keep them separate with their original titles
-6. Include the status flag at the end of each section (General Availability, Feature Flag, etc.)
-7. Format output as:
-   __Section Title__
+STRICT FORMAT RULES:
+1. NO markdown formatting (no **, no __, no backticks)
+2. Use PLAIN TEXT only
+3. Epic names as simple headers (no formatting)
+4. Always include "Value Add:" header before bullets
+5. Use bullet character "•" (not *, not -)
+6. 2-4 action-oriented bullets per epic
+7. Each bullet is ONE complete sentence with period
+8. End each epic section with status tag on its own line: General Availability OR Feature Flag
+9. NO parentheses around status tags
+10. One blank line between epic sections
 
-   Value Add:
+EXACT OUTPUT FORMAT:
+Epic Name Here
 
-   * Polished prose bullet point 1 explaining the feature and its impact
-   * Polished prose bullet point 2 with more context and details
+Value Add:
+• First benefit statement explaining user value and impact.
+• Second benefit statement with clear business context.
+• Third benefit statement if needed.
 
-   Status Flag (if applicable)
+General Availability
 
-8. Do NOT abbreviate or use technical jargon - explain clearly for stakeholders
+Next Epic Name
 
-Now consolidate for {product}:"""
+Value Add:
+• Benefit statement here.
+
+Feature Flag
+
+Transform the sections for {product} using this EXACT format:"""
         }]
     )
 
@@ -138,13 +151,11 @@ def process_tickets_with_claude():
     print("[Step 2] Claude API client initialized")
 
     # Group tickets by product line
-    from collections import defaultdict
     grouped = defaultdict(lambda: defaultdict(list))
 
     for ticket in tickets:
         fix_version = ticket.get("fix_version", "")
         # Parse PL from fix version
-        import re
         match = re.match(r'^(.+?)\s*\d{4}:\s*Release', fix_version)
         if match:
             pl = match.group(1).strip()
@@ -176,6 +187,22 @@ def process_tickets_with_claude():
                 print(f"  ❌ {pl} - error: {e}")
                 tldr_by_pl[pl] = "; ".join(summaries)
 
+    # Extract release versions per PL
+    release_versions = {}
+    for pl, epics in grouped.items():
+        for epic_name, epic_tickets in epics.items():
+            for t in epic_tickets:
+                fix_version = t.get("fix_version", "")
+                # Extract version number (e.g., "Release 3.0" from "DSP Core PL1 2026: Release 3.0")
+                version_match = re.search(r'Release\s*([\d.]+)', fix_version)
+                if version_match:
+                    release_versions[pl] = f"Release {version_match.group(1)}"
+                    break
+            if pl in release_versions:
+                break
+        if pl not in release_versions:
+            release_versions[pl] = "Release 1.0"
+
     # Process body sections for each PL
     print("\n[Step 2] Processing body sections...")
     body_by_pl = {}
@@ -183,7 +210,7 @@ def process_tickets_with_claude():
         sections = []
         for epic_name, epic_tickets in epics.items():
             items = [t["summary"] for t in epic_tickets if t.get("summary")]
-            status = ""
+            status = "General Availability"
             for t in epic_tickets:
                 if t.get("release_type"):
                     status = t["release_type"]
@@ -197,19 +224,20 @@ def process_tickets_with_claude():
 
         if sections:
             print(f"  Processing {pl}...")
+            release_ver = release_versions.get(pl, "Release 1.0")
             try:
-                body_by_pl[pl] = consolidate_body_with_claude(client, pl, sections)
+                body_by_pl[pl] = consolidate_body_with_claude(client, pl, sections, release_ver)
                 print(f"  ✅ {pl} - consolidated")
             except Exception as e:
                 print(f"  ❌ {pl} - error: {e}")
-                # Fallback
+                # Fallback with new format
                 body_text = ""
                 for s in sections:
-                    body_text += f"__{s['title']}__\n\nValue Add:\n"
+                    body_text += f"{s['title']}\n\nValue Add:\n"
                     for item in s['items']:
-                        body_text += f"   * {item}\n"
-                    if s['status']:
-                        body_text += f"\n{s['status']}\n\n"
+                        body_text += f"• {item}\n"
+                    status = s.get('status', 'General Availability')
+                    body_text += f"\n{status}\n\n"
                 body_by_pl[pl] = body_text
 
     # Export processed notes
@@ -219,6 +247,7 @@ def process_tickets_with_claude():
         "release_summary": export_data.get("release_summary"),
         "ticket_count": len(tickets),
         "product_lines": list(grouped.keys()),
+        "release_versions": release_versions,
         "tldr_by_pl": tldr_by_pl,
         "body_by_pl": body_by_pl,
         "grouped_data": {pl: {epic: [t["key"] for t in tickets] for epic, tickets in epics.items()} for pl, epics in grouped.items()}
