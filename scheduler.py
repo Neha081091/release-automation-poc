@@ -1,422 +1,343 @@
+#!/usr/bin/env python3
 """
-Scheduler for Release Automation PoC
+Daily Scheduler for Release Automation PoC
 
-This module handles scheduling of the daily release automation:
-- Local development scheduling using the 'schedule' library
-- Cloud deployment options (Google Cloud Scheduler, AWS CloudWatch)
-- Manual trigger support
+This script runs the release automation workflow automatically every day at 12:00 PM IST.
+It handles:
+- Scheduled execution using APScheduler
+- Logging all operations
+- Slack notifications for success/failure
+- Retry logic for failed runs
+- Metrics tracking
+
+Usage:
+    Local testing:     python scheduler.py
+    Run immediately:   python scheduler.py --run-now
+    Test mode:         python scheduler.py --test
+    Background:        nohup python scheduler.py > scheduler.log 2>&1 &
+    Stop:              pkill -f scheduler.py
+
+Author: DeepIntent Release Automation Team
 """
 
 import os
 import sys
-import time
-import signal
-from datetime import datetime
-from typing import Callable, Optional
-
-try:
-    import schedule
-    SCHEDULE_AVAILABLE = True
-except ImportError:
-    SCHEDULE_AVAILABLE = False
-    print("[Scheduler] 'schedule' library not installed. Local scheduling unavailable.")
-
-
-class ReleaseScheduler:
-    """Scheduler for running release automation at specified times."""
-
-    def __init__(self, job_function: Callable = None):
-        """
-        Initialize the scheduler.
-
-        Args:
-            job_function: The function to run on schedule
-        """
-        self.job_function = job_function
-        self.running = False
-        self.schedule_time = os.getenv('SCHEDULE_TIME', '12:00')  # Default 12 PM
-
-        print(f"[Scheduler] Initialized with schedule time: {self.schedule_time}")
-
-    def set_job(self, job_function: Callable):
-        """
-        Set or update the job function.
-
-        Args:
-            job_function: The function to run on schedule
-        """
-        self.job_function = job_function
-        print("[Scheduler] Job function updated")
-
-    def _job_wrapper(self):
-        """Wrapper for the scheduled job with error handling."""
-        print(f"\n{'='*60}")
-        print(f"[Scheduler] Starting scheduled job at {datetime.now()}")
-        print(f"{'='*60}\n")
-
-        try:
-            if self.job_function:
-                self.job_function()
-                print(f"\n[Scheduler] Job completed successfully at {datetime.now()}")
-            else:
-                print("[Scheduler] No job function configured")
-
-        except Exception as e:
-            print(f"\n[Scheduler] Job failed with error: {e}")
-            import traceback
-            traceback.print_exc()
-
-        print(f"{'='*60}\n")
-
-    def schedule_daily(self, time_str: str = None):
-        """
-        Schedule the job to run daily at a specific time.
-
-        Args:
-            time_str: Time string in HH:MM format (24-hour)
-        """
-        if not SCHEDULE_AVAILABLE:
-            print("[Scheduler] Cannot schedule: 'schedule' library not available")
-            return False
-
-        time_str = time_str or self.schedule_time
-
-        try:
-            schedule.every().day.at(time_str).do(self._job_wrapper)
-            print(f"[Scheduler] Scheduled daily job at {time_str}")
-            return True
-
-        except Exception as e:
-            print(f"[Scheduler] Failed to schedule job: {e}")
-            return False
-
-    def run_once(self):
-        """Run the job immediately (manual trigger)."""
-        print("[Scheduler] Running job manually...")
-        self._job_wrapper()
-
-    def start(self):
-        """
-        Start the scheduler loop.
-
-        This runs indefinitely until stopped.
-        """
-        if not SCHEDULE_AVAILABLE:
-            print("[Scheduler] Cannot start: 'schedule' library not available")
-            return
-
-        self.running = True
-        print(f"[Scheduler] Starting scheduler loop...")
-        print(f"[Scheduler] Press Ctrl+C to stop")
-
-        # Set up signal handler for graceful shutdown
-        def signal_handler(sig, frame):
-            print("\n[Scheduler] Received shutdown signal")
-            self.stop()
-            sys.exit(0)
-
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-
-        # Show next run time
-        next_run = schedule.next_run()
-        if next_run:
-            print(f"[Scheduler] Next scheduled run: {next_run}")
-
-        while self.running:
-            schedule.run_pending()
-            time.sleep(60)  # Check every minute
-
-    def stop(self):
-        """Stop the scheduler loop."""
-        self.running = False
-        print("[Scheduler] Scheduler stopped")
-
-    @staticmethod
-    def get_cloud_scheduler_config():
-        """
-        Get configuration for Google Cloud Scheduler.
-
-        Returns:
-            Dictionary with Cloud Scheduler configuration
-        """
-        return {
-            "name": "release-automation-daily",
-            "description": "Daily release automation trigger at 12 PM",
-            "schedule": "0 12 * * *",  # Cron: 12:00 PM every day
-            "time_zone": "America/New_York",  # Adjust as needed
-            "http_target": {
-                "uri": os.getenv('CLOUD_FUNCTION_URL', 'https://your-function-url'),
-                "http_method": "POST",
-                "headers": {
-                    "Content-Type": "application/json"
-                },
-                "body": {
-                    "action": "run_release_automation",
-                    "date": "auto"  # Will use current date
-                }
-            }
-        }
-
-    @staticmethod
-    def get_aws_cloudwatch_config():
-        """
-        Get configuration for AWS CloudWatch Events.
-
-        Returns:
-            Dictionary with CloudWatch Events configuration
-        """
-        return {
-            "Name": "ReleaseAutomationDaily",
-            "Description": "Daily release automation trigger at 12 PM",
-            "ScheduleExpression": "cron(0 12 * * ? *)",  # 12:00 PM UTC every day
-            "State": "ENABLED",
-            "Targets": [
-                {
-                    "Id": "ReleaseAutomationLambda",
-                    "Arn": os.getenv('LAMBDA_FUNCTION_ARN', 'arn:aws:lambda:region:account:function:name'),
-                    "Input": '{"action": "run_release_automation", "date": "auto"}'
-                }
-            ]
-        }
-
-    @staticmethod
-    def generate_cloud_function_template():
-        """
-        Generate a template for Google Cloud Function deployment.
-
-        Returns:
-            Python code string for Cloud Function
-        """
-        return '''
-# main.py for Google Cloud Function
-import functions_framework
-from datetime import datetime
-import os
-
-# Set environment variables in Cloud Function configuration
-# JIRA_EMAIL, JIRA_TOKEN, SLACK_BOT_TOKEN, GOOGLE_DOC_ID, etc.
-
-@functions_framework.http
-def release_automation_trigger(request):
-    """HTTP Cloud Function for release automation.
-
-    Args:
-        request: The request object
-
-    Returns:
-        Response string
-    """
-    try:
-        # Import the main module
-        from main import run_release_automation
-
-        # Get date from request or use today
-        request_json = request.get_json(silent=True)
-        if request_json and 'date' in request_json:
-            release_date = request_json['date']
-        else:
-            release_date = None  # Will use today's date
-
-        # Run the automation
-        result = run_release_automation(release_date)
-
-        return {
-            "status": "success",
-            "message": "Release automation completed",
-            "result": result
-        }, 200
-
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e)
-        }, 500
-
-
-# For scheduled triggers via Cloud Scheduler
-@functions_framework.cloud_event
-def release_automation_scheduled(cloud_event):
-    """Cloud Event Function for scheduled release automation."""
-    try:
-        from main import run_release_automation
-        result = run_release_automation()
-        print(f"Scheduled automation completed: {result}")
-
-    except Exception as e:
-        print(f"Scheduled automation failed: {e}")
-        raise
-'''
-
-    @staticmethod
-    def generate_lambda_template():
-        """
-        Generate a template for AWS Lambda deployment.
-
-        Returns:
-            Python code string for Lambda function
-        """
-        return '''
-# lambda_function.py for AWS Lambda
 import json
-import os
+import time
+import logging
+import subprocess
 from datetime import datetime
+from typing import Optional
 
-# Set environment variables in Lambda configuration
-# JIRA_EMAIL, JIRA_TOKEN, SLACK_BOT_TOKEN, GOOGLE_DOC_ID, etc.
+import requests
+from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.triggers.cron import CronTrigger
+from dotenv import load_dotenv
 
-def lambda_handler(event, context):
-    """AWS Lambda handler for release automation.
+# Load environment variables
+load_dotenv()
+
+# Import configuration
+from scheduler_config import SchedulerConfig as Config
+
+# Ensure log directory exists
+Config.ensure_log_directory()
+
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, Config.LOG_LEVEL),
+    format=Config.LOG_FORMAT,
+    handlers=[
+        logging.FileHandler(Config.get_log_path()),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
+
+def send_slack_notification(message: str, is_error: bool = False) -> bool:
+    """
+    Send notification to Slack.
 
     Args:
-        event: Lambda event data
-        context: Lambda context
+        message: Message text to send
+        is_error: If True, format as error message
 
     Returns:
-        Response dictionary
+        True if sent successfully, False otherwise
     """
+    webhook_url = Config.SLACK_WEBHOOK_URL
+
+    if not webhook_url:
+        logger.warning("SLACK_WEBHOOK_URL not configured, skipping notification")
+        return False
+
     try:
-        # Import the main module
-        from main import run_release_automation
+        # Format message with emoji
+        if is_error:
+            formatted_message = f"❌ *Release Automation Failed*\n{message}"
+        else:
+            formatted_message = f"✅ *Release Automation Succeeded*\n{message}"
 
-        # Get date from event or use today
-        release_date = event.get('date') if event.get('date') != 'auto' else None
-
-        # Run the automation
-        result = run_release_automation(release_date)
-
-        return {
-            "statusCode": 200,
-            "body": json.dumps({
-                "status": "success",
-                "message": "Release automation completed",
-                "result": result
-            })
+        payload = {
+            "text": formatted_message,
+            "mrkdwn": True
         }
+
+        response = requests.post(
+            webhook_url,
+            json=payload,
+            timeout=10
+        )
+
+        if response.status_code == 200:
+            logger.info("Slack notification sent successfully")
+            return True
+        else:
+            logger.error(f"Slack notification failed: {response.status_code}")
+            return False
 
     except Exception as e:
-        return {
-            "statusCode": 500,
-            "body": json.dumps({
-                "status": "error",
-                "message": str(e)
-            })
+        logger.error(f"Error sending Slack notification: {str(e)}")
+        return False
+
+
+def update_metrics(success: bool, duration: float, error: str = None) -> None:
+    """
+    Update metrics file with run information.
+
+    Args:
+        success: Whether the run was successful
+        duration: Duration of the run in seconds
+        error: Error message if failed
+    """
+    metrics_path = Config.get_metrics_path()
+
+    try:
+        # Load existing metrics or create new
+        if os.path.exists(metrics_path):
+            with open(metrics_path, 'r') as f:
+                metrics = json.load(f)
+        else:
+            metrics = {
+                "total_runs": 0,
+                "successful_runs": 0,
+                "failed_runs": 0,
+                "runs": []
+            }
+
+        # Update metrics
+        metrics["total_runs"] += 1
+        if success:
+            metrics["successful_runs"] += 1
+        else:
+            metrics["failed_runs"] += 1
+
+        # Add run record (keep last 30 runs)
+        run_record = {
+            "timestamp": datetime.now().isoformat(),
+            "success": success,
+            "duration_seconds": round(duration, 2),
+            "error": error
         }
-'''
+        metrics["runs"].append(run_record)
+        metrics["runs"] = metrics["runs"][-30:]  # Keep last 30
+
+        # Save metrics
+        with open(metrics_path, 'w') as f:
+            json.dump(metrics, f, indent=2)
+
+        logger.info(f"Metrics updated: {metrics['successful_runs']}/{metrics['total_runs']} successful")
+
+    except Exception as e:
+        logger.error(f"Error updating metrics: {str(e)}")
 
 
-def create_deployment_files():
-    """Create deployment configuration files for cloud platforms."""
+def run_release_automation() -> bool:
+    """
+    Execute the release automation script with retry logic.
 
-    # Google Cloud Function requirements
-    cloud_function_requirements = """
-# requirements.txt for Google Cloud Function
-functions-framework==3.*
-requests>=2.28.0
-google-auth>=2.16.0
-google-auth-oauthlib>=1.0.0
-google-auth-httplib2>=0.1.0
-google-api-python-client>=2.80.0
-slack-sdk>=3.19.0
-python-dotenv>=1.0.0
-python-dateutil>=2.8.2
-"""
+    Returns:
+        True if successful, False otherwise
+    """
+    logger.info("=" * 60)
+    logger.info("Starting scheduled release automation")
+    logger.info(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("=" * 60)
 
-    # Dockerfile for containerized deployment
-    dockerfile = """
-# Dockerfile for Release Automation PoC
-FROM python:3.9-slim
+    start_time = time.time()
+    last_error = None
 
-WORKDIR /app
+    for attempt in range(1, Config.MAX_RETRIES + 1):
+        try:
+            logger.info(f"Attempt {attempt}/{Config.MAX_RETRIES}")
 
-# Copy requirements first for better caching
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+            # Run the main.py script
+            result = subprocess.run(
+                Config.COMMAND,
+                capture_output=True,
+                text=True,
+                timeout=Config.EXECUTION_TIMEOUT,
+                cwd=os.path.dirname(os.path.abspath(__file__))
+            )
 
-# Copy application code
-COPY *.py .
+            duration = time.time() - start_time
 
-# Set environment variables (override at runtime)
-ENV SCHEDULE_TIME=12:00
+            if result.returncode == 0:
+                # Success
+                logger.info("Release automation completed successfully")
+                logger.info(f"Duration: {duration:.2f} seconds")
 
-# Run the scheduler
-CMD ["python", "scheduler.py", "--start"]
-"""
+                # Log output summary
+                output_lines = result.stdout.strip().split('\n')
+                if output_lines:
+                    logger.info("Output summary:")
+                    for line in output_lines[-10:]:  # Last 10 lines
+                        logger.info(f"  {line}")
 
-    # docker-compose for local development
-    docker_compose = """
-# docker-compose.yml for local development
-version: '3.8'
+                # Update metrics
+                update_metrics(success=True, duration=duration)
 
-services:
-  release-automation:
-    build: .
-    environment:
-      - JIRA_EMAIL=${JIRA_EMAIL}
-      - JIRA_TOKEN=${JIRA_TOKEN}
-      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
-      - SLACK_DM_CHANNEL=${SLACK_DM_CHANNEL}
-      - GOOGLE_DOC_ID=${GOOGLE_DOC_ID}
-      - SCHEDULE_TIME=${SCHEDULE_TIME:-12:00}
-    volumes:
-      - ./credentials.json:/app/credentials.json:ro
-      - ./token.pickle:/app/token.pickle
-    restart: unless-stopped
-"""
+                # Send success notification
+                send_slack_notification(
+                    f"Completed at {datetime.now().strftime('%I:%M %p')}\n"
+                    f"Duration: {duration:.1f} seconds"
+                )
 
-    print("Cloud deployment templates generated")
-    return {
-        "cloud_function_requirements": cloud_function_requirements,
-        "dockerfile": dockerfile,
-        "docker_compose": docker_compose
-    }
+                return True
+
+            else:
+                # Failed
+                last_error = result.stderr or result.stdout or "Unknown error"
+                logger.error(f"Attempt {attempt} failed: {last_error[:500]}")
+
+                if attempt < Config.MAX_RETRIES:
+                    logger.info(f"Retrying in {Config.RETRY_DELAY_SECONDS} seconds...")
+                    time.sleep(Config.RETRY_DELAY_SECONDS)
+
+        except subprocess.TimeoutExpired:
+            last_error = f"Execution timed out after {Config.EXECUTION_TIMEOUT} seconds"
+            logger.error(last_error)
+
+            if attempt < Config.MAX_RETRIES:
+                logger.info(f"Retrying in {Config.RETRY_DELAY_SECONDS} seconds...")
+                time.sleep(Config.RETRY_DELAY_SECONDS)
+
+        except Exception as e:
+            last_error = str(e)
+            logger.error(f"Unexpected error: {last_error}")
+
+            if attempt < Config.MAX_RETRIES:
+                logger.info(f"Retrying in {Config.RETRY_DELAY_SECONDS} seconds...")
+                time.sleep(Config.RETRY_DELAY_SECONDS)
+
+    # All retries exhausted
+    duration = time.time() - start_time
+    logger.error(f"All {Config.MAX_RETRIES} attempts failed")
+
+    # Update metrics
+    update_metrics(success=False, duration=duration, error=last_error[:200] if last_error else None)
+
+    # Send failure notification
+    send_slack_notification(
+        f"Failed after {Config.MAX_RETRIES} attempts\n"
+        f"Error: {last_error[:200] if last_error else 'Unknown'}",
+        is_error=True
+    )
+
+    return False
+
+
+def run_immediately() -> None:
+    """Run the automation immediately (for testing)."""
+    logger.info("Running automation immediately (manual trigger)")
+    run_release_automation()
 
 
 def main():
-    """Test the scheduler or run in different modes."""
-    import argparse
+    """Main entry point for the scheduler."""
+    print("""
+╔═══════════════════════════════════════════════════════════════════╗
+║           RELEASE AUTOMATION SCHEDULER - DeepIntent               ║
+║                                                                   ║
+║   Automated daily release notes at 12:00 PM IST                   ║
+╚═══════════════════════════════════════════════════════════════════╝
+    """)
 
-    parser = argparse.ArgumentParser(description='Release Automation Scheduler')
-    parser.add_argument('--start', action='store_true', help='Start the scheduler loop')
-    parser.add_argument('--run-once', action='store_true', help='Run the job once immediately')
-    parser.add_argument('--time', type=str, default='12:00', help='Schedule time (HH:MM)')
-    parser.add_argument('--generate-templates', action='store_true',
-                       help='Generate cloud deployment templates')
+    # Print configuration
+    Config.print_config()
 
-    args = parser.parse_args()
+    # Check for command line arguments
+    if len(sys.argv) > 1:
+        if sys.argv[1] == '--run-now':
+            # Run immediately for testing
+            run_immediately()
+            return
+        elif sys.argv[1] == '--test':
+            # Test mode: run in 10 seconds
+            logger.info("Test mode: Running in 10 seconds...")
+            time.sleep(10)
+            run_immediately()
+            return
+        elif sys.argv[1] == '--help':
+            print("""
+Usage:
+    python scheduler.py              Start scheduler (runs at 12:00 PM IST daily)
+    python scheduler.py --run-now    Run automation immediately
+    python scheduler.py --test       Run automation after 10 second delay
+    python scheduler.py --help       Show this help message
 
-    if args.generate_templates:
-        templates = create_deployment_files()
-        for name, content in templates.items():
-            print(f"\n=== {name} ===")
-            print(content)
-        return
+Background mode:
+    nohup python scheduler.py > scheduler.log 2>&1 &
 
-    # Import main function
+Check if running:
+    ps aux | grep scheduler.py
+
+Stop:
+    pkill -f scheduler.py
+
+View logs:
+    tail -f logs/release_automation.log
+            """)
+            return
+
+    # Create scheduler
+    scheduler = BlockingScheduler()
+
+    # Add the daily job
+    trigger = CronTrigger(
+        hour=Config.SCHEDULE_HOUR,
+        minute=Config.SCHEDULE_MINUTE,
+        timezone=Config.TIMEZONE
+    )
+
+    scheduler.add_job(
+        run_release_automation,
+        trigger=trigger,
+        id='release_automation',
+        name='Daily Release Automation',
+        replace_existing=True
+    )
+
+    # Log startup
+    logger.info("Scheduler started successfully")
+    logger.info(f"Next run: {scheduler.get_job('release_automation').next_run_time}")
+
+    print(f"\n[INFO] Scheduler is running...")
+    print(f"[INFO] Next execution: {scheduler.get_job('release_automation').next_run_time}")
+    print(f"[INFO] Press Ctrl+C to stop\n")
+
     try:
-        from main import run_release_automation
-        job_function = run_release_automation
-        print("[Scheduler] Loaded job function from main.py")
-    except ImportError:
-        def job_function():
-            print("[Scheduler] Demo job running...")
-            print("[Scheduler] (main.py not available, using demo function)")
-        print("[Scheduler] Using demo job function")
-
-    scheduler = ReleaseScheduler(job_function)
-
-    if args.run_once:
-        scheduler.run_once()
-    elif args.start:
-        scheduler.schedule_daily(args.time)
+        # Start the scheduler
         scheduler.start()
-    else:
-        print("[Scheduler] Use --start to begin scheduling or --run-once for immediate execution")
-        print(f"[Scheduler] Configured time: {args.time}")
 
-        # Show cloud configs
-        print("\n[Scheduler] Cloud Scheduler Config:")
-        print(scheduler.get_cloud_scheduler_config())
+    except KeyboardInterrupt:
+        logger.info("Scheduler stopped by user (Ctrl+C)")
+        print("\n[INFO] Scheduler stopped.")
+
+    except Exception as e:
+        logger.error(f"Scheduler error: {str(e)}")
+        raise
 
 
 if __name__ == "__main__":

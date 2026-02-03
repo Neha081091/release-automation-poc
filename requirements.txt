@@ -23,3 +23,7 @@ python-dateutil>=2.8.2
 
 # Scheduling (for local development)
 schedule>=1.1.0
+
+# Advanced Scheduling (APScheduler for production)
+apscheduler>=3.10.0
+pytz>=2023.3
