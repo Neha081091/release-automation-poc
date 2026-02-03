@@ -351,14 +351,27 @@ def create_formatted_requests(release_date: str, grouped_data: Dict,
     requests = []
     current_index = 1
 
-    # Define product line order
-    product_line_order = [
-        "DSP", "DSP PL1", "DSP PL2", "DSP PL3",
-        "Audiences", "Audiences PL1",
-        "Media", "Media PL1",
-        "Helix", "Helix PL3",
-        "Developer Experience", "Data Governance", "Other"
+    # Define product line order (includes DSP Core PL variants)
+    # PLs not in this list will be added at the end
+    preferred_order = [
+        "DSP Core PL1", "DSP Core PL2", "DSP Core PL3", "DSP Core PL5",
+        "DSP PL1", "DSP PL2", "DSP PL3", "DSP",
+        "Audiences PL1", "Audiences PL2", "Audiences",
+        "Media PL1", "Media",
+        "Helix PL3", "Helix",
+        "Developer Experience", "Developer Experience 2026",
+        "Data Governance", "Other"
     ]
+
+    # Build actual order: preferred first, then any others
+    product_line_order = []
+    for pl in preferred_order:
+        if pl in grouped_data:
+            product_line_order.append(pl)
+    # Add any PLs not in preferred order
+    for pl in grouped_data.keys():
+        if pl not in product_line_order:
+            product_line_order.append(pl)
 
     # Title
     title = f"Daily Deployment Summary: {release_date}\n\n"

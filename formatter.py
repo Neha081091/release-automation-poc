@@ -42,22 +42,65 @@ PRODUCT_LINE_MAPPING = {
     "Other": "Other"
 }
 
-# Order for displaying product lines
+# Order for displaying product lines (dynamic - will be populated from fix versions)
+# These are fallback/common names; actual names come from fix versions
 PRODUCT_LINE_ORDER = [
-    "DSP",
+    "DSP Core PL1",
+    "DSP Core PL2",
+    "DSP Core PL3",
+    "DSP Core PL5",
     "DSP PL1",
     "DSP PL2",
     "DSP PL3",
-    "Audiences",
+    "DSP",
     "Audiences PL1",
-    "Media",
+    "Audiences PL2",
+    "Audiences",
     "Media PL1",
-    "Helix",
+    "Media",
     "Helix PL3",
+    "Helix",
     "Developer Experience",
+    "Developer Experience 2026",
     "Data Governance",
     "Other"
 ]
+
+
+def parse_pl_from_fix_version(fix_version: str) -> str:
+    """
+    Extract product line name from fix version string.
+
+    Examples:
+        "DSP Core PL3 2026: Release 4.0" -> "DSP Core PL3"
+        "DSP Core PL1: Release 3.0" -> "DSP Core PL1"
+        "Developer Experience: Release 6.0" -> "Developer Experience"
+        "Audiences PL2: Release 4.0" -> "Audiences PL2"
+
+    Args:
+        fix_version: Fix version string from Jira
+
+    Returns:
+        Product line name
+    """
+    if not fix_version:
+        return "Other"
+
+    # Try to match pattern with year: "DSP Core PL3 2026: Release 4.0"
+    match = re.match(r'^(.+?)\s*\d{4}:\s*Release', fix_version)
+    if match:
+        return match.group(1).strip()
+
+    # Try to match pattern without year: "Developer Experience: Release 6.0"
+    match = re.match(r'^(.+?):\s*Release', fix_version)
+    if match:
+        return match.group(1).strip()
+
+    # Fallback: return the fix version as-is (without release part)
+    if ":" in fix_version:
+        return fix_version.split(":")[0].strip()
+
+    return fix_version
 
 
 class ReleaseNotesFormatter:
@@ -140,31 +183,34 @@ class ReleaseNotesFormatter:
         """
         Determine the product line for a ticket.
 
+        Uses fix version as the primary source since that's the most accurate
+        indicator of which PL a ticket belongs to.
+
         Args:
             ticket: Ticket data
 
         Returns:
             Product line name
         """
-        # Check components first
+        # Primary: Use fix version (most accurate)
+        fix_version = ticket.get("fix_version", "")
+        if fix_version:
+            pl_name = parse_pl_from_fix_version(fix_version)
+            if pl_name and pl_name != "Other":
+                return pl_name
+
+        # Fallback: Check components
         components = ticket.get("components", [])
         for component in components:
             for key, value in PRODUCT_LINE_MAPPING.items():
                 if key.lower() in component.lower():
                     return value
 
-        # Check labels
+        # Fallback: Check labels
         labels = ticket.get("labels", [])
         for label in labels:
             for key, value in PRODUCT_LINE_MAPPING.items():
                 if key.lower() in label.lower():
-                    return value
-
-        # Check fix version for hints
-        fix_version = ticket.get("fix_version", "")
-        if fix_version:
-            for key, value in PRODUCT_LINE_MAPPING.items():
-                if key.lower() in fix_version.lower():
                     return value
 
         return "Other"
@@ -235,6 +281,19 @@ class ReleaseNotesFormatter:
 
         return bullets[:2]  # Limit additional bullets
 
+    def _get_ordered_pls(self) -> List[str]:
+        """Get product lines in preferred display order."""
+        # Build actual order: preferred first, then any others
+        ordered = []
+        for pl in PRODUCT_LINE_ORDER:
+            if pl in self.grouped_data:
+                ordered.append(pl)
+        # Add any PLs not in preferred order
+        for pl in self.grouped_data.keys():
+            if pl not in ordered:
+                ordered.append(pl)
+        return ordered
+
     def generate_tldr(self) -> Dict[str, Any]:
         """
         Generate TL;DR summary for the release notes with Key Deployments per PL.
@@ -245,7 +304,7 @@ class ReleaseNotesFormatter:
         # Get list of deployed product lines with their key deployments
         key_deployments = []
 
-        for pl in PRODUCT_LINE_ORDER:
+        for pl in self._get_ordered_pls():
             if pl not in self.grouped_data:
                 continue
 
@@ -403,10 +462,7 @@ class ReleaseNotesFormatter:
         current_index += 1
 
         # Process each product line in order
-        for pl in PRODUCT_LINE_ORDER:
-            if pl not in self.grouped_data:
-                continue
-
+        for pl in self._get_ordered_pls():
             epics = self.grouped_data[pl]
 
             # Product line header with separator
@@ -653,10 +709,7 @@ class ReleaseNotesFormatter:
         lines.append("")
 
         # Process each product line
-        for pl in PRODUCT_LINE_ORDER:
-            if pl not in self.grouped_data:
-                continue
-
+        for pl in self._get_ordered_pls():
             epics = self.grouped_data[pl]
             lines.append(f"------------------{pl}------------------")
             lines.append("")
