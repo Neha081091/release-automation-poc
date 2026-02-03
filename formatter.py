@@ -310,23 +310,26 @@ class ReleaseNotesFormatter:
 
             epics = self.grouped_data[pl]
 
-            # Collect summaries for this PL
+            # Collect ALL summaries for this PL (cleaned)
             pl_summaries = []
             for epic_name, items in epics.items():
                 for item in items:
                     ticket = item["ticket"]
                     summary = ticket.get("summary", "")
                     if summary:
-                        pl_summaries.append(summary)
+                        # Clean the summary
+                        cleaned = self._clean_text(summary)
+                        if cleaned and cleaned not in pl_summaries:
+                            pl_summaries.append(cleaned)
 
             # Get fix version for this PL
             first_ticket = list(epics.values())[0][0]["ticket"]
             fix_version = first_ticket.get("fix_version", "")
 
-            # Create deployment entry
+            # Create deployment entry with ALL summaries
             if pl_summaries:
-                # Use first 2-3 key summaries
-                deployment_text = "; ".join(pl_summaries[:2])
+                # Join all summaries with "; " for comprehensive TL;DR
+                deployment_text = "; ".join(pl_summaries)
                 if fix_version:
                     key_deployments.append({
                         "pl": pl,
