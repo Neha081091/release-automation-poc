@@ -294,96 +294,26 @@ class ReleaseNotesFormatter:
                 ordered.append(pl)
         return ordered
 
-    def _categorize_summary(self, summary: str) -> str:
-        """
-        Categorize a summary based on keywords to help group related items.
-
-        Returns category like: 'ui', 'security', 'data', 'integration', 'performance', 'feature', 'other'
-        """
-        summary_lower = summary.lower()
-
-        # UI/UX related
-        if any(kw in summary_lower for kw in ['order', 'filter', 'select', 'page', 'ui', 'ux', 'listing', 'display', 'view', 'button', 'toggle', 'multi-select']):
-            return 'ui'
-        # Security related
-        if any(kw in summary_lower for kw in ['security', 'vulnerability', 'cve', 'patch', 'auth', 'permission', 'iam', 'role']):
-            return 'security'
-        # Data related
-        if any(kw in summary_lower for kw in ['data', 'database', 'clickhouse', 'migration', 'schema', 'pixel', 'audience']):
-            return 'data'
-        # Integration related
-        if any(kw in summary_lower for kw in ['integration', 'saarthi', 'api', 'service', 'repo', 'repository']):
-            return 'integration'
-        # Forecasting related
-        if any(kw in summary_lower for kw in ['forecast', 'prediction', 'channel', 'device', 'inventory']):
-            return 'forecasting'
-        # Performance/Infrastructure
-        if any(kw in summary_lower for kw in ['performance', 'speed', 'cache', 'optimize', 'infrastructure']):
-            return 'performance'
-        # Feature flags/releases
-        if any(kw in summary_lower for kw in ['flag', 'feature flag', 'launch', 'darkly', 'remove flag']):
-            return 'feature_flag'
-
-        return 'feature'
-
     def _format_summaries_as_prose(self, summaries: List[str]) -> str:
         """
-        Format a list of summaries into flowing prose grouped by category.
+        Format a list of summaries into flowing prose.
 
-        Groups related items and uses descriptive connectors.
+        Simply joins all summaries with semicolons for a clean, flowing narrative.
+        No category prefixes - just the raw summaries connected naturally.
         """
         if not summaries:
             return ""
 
-        # Categorize all summaries
-        categorized = {}
+        # Clean summaries and join with semicolons
+        cleaned = []
         for summary in summaries:
-            category = self._categorize_summary(summary)
-            if category not in categorized:
-                categorized[category] = []
-            categorized[category].append(summary)
+            # Remove trailing periods and clean up
+            s = summary.rstrip('.').strip()
+            if s:
+                cleaned.append(s)
 
-        # Build flowing prose sections
-        prose_sections = []
-
-        # Order categories for better flow
-        category_order = ['ui', 'feature', 'forecasting', 'data', 'integration', 'feature_flag', 'security', 'performance', 'other']
-        category_prefixes = {
-            'ui': 'usability improvements with',
-            'security': 'security enhancements including',
-            'data': 'data capabilities with',
-            'integration': 'integration updates including',
-            'forecasting': 'forecasting enhancements with',
-            'performance': 'performance improvements including',
-            'feature_flag': 'feature management with',
-            'feature': '',
-            'other': ''
-        }
-
-        for category in category_order:
-            if category not in categorized:
-                continue
-
-            items = categorized[category]
-            prefix = category_prefixes.get(category, '')
-
-            # Clean and join items with commas
-            cleaned_items = []
-            for item in items:
-                # Convert to lowercase first letter, remove trailing periods
-                cleaned = item.rstrip('.')
-                if cleaned:
-                    cleaned_items.append(cleaned)
-
-            if cleaned_items:
-                if prefix:
-                    section = f"{prefix} {', '.join(cleaned_items)}"
-                else:
-                    section = ', '.join(cleaned_items)
-                prose_sections.append(section)
-
-        # Join sections with semicolons
-        return '; '.join(prose_sections)
+        # Join all summaries with semicolons
+        return '; '.join(cleaned)
 
     def generate_tldr(self) -> Dict[str, Any]:
         """
