@@ -6,19 +6,22 @@ This script reads the processed notes from Claude API and updates
 Google Docs and Slack with the polished release notes.
 
 Usage:
-    python hybrid_step3_update_docs.py
+    python hybrid_step3_update_docs.py              # Full update with approval workflow
+    python hybrid_step3_update_docs.py --no-slack   # Update docs only, no Slack
+    python hybrid_step3_update_docs.py --approval   # Send only approval message
 
 Input:
     processed_notes.json
 
 Output:
     - Google Docs updated
-    - Slack notification sent
+    - Slack approval message sent (with interactive buttons)
 """
 
 import json
 import os
 import re
+import argparse
 from datetime import datetime
 from collections import defaultdict
 from dotenv import load_dotenv
@@ -27,6 +30,7 @@ load_dotenv()
 
 from google_docs_handler import GoogleDocsHandler
 from slack_handler import SlackHandler
+from slack_approval_handler import SlackApprovalHandler
 
 # Color definitions (RGB values 0-1)
 BLUE_COLOR = {"red": 0.06, "green": 0.36, "blue": 0.7}  # Link blue
@@ -320,7 +324,7 @@ def update_google_docs(processed_data: dict) -> bool:
 
 
 def send_slack_notification(processed_data: dict) -> bool:
-    """Send Slack notification with processed notes."""
+    """Send Slack notification with processed notes (legacy simple notification)."""
     print("\n[Step 3b] Sending Slack notification...")
 
     try:
@@ -365,8 +369,59 @@ def send_slack_notification(processed_data: dict) -> bool:
         return False
 
 
+def send_slack_approval_message(processed_data: dict) -> bool:
+    """
+    Send Slack approval message with interactive buttons per PL.
+
+    This creates a message with Approve/Reject/Tomorrow buttons for each
+    product line, allowing PMOs to review and approve releases interactively.
+
+    Args:
+        processed_data: Processed release notes dictionary
+
+    Returns:
+        True if message was sent successfully
+    """
+    print("\n[Step 3b] Sending Slack approval message with interactive buttons...")
+
+    try:
+        # Check if bot token is available (required for interactive messages)
+        bot_token = os.getenv('SLACK_BOT_TOKEN')
+        if not bot_token:
+            print("[Step 3b] WARNING: SLACK_BOT_TOKEN not set, falling back to simple notification")
+            return send_slack_notification(processed_data)
+
+        approval_handler = SlackApprovalHandler()
+
+        # Post the approval message
+        result = approval_handler.post_approval_message(processed_data)
+
+        if result:
+            print(f"[Step 3b] ✅ Approval message sent (ts: {result.get('ts')})")
+            print(f"[Step 3b] Channel: {result.get('channel')}")
+            print("[Step 3b] Interactive buttons are now active - waiting for PMO review")
+            return True
+        else:
+            print("[Step 3b] ❌ Failed to send approval message")
+            return False
+
+    except Exception as e:
+        print(f"[Step 3b] ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        # Fall back to simple notification
+        print("[Step 3b] Falling back to simple notification...")
+        return send_slack_notification(processed_data)
+
+
 def main():
     """Update Google Docs and Slack with processed notes."""
+    parser = argparse.ArgumentParser(description='Update Google Docs & Slack with release notes')
+    parser.add_argument('--no-slack', action='store_true', help='Skip Slack notification')
+    parser.add_argument('--approval', action='store_true', help='Send only Slack approval message')
+    parser.add_argument('--simple-slack', action='store_true', help='Use simple Slack notification (no buttons)')
+    args = parser.parse_args()
+
     print("=" * 60)
     print("  HYBRID STEP 3: Update Google Docs & Slack")
     print("=" * 60)
@@ -384,18 +439,44 @@ def main():
     print(f"[Step 3] Loaded processed notes from {input_file}")
     print(f"[Step 3] Product lines: {len(processed_data.get('product_lines', []))}")
 
+    docs_success = True
+    slack_success = True
+
+    # If only sending approval message
+    if args.approval:
+        slack_success = send_slack_approval_message(processed_data)
+        print("\n" + "=" * 60)
+        print("  APPROVAL MESSAGE SENT")
+        print("=" * 60)
+        print(f"  Slack Approval: {'✅ SUCCESS' if slack_success else '❌ FAILED'}")
+        print("=" * 60)
+        return
+
     # Update Google Docs
     docs_success = update_google_docs(processed_data)
 
-    # Send Slack notification
-    slack_success = send_slack_notification(processed_data)
+    # Send Slack notification (unless skipped)
+    if not args.no_slack:
+        if args.simple_slack:
+            # Use legacy simple notification
+            slack_success = send_slack_notification(processed_data)
+        else:
+            # Use new approval workflow with interactive buttons
+            slack_success = send_slack_approval_message(processed_data)
+    else:
+        print("\n[Step 3b] Skipping Slack notification (--no-slack)")
 
     # Summary
     print("\n" + "=" * 60)
     print("  HYBRID WORKFLOW COMPLETE")
     print("=" * 60)
     print(f"  Google Docs: {'✅ SUCCESS' if docs_success else '❌ FAILED'}")
-    print(f"  Slack:       {'✅ SUCCESS' if slack_success else '❌ FAILED'}")
+    if not args.no_slack:
+        print(f"  Slack:       {'✅ SUCCESS' if slack_success else '❌ FAILED'}")
+        if slack_success and not args.simple_slack:
+            print("\n  Approval workflow active!")
+            print("  PMOs can now approve/reject/defer each PL via Slack buttons.")
+            print("  Once all PLs reviewed, 'Good to Announce' will post to release channel.")
     print("=" * 60)
 
 
