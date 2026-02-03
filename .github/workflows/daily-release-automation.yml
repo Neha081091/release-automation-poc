@@ -1,0 +1,86 @@
+name: Daily Release Automation
+
+# Run daily at 12:00 PM IST (6:30 AM UTC)
+on:
+  schedule:
+    - cron: '30 6 * * *'  # 6:30 AM UTC = 12:00 PM IST
+
+  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      skip_approval:
+        description: 'Skip approval workflow'
+        required: false
+        default: 'true'
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  release-automation:
+    name: Run Release Automation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create service account file
+        run: |
+          echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > service_account.json
+
+      - name: Run Release Automation
+        id: automation
+        env:
+          # Jira Configuration
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+          RELEASE_TICKET_SUMMARY: ${{ secrets.RELEASE_TICKET_SUMMARY }}
+
+          # Google Docs Configuration
+          GOOGLE_DOC_ID: ${{ secrets.GOOGLE_DOC_ID }}
+          GOOGLE_SERVICE_ACCOUNT_PATH: service_account.json
+
+          # Slack Configuration
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+          # Anthropic API (for LLM consolidation)
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          echo "Starting Release Automation at $(date)"
+          python main.py --skip-approval
+          echo "Release Automation completed at $(date)"
+
+      - name: Notify Slack on Success
+        if: success()
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text":"✅ *Release Automation Succeeded*\nCompleted at '"$(date)"'\nWorkflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify Slack on Failure
+        if: failure()
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text":"❌ *Release Automation Failed*\nFailed at '"$(date)"'\nWorkflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Clean up
+        if: always()
+        run: |
+          rm -f service_account.json
