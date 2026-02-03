@@ -1,100 +1,119 @@
 {
-  "processed_at": "2026-02-03T18:03:39.004884",
+  "processed_at": "2026-02-03T18:22:28.572585",
   "source_file": "tickets_export.json",
   "release_summary": "Release 2nd February 2026",
   "ticket_count": 25,
   "product_lines": [
-    "DSP Core PL1",
-    "Audiences PL2",
+    "Developer Experience 2026",
     "DSP Core PL3",
+    "DSP Core PL1",
     "DSP Core PL5",
-    "Developer Experience"
+    "Audiences PL2"
   ],
   "release_versions": {
-    "DSP Core PL1": "Release 2",
-    "Audiences PL2": "Release 2",
-    "DSP Core PL3": "Release 2",
-    "DSP Core PL5": "Release 2",
-    "Developer Experience": "Release 2"
+    "Developer Experience 2026": "Release 6.0",
+    "DSP Core PL3": "Release 4.0",
+    "DSP Core PL1": "Release 3.0",
+    "DSP Core PL5": "Release 6.0",
+    "Audiences PL2": "Release 4.0"
   },
-  "tldr_by_pl": {
-    "DSP Core PL1": "Core bidding engine gains real-time optimization and improved budget pacing algorithms; new targeting capabilities include contextual targeting and cross-channel frequency capping; dashboard performance increases 40% for faster campaign monitoring.",
-    "Audiences PL2": "Audience targeting enhancements with HCP segment builder featuring NPI targeting and specialty physician filters for cardiology campaigns; patient journey mapping capabilities for oncology audiences with enhanced overlap analysis using Venn diagrams; bulk audience upload functionality via CSV with validation streamlines campaign setup workflows.",
-    "DSP Core PL3": "Attribution capabilities expand with cross-device graph matching and multi-touch model configuration; reporting dashboard enhances with custom date ranges, automated scheduling, and resolved export timeouts for large campaigns.",
-    "DSP Core PL5": "Core platform adds real-time inventory forecasting and programmatic guaranteed deals for CTV publishers; targeting enhancements include household demographics for OTT campaigns and creative preview capabilities; infrastructure upgrades support VAST 4.2 ad serving standard.",
-    "Developer Experience": "New REST and GraphQL APIs enable comprehensive campaign and audience management capabilities; enhanced API reliability through improved rate limiting and webhook notifications for real-time status updates."
+  "fix_version_urls": {
+    "Developer Experience 2026": "https://deepintent.atlassian.net/projects/DI/versions/17725/tab/release-report-all-issues",
+    "DSP Core PL3": "https://deepintent.atlassian.net/projects/DI/versions/17726/tab/release-report-all-issues",
+    "DSP Core PL1": "https://deepintent.atlassian.net/projects/DI/versions/16665/tab/release-report-all-issues",
+    "DSP Core PL5": "https://deepintent.atlassian.net/projects/DI/versions/17766/tab/release-report-all-issues",
+    "Audiences PL2": "https://deepintent.atlassian.net/projects/DI/versions/17649/tab/release-report-all-issues"
   },
-  "body_by_pl": {
-    "DSP Core PL1": "Bidding Engine Improvements\n\nValue Add:\n\u2022 Real-time bidding optimization automatically adjusts campaign strategies to maximize performance and ROI across all active campaigns.\n\u2022 Frequency capping prevents ad oversaturation by controlling impression limits across all channels, improving user experience and campaign effectiveness.\n\nGeneral Availability\n\nTargeting Enhancements\n\nValue Add:\n\u2022 Contextual targeting capabilities enable more precise audience reach by analyzing page content and environment for better ad placement relevance.\n\nFeature Flag\n\nPerformance Optimization\n\nValue Add:\n\u2022 Campaign dashboard performance improvements deliver 40% faster load times, enabling quicker decision-making and enhanced user productivity.\n\nGeneral Availability\n\nBudget Management\n\nValue Add:\n\u2022 Enhanced budget pacing algorithm ensures optimal spend distribution during weekend traffic patterns, preventing budget waste and improving campaign consistency.\n\nGeneral Availability",
-    "Audiences PL2": "HCP Targeting\n\nValue Add:\n\u2022 Build highly targeted healthcare professional audiences using NPI-based physician identification and specialty filters for cardiology campaigns.\n\u2022 Map patient journeys specifically for oncology audiences to optimize treatment pathway engagement strategies.\n\u2022 Create precise physician segments that align with therapeutic area campaigns and regulatory requirements.\n\nGeneral Availability\n\nAudience Analytics\n\nValue Add:\n\u2022 Visualize audience overlap relationships through interactive Venn diagrams to identify segment redundancies and optimize targeting efficiency.\n\u2022 Make data-driven decisions about audience consolidation and campaign reach expansion based on clear overlap insights.\n\nGeneral Availability\n\nAudience Management\n\nValue Add:\n\u2022 Upload thousands of audience records simultaneously via CSV files with built-in validation to ensure data quality and reduce manual entry time.\n\u2022 Scale audience creation processes while maintaining data integrity through automated validation checks.\n\nGeneral Availability",
-    "DSP Core PL3": "DSP Core PL3 Release 2\n\nAttribution & Measurement\n\nValue Add:\n\u2022 Cross-device graph matching now connects user interactions across multiple devices to provide complete campaign attribution visibility.\n\u2022 Multi-touch attribution model configuration enables customizable credit assignment across touchpoints to optimize campaign performance.\n\nGeneral Availability\n\nReporting Enhancements\n\nValue Add:\n\u2022 Custom date range selection in reporting dashboards delivers flexible analysis periods tailored to specific campaign timeframes.\n\u2022 Automated report scheduling with email delivery streamlines routine reporting workflows and ensures stakeholders receive timely updates.\n\u2022 Resolved data export timeouts for large campaign reports to enable comprehensive dataset analysis without interruption.\n\nGeneral Availability",
-    "DSP Core PL5": "DSP Core PL5 Release 2\n\nCTV Enhancements\n\nValue Add:\n\u2022 Real-time inventory forecasting enables advertisers to optimize CTV campaign planning and budget allocation with accurate availability predictions.\n\u2022 Programmatic guaranteed deals provide CTV publishers with premium inventory monetization while offering advertisers brand-safe, guaranteed placements.\n\u2022 Creative preview functionality reduces campaign setup time and creative errors by allowing real-time visualization of CTV ad formats before launch.\n\nGeneral Availability\n\nOTT Improvements\n\nValue Add:\n\u2022 Enhanced household demographic targeting delivers more precise audience reach for OTT campaigns, improving campaign performance and reducing media waste.\n\nGeneral Availability\n\nAd Serving\n\nValue Add:\n\u2022 VAST 4.2 standard support ensures compatibility with the latest video advertising ecosystem and enables access to advanced ad serving features.\n\nGeneral Availability",
-    "Developer Experience": "API Enhancements\n\nValue Add:\n\u2022 Developers can now manage campaigns programmatically through new REST API endpoints, reducing manual workflow overhead.\n\u2022 GraphQL API enables more efficient audience data queries with precise field selection and reduced bandwidth usage.\n\u2022 Enhanced rate limiting ensures consistent API performance and reliability during high-traffic periods.\n\nGeneral Availability\n\nDocumentation\n\nValue Add:\n\u2022 Updated SDK documentation with practical code examples accelerates developer onboarding and reduces implementation time.\n\nGeneral Availability\n\nIntegration Features\n\nValue Add:\n\u2022 Webhook support for campaign status changes enables real-time notifications and automated downstream processes.\n\nGeneral Availability"
-  },
-  "grouped_data": {
+  "epic_urls_by_pl": {
+    "Developer Experience 2026": {
+      "Saarthi Code Reviewer integration across major repositories": "https://deepintent.atlassian.net/browse/DI-87611",
+      "Mock Data Enablement for Apache Spark setup with local setup": "https://deepintent.atlassian.net/browse/DI-88192"
+    },
+    "DSP Core PL3": {
+      "Core Chat UI Shell (Cora Tab Only)": "https://deepintent.atlassian.net/browse/DI-86848"
+    },
     "DSP Core PL1": {
-      "Bidding Engine Improvements": [
-        "DI-1001",
-        "DI-1002"
-      ],
-      "Targeting Enhancements": [
-        "DI-1003"
-      ],
-      "Performance Optimization": [
-        "DI-1004"
-      ],
-      "Budget Management": [
-        "DI-1005"
-      ]
+      "DSP Core PL1 Maintenance Q1 2026": "https://deepintent.atlassian.net/browse/DI-81489",
+      "DSP Core PL1 Enhancements Q1 2026": "https://deepintent.atlassian.net/browse/DI-81496",
+      "DSP PL1 Enhancements Q4 2025": "https://deepintent.atlassian.net/browse/DI-63608",
+      "Forecasting in Ad Groups": "https://deepintent.atlassian.net/browse/DI-68155"
+    },
+    "DSP Core PL5": {
+      "Generic Data Ingestion Framework for Third-Party Verification Partners": "https://deepintent.atlassian.net/browse/DI-88619",
+      "DSP PL5 - General Enhancements 1Q26": "https://deepintent.atlassian.net/browse/DI-86333"
     },
     "Audiences PL2": {
-      "HCP Targeting": [
-        "DI-2001",
-        "DI-2002",
-        "DI-2003"
+      "Audiences PL2 - 2H 2025 Audience Improvements & Client Requests": "https://deepintent.atlassian.net/browse/DI-75222"
+    }
+  },
+  "tldr_by_pl": {
+    "Developer Experience 2026": "Major integration effort deploys Saarthi across 10 core repositories including data-jobs, developer UI, reporting services, and gateway components; production OpenWebUI instance integration and automated schema recreation scripts from DCR enhance developer workflow automation.",
+    "DSP Core PL3": "Development implements feature flagging infrastructure with anonymous LaunchDarkly client integration; Cortex Agent entry point functionality deployed behind feature flags for controlled rollout.",
+    "DSP Core PL1": "Order management enhancements include multi-select status filtering, persistent filter states, and improved selection handling; forecasting capabilities expand with channel, device, and inventory filters based on deal/exchange validation; critical security vulnerability addressed alongside pixel audience data integration in DCR Clickhouse.",
+    "DSP Core PL5": "implements updated Peer39 2026 rates across migration rules and rate structures; system now prevents activation of orders with seats separated from Boostr IO integration.",
+    "Audiences PL2": "Infrastructure improvements establish new IAM security roles for automated matching services to enhance system reliability and access control."
+  },
+  "body_by_pl": {
+    "Developer Experience 2026": "Saarthi Code Reviewer Integration Across Major Repositories\n\nValue Add:\n\u2022 Development teams now have automated code review capabilities integrated across all critical repositories including data-jobs, developer-ui, media-reporting, and gateway services.\n\u2022 Code quality and consistency improvements are standardized across the entire platform with production-ready OpenWebUI model integration.\n\u2022 Developer productivity increases through intelligent code suggestions and automated review feedback across ten key service repositories.\n\nGeneral Availability\n\nMock Data Enablement for Apache Spark Setup with Local Development\n\nValue Add:\n\u2022 Developers can now quickly set up local Apache Spark environments with realistic test data through automated helper scripts.\n\u2022 Local development cycles accelerate with seamless table schema recreation capabilities fetched directly from DCR systems.\n\nGeneral Availability",
+    "DSP Core PL3": "DSP Core PL3 Release 4.0\n\nCore Chat UI Shell (Cora Tab Only)\n\nValue Add:\n\u2022 Introduces secure anonymous client integration with LaunchDarkly for enhanced feature management capabilities.\n\u2022 Enables controlled rollout of Cortex Agent functionality through advanced feature flagging controls.\n\u2022 Establishes foundational chat interface architecture specifically optimized for Cora tab interactions.\n\nGeneral Availability",
+    "DSP Core PL1": "DSP Core PL1 Maintenance Q1 2026\n\nValue Add:\n\u2022 Enhanced system security through resolution of critical vulnerability in di-creative-service component.\n\u2022 Improved platform stability and compliance with enterprise security standards.\n\nGeneral Availability\n\nDSP Core PL1 Enhancements Q1 2026\n\nValue Add:\n\u2022 Streamlined user workflow by preserving Status column filter preferences when reopening Orders page.\n\u2022 Improved order management efficiency by automatically clearing selections when orders are archived.\n\u2022 Enhanced filtering capabilities with multi-select functionality for Status column on Order Listing page.\n\nGeneral Availability\n\nDSP PL1 Enhancements Q4 2025\n\nValue Add:\n\u2022 Simplified platform configuration through removal of legacy DSP PL1 Part 3 feature flags.\n\u2022 Reduced technical complexity and improved system maintainability.\n\nGeneral Availability\n\nForecasting in Ad Groups\n\nValue Add:\n\u2022 Advanced targeting precision with Channel, Device, Inventory, and Creative Unit Length filter validation based on Deal and Exchange configurations.\n\u2022 Enhanced audience insights through integration of one-time Pixel Audience Data in DCR Clickhouse infrastructure.\n\nFeature Flag",
+    "DSP Core PL5": "Generic Data Ingestion Framework for Third-Party Verification Partners\n\nValue Add:\n\u2022 Updated Peer39 integration now supports 2026 rate structures to ensure accurate brand safety scoring and content verification.\n\u2022 Migrated existing rules framework to leverage new Peer39 pricing models for improved cost efficiency and measurement accuracy.\n\nGeneral Availability\n\nDSP PL5 - General Enhancements 1Q26\n\nValue Add:\n\u2022 Enhanced order validation now prevents activation of advertising seats that are disconnected from Boostr IO integration.\n\u2022 Improved campaign setup workflow reduces configuration errors and ensures proper inventory management alignment.\n\nGeneral Availability",
+    "Audiences PL2": "Audiences PL2 - 2H 2025 Audience Improvements & Client Requests\n\nValue Add:\n\u2022 Enhanced security and operational efficiency through dedicated IAM infrastructure for automated audience matching processes.\n\u2022 Improved system reliability and access control for critical audience data processing workflows.\n\nGeneral Availability"
+  },
+  "grouped_data": {
+    "Developer Experience 2026": {
+      "Saarthi Code Reviewer integration across major repositories": [
+        "DI-89410",
+        "DI-89405",
+        "DI-89396",
+        "DI-89394",
+        "DI-89389",
+        "DI-89383",
+        "DI-89359",
+        "DI-89351",
+        "DI-89339",
+        "DI-88542",
+        "DI-87639"
       ],
-      "Audience Analytics": [
-        "DI-2004"
-      ],
-      "Audience Management": [
-        "DI-2005"
+      "Mock Data Enablement for Apache Spark setup with local setup": [
+        "DI-89015"
       ]
     },
     "DSP Core PL3": {
-      "Attribution & Measurement": [
-        "DI-3001",
-        "DI-3002"
+      "Core Chat UI Shell (Cora Tab Only)": [
+        "DI-89232",
+        "DI-88040"
+      ]
+    },
+    "DSP Core PL1": {
+      "DSP Core PL1 Maintenance Q1 2026": [
+        "DI-89225"
       ],
-      "Reporting Enhancements": [
-        "DI-3003",
-        "DI-3004",
-        "DI-3005"
+      "DSP Core PL1 Enhancements Q1 2026": [
+        "DI-87787",
+        "DI-87775",
+        "DI-87772"
+      ],
+      "DSP PL1 Enhancements Q4 2025": [
+        "DI-86778"
+      ],
+      "Forecasting in Ad Groups": [
+        "DI-86610",
+        "DI-85474"
       ]
     },
     "DSP Core PL5": {
-      "CTV Enhancements": [
-        "DI-5001",
-        "DI-5002",
-        "DI-5003"
+      "Generic Data Ingestion Framework for Third-Party Verification Partners": [
+        "DI-88405",
+        "DI-85875"
       ],
-      "OTT Improvements": [
-        "DI-5004"
-      ],
-      "Ad Serving": [
-        "DI-5005"
+      "DSP PL5 - General Enhancements 1Q26": [
+        "DI-87946"
       ]
     },
-    "Developer Experience": {
-      "API Enhancements": [
-        "DI-6001",
-        "DI-6002",
-        "DI-6005"
-      ],
-      "Documentation": [
-        "DI-6003"
-      ],
-      "Integration Features": [
-        "DI-6004"
+    "Audiences PL2": {
+      "Audiences PL2 - 2H 2025 Audience Improvements & Client Requests": [
+        "DI-86546"
       ]
     }
   }
