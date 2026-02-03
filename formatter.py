@@ -294,9 +294,102 @@ class ReleaseNotesFormatter:
                 ordered.append(pl)
         return ordered
 
+    def _categorize_summary(self, summary: str) -> str:
+        """
+        Categorize a summary based on keywords to help group related items.
+
+        Returns category like: 'ui', 'security', 'data', 'integration', 'performance', 'feature', 'other'
+        """
+        summary_lower = summary.lower()
+
+        # UI/UX related
+        if any(kw in summary_lower for kw in ['order', 'filter', 'select', 'page', 'ui', 'ux', 'listing', 'display', 'view', 'button', 'toggle', 'multi-select']):
+            return 'ui'
+        # Security related
+        if any(kw in summary_lower for kw in ['security', 'vulnerability', 'cve', 'patch', 'auth', 'permission', 'iam', 'role']):
+            return 'security'
+        # Data related
+        if any(kw in summary_lower for kw in ['data', 'database', 'clickhouse', 'migration', 'schema', 'pixel', 'audience']):
+            return 'data'
+        # Integration related
+        if any(kw in summary_lower for kw in ['integration', 'saarthi', 'api', 'service', 'repo', 'repository']):
+            return 'integration'
+        # Forecasting related
+        if any(kw in summary_lower for kw in ['forecast', 'prediction', 'channel', 'device', 'inventory']):
+            return 'forecasting'
+        # Performance/Infrastructure
+        if any(kw in summary_lower for kw in ['performance', 'speed', 'cache', 'optimize', 'infrastructure']):
+            return 'performance'
+        # Feature flags/releases
+        if any(kw in summary_lower for kw in ['flag', 'feature flag', 'launch', 'darkly', 'remove flag']):
+            return 'feature_flag'
+
+        return 'feature'
+
+    def _format_summaries_as_prose(self, summaries: List[str]) -> str:
+        """
+        Format a list of summaries into flowing prose grouped by category.
+
+        Groups related items and uses descriptive connectors.
+        """
+        if not summaries:
+            return ""
+
+        # Categorize all summaries
+        categorized = {}
+        for summary in summaries:
+            category = self._categorize_summary(summary)
+            if category not in categorized:
+                categorized[category] = []
+            categorized[category].append(summary)
+
+        # Build flowing prose sections
+        prose_sections = []
+
+        # Order categories for better flow
+        category_order = ['ui', 'feature', 'forecasting', 'data', 'integration', 'feature_flag', 'security', 'performance', 'other']
+        category_prefixes = {
+            'ui': 'usability improvements with',
+            'security': 'security enhancements including',
+            'data': 'data capabilities with',
+            'integration': 'integration updates including',
+            'forecasting': 'forecasting enhancements with',
+            'performance': 'performance improvements including',
+            'feature_flag': 'feature management with',
+            'feature': '',
+            'other': ''
+        }
+
+        for category in category_order:
+            if category not in categorized:
+                continue
+
+            items = categorized[category]
+            prefix = category_prefixes.get(category, '')
+
+            # Clean and join items with commas
+            cleaned_items = []
+            for item in items:
+                # Convert to lowercase first letter, remove trailing periods
+                cleaned = item.rstrip('.')
+                if cleaned:
+                    cleaned_items.append(cleaned)
+
+            if cleaned_items:
+                if prefix:
+                    section = f"{prefix} {', '.join(cleaned_items)}"
+                else:
+                    section = ', '.join(cleaned_items)
+                prose_sections.append(section)
+
+        # Join sections with semicolons
+        return '; '.join(prose_sections)
+
     def generate_tldr(self) -> Dict[str, Any]:
         """
         Generate TL;DR summary for the release notes with Key Deployments per PL.
+
+        Creates flowing prose summaries grouped by category with descriptive connectors.
 
         Returns:
             Dictionary with TL;DR components including key deployments by PL
@@ -326,10 +419,10 @@ class ReleaseNotesFormatter:
             first_ticket = list(epics.values())[0][0]["ticket"]
             fix_version = first_ticket.get("fix_version", "")
 
-            # Create deployment entry with ALL summaries
+            # Create deployment entry with formatted prose
             if pl_summaries:
-                # Join all summaries with "; " for comprehensive TL;DR
-                deployment_text = "; ".join(pl_summaries)
+                # Format summaries as flowing prose
+                deployment_text = self._format_summaries_as_prose(pl_summaries)
                 if fix_version:
                     key_deployments.append({
                         "pl": pl,
