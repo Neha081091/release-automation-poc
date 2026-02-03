@@ -674,7 +674,7 @@ def create_formatted_requests(release_date: str, grouped_data: Dict,
                     })
 
                     # Apply color based on release type
-                    # Feature Flag = blue, General Availability = green
+                    # Feature Flag = green, General Availability = green
                     if "feature flag" in release_type.lower():
                         requests.append({
                             "updateTextStyle": {
@@ -684,7 +684,7 @@ def create_formatted_requests(release_date: str, grouped_data: Dict,
                                 },
                                 "textStyle": {
                                     "foregroundColor": {
-                                        "color": {"rgbColor": {"red": 0.0, "green": 0.0, "blue": 1.0}}
+                                        "color": {"rgbColor": {"red": 0.13, "green": 0.55, "blue": 0.13}}
                                     }
                                 },
                                 "fields": "foregroundColor"
