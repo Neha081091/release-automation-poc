@@ -187,8 +187,9 @@ def process_tickets_with_claude():
                 print(f"  ❌ {pl} - error: {e}")
                 tldr_by_pl[pl] = "; ".join(summaries)
 
-    # Extract release versions per PL
+    # Extract release versions and URLs per PL
     release_versions = {}
+    fix_version_urls = {}
     for pl, epics in grouped.items():
         for epic_name, epic_tickets in epics.items():
             for t in epic_tickets:
@@ -197,11 +198,24 @@ def process_tickets_with_claude():
                 version_match = re.search(r'Release\s*([\d.]+)', fix_version)
                 if version_match:
                     release_versions[pl] = f"Release {version_match.group(1)}"
+                    # Get fix version URL if available
+                    if t.get("fix_version_url"):
+                        fix_version_urls[pl] = t["fix_version_url"]
                     break
             if pl in release_versions:
                 break
         if pl not in release_versions:
             release_versions[pl] = "Release 1.0"
+
+    # Collect epic URLs for each PL
+    epic_urls_by_pl = {}
+    for pl, epics in grouped.items():
+        epic_urls_by_pl[pl] = {}
+        for epic_name, epic_tickets in epics.items():
+            for t in epic_tickets:
+                if t.get("epic_url"):
+                    epic_urls_by_pl[pl][epic_name] = t["epic_url"]
+                    break
 
     # Process body sections for each PL
     print("\n[Step 2] Processing body sections...")
@@ -248,6 +262,8 @@ def process_tickets_with_claude():
         "ticket_count": len(tickets),
         "product_lines": list(grouped.keys()),
         "release_versions": release_versions,
+        "fix_version_urls": fix_version_urls,
+        "epic_urls_by_pl": epic_urls_by_pl,
         "tldr_by_pl": tldr_by_pl,
         "body_by_pl": body_by_pl,
         "grouped_data": {pl: {epic: [t["key"] for t in tickets] for epic, tickets in epics.items()} for pl, epics in grouped.items()}
