@@ -206,6 +206,10 @@ class GoogleSheetsApproval:
             # Format button columns
             self._format_button_columns(start_row, start_row + len(rows) - 1)
 
+            # Add full release notes below the approval table
+            notes_start_row = start_row + len(rows) + 2
+            self._add_full_release_notes(sheet, notes_start_row, release_notes, release_date)
+
             print(f"[Sheets] ✅ Added {len(rows)} PLs to sheet")
             print(f"[Sheets] URL: {self.get_sheet_url()}")
 
@@ -370,6 +374,111 @@ class GoogleSheetsApproval:
             ).execute()
         except HttpError as e:
             print(f"[Sheets] Batch update error: {e}")
+
+    def _add_full_release_notes(self, sheet, start_row: int, release_notes: Dict, release_date: str):
+        """
+        Add the full release notes below the approval table.
+
+        Args:
+            sheet: Sheets API service
+            start_row: Row to start writing notes
+            release_notes: Full release notes dict
+            release_date: Release date string
+        """
+        product_lines = release_notes.get("product_lines", [])
+        release_versions = release_notes.get("release_versions", {})
+        tldr_by_pl = release_notes.get("tldr_by_pl", {})
+        body_by_pl = release_notes.get("body_by_pl", {})
+
+        rows = []
+        current_row = start_row
+
+        # Title
+        rows.append([f"Daily Deployment Summary: {release_date}"])
+        rows.append([""])
+
+        # TL;DR Section
+        rows.append(["------------------TL;DR:------------------"])
+        rows.append([""])
+        rows.append(["Key Deployments:"])
+
+        for pl in product_lines:
+            tldr = tldr_by_pl.get(pl, "")
+            rows.append([f"• {pl} - {tldr}"])
+
+        rows.append([""])
+
+        # Group PLs by category
+        categories = {}
+        for pl in product_lines:
+            if "Developer" in pl:
+                cat = "Developer Experience"
+            elif "DSP" in pl:
+                cat = "DSP"
+            elif "Audience" in pl:
+                cat = "Audiences"
+            else:
+                cat = "Other"
+
+            if cat not in categories:
+                categories[cat] = []
+            categories[cat].append(pl)
+
+        # Add each category section
+        for category, pls in categories.items():
+            rows.append([f"------------------{category}------------------"])
+            rows.append([""])
+
+            for pl in pls:
+                version = release_versions.get(pl, "")
+                rows.append([f"{pl}: {version}"])
+                rows.append([""])
+
+                # Body content
+                body = body_by_pl.get(pl, "")
+                if body:
+                    # Split body into lines
+                    for line in body.split("\n"):
+                        rows.append([line])
+
+                rows.append([""])
+
+        # Write all rows to column A
+        if rows:
+            sheet.values().update(
+                spreadsheetId=self.sheet_id,
+                range=f'A{start_row}:A{start_row + len(rows) - 1}',
+                valueInputOption='RAW',
+                body={'values': rows}
+            ).execute()
+
+            # Format the notes section
+            self._format_release_notes_section(start_row, start_row + len(rows) - 1)
+
+    def _format_release_notes_section(self, start_row: int, end_row: int):
+        """Format the release notes section."""
+        requests = []
+
+        # Make the title row bold and larger
+        requests.append({
+            "repeatCell": {
+                "range": {
+                    "sheetId": 0,
+                    "startRowIndex": start_row - 1,
+                    "endRowIndex": start_row,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": 1
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "textFormat": {"bold": True, "fontSize": 14}
+                    }
+                },
+                "fields": "userEnteredFormat(textFormat)"
+            }
+        })
+
+        self._batch_update(requests)
 
     def get_approval_status(self) -> Dict:
         """Get current approval status from sheet."""
