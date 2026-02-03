@@ -1,0 +1,183 @@
+{
+  "exported_at": "2026-02-03T10:30:00.000000",
+  "release_summary": "Release 2nd February 2026",
+  "release_key": "DI-12345",
+  "ticket_count": 25,
+  "tickets": [
+    {
+      "key": "DI-1001",
+      "summary": "Add real-time bidding optimization for campaign performance",
+      "fix_version": "DSP Core PL1 2026: Release 2nd February",
+      "epic_name": "Bidding Engine Improvements",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-1002",
+      "summary": "Implement frequency capping across all channels",
+      "fix_version": "DSP Core PL1 2026: Release 2nd February",
+      "epic_name": "Bidding Engine Improvements",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-1003",
+      "summary": "Add support for contextual targeting in DSP campaigns",
+      "fix_version": "DSP Core PL1 2026: Release 2nd February",
+      "epic_name": "Targeting Enhancements",
+      "release_type": "Feature Flag"
+    },
+    {
+      "key": "DI-1004",
+      "summary": "Improve campaign dashboard load time by 40%",
+      "fix_version": "DSP Core PL1 2026: Release 2nd February",
+      "epic_name": "Performance Optimization",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-1005",
+      "summary": "Fix budget pacing algorithm for weekend traffic",
+      "fix_version": "DSP Core PL1 2026: Release 2nd February",
+      "epic_name": "Budget Management",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-2001",
+      "summary": "Add HCP audience segment builder with NPI targeting",
+      "fix_version": "Audiences PL2 2026: Release 2nd February",
+      "epic_name": "HCP Targeting",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-2002",
+      "summary": "Implement patient journey mapping for oncology audiences",
+      "fix_version": "Audiences PL2 2026: Release 2nd February",
+      "epic_name": "HCP Targeting",
+      "release_type": "Feature Flag"
+    },
+    {
+      "key": "DI-2003",
+      "summary": "Add specialty physician filters for cardiology campaigns",
+      "fix_version": "Audiences PL2 2026: Release 2nd February",
+      "epic_name": "HCP Targeting",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-2004",
+      "summary": "Enhance audience overlap analysis with Venn diagrams",
+      "fix_version": "Audiences PL2 2026: Release 2nd February",
+      "epic_name": "Audience Analytics",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-2005",
+      "summary": "Add bulk audience upload via CSV with validation",
+      "fix_version": "Audiences PL2 2026: Release 2nd February",
+      "epic_name": "Audience Management",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-3001",
+      "summary": "Implement cross-device graph matching for campaign attribution",
+      "fix_version": "DSP Core PL3 2026: Release 2nd February",
+      "epic_name": "Attribution & Measurement",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-3002",
+      "summary": "Add multi-touch attribution model configuration",
+      "fix_version": "DSP Core PL3 2026: Release 2nd February",
+      "epic_name": "Attribution & Measurement",
+      "release_type": "Feature Flag"
+    },
+    {
+      "key": "DI-3003",
+      "summary": "Enhance reporting dashboard with custom date ranges",
+      "fix_version": "DSP Core PL3 2026: Release 2nd February",
+      "epic_name": "Reporting Enhancements",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-3004",
+      "summary": "Add automated report scheduling with email delivery",
+      "fix_version": "DSP Core PL3 2026: Release 2nd February",
+      "epic_name": "Reporting Enhancements",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-3005",
+      "summary": "Fix data export timeout for large campaign reports",
+      "fix_version": "DSP Core PL3 2026: Release 2nd February",
+      "epic_name": "Reporting Enhancements",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-5001",
+      "summary": "Add real-time inventory forecasting for connected TV",
+      "fix_version": "DSP Core PL5 2026: Release 2nd February",
+      "epic_name": "CTV Enhancements",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-5002",
+      "summary": "Implement programmatic guaranteed deals for CTV publishers",
+      "fix_version": "DSP Core PL5 2026: Release 2nd February",
+      "epic_name": "CTV Enhancements",
+      "release_type": "Feature Flag"
+    },
+    {
+      "key": "DI-5003",
+      "summary": "Add creative preview for CTV ad formats",
+      "fix_version": "DSP Core PL5 2026: Release 2nd February",
+      "epic_name": "CTV Enhancements",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-5004",
+      "summary": "Enhance OTT campaign targeting with household demographics",
+      "fix_version": "DSP Core PL5 2026: Release 2nd February",
+      "epic_name": "OTT Improvements",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-5005",
+      "summary": "Add support for VAST 4.2 ad serving standard",
+      "fix_version": "DSP Core PL5 2026: Release 2nd February",
+      "epic_name": "Ad Serving",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-6001",
+      "summary": "Add new REST API endpoints for campaign management",
+      "fix_version": "Developer Experience 2026: Release 2nd February",
+      "epic_name": "API Enhancements",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-6002",
+      "summary": "Implement GraphQL API for audience queries",
+      "fix_version": "Developer Experience 2026: Release 2nd February",
+      "epic_name": "API Enhancements",
+      "release_type": "Feature Flag"
+    },
+    {
+      "key": "DI-6003",
+      "summary": "Update SDK documentation with code examples",
+      "fix_version": "Developer Experience 2026: Release 2nd February",
+      "epic_name": "Documentation",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-6004",
+      "summary": "Add webhook support for campaign status changes",
+      "fix_version": "Developer Experience 2026: Release 2nd February",
+      "epic_name": "Integration Features",
+      "release_type": "General Availability"
+    },
+    {
+      "key": "DI-6005",
+      "summary": "Implement rate limiting improvements for API reliability",
+      "fix_version": "Developer Experience 2026: Release 2nd February",
+      "epic_name": "API Enhancements",
+      "release_type": "General Availability"
+    }
+  ]
+}

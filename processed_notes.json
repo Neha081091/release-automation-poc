@@ -1,0 +1,94 @@
+{
+  "processed_at": "2026-02-03T17:40:12.218843",
+  "source_file": "tickets_export.json",
+  "release_summary": "Release 2nd February 2026",
+  "ticket_count": 25,
+  "product_lines": [
+    "DSP Core PL1",
+    "Audiences PL2",
+    "DSP Core PL3",
+    "DSP Core PL5",
+    "Developer Experience"
+  ],
+  "tldr_by_pl": {
+    "DSP Core PL1": "Enhanced campaign optimization through real-time bidding improvements and refined budget pacing algorithms for weekend traffic; expanded targeting capabilities with contextual targeting support and frequency capping across all channels; improved dashboard performance with 40% faster load times.",
+    "Audiences PL2": "Enhanced audience targeting capabilities with HCP segment builder featuring NPI targeting and specialty physician filters for cardiology campaigns; expanded analytics including patient journey mapping for oncology audiences and audience overlap analysis with Venn diagrams; streamlined data management through bulk audience upload via CSV with validation.",
+    "DSP Core PL3": "Enhanced campaign attribution capabilities with cross-device graph matching and configurable multi-touch attribution models; expanded reporting functionality featuring custom date ranges and automated email scheduling, including resolution of data export timeouts for large campaign datasets.",
+    "DSP Core PL5": "Enhanced connected TV advertising capabilities with real-time inventory forecasting and programmatic guaranteed deals for publishers; expanded OTT campaign targeting featuring household demographics; improved creative management including preview functionality for CTV ad formats and support for VAST 4.2 ad serving standards.",
+    "Developer Experience": "Enhanced API infrastructure with new REST endpoints for campaign management, GraphQL support for audience queries, and improved rate limiting for better reliability; expanded developer resources featuring updated SDK documentation with comprehensive code examples; and real-time integration capabilities through webhook support for campaign status notifications."
+  },
+  "body_by_pl": {
+    "DSP Core PL1": "__Bidding Engine Improvements__\n\nValue Add:\n\n* Real-time bidding optimization has been enhanced to automatically adjust bid strategies based on campaign performance metrics, enabling advertisers to maximize return on ad spend through intelligent, data-driven bidding decisions.\n* Frequency capping controls are now implemented across all advertising channels, allowing advertisers to limit how often their ads are shown to the same user and prevent ad fatigue while optimizing budget efficiency.\n\n(General Availability)\n\n__Targeting Enhancements__\n\nValue Add:\n\n* Contextual targeting capabilities have been added to demand-side platform campaigns, enabling advertisers to place ads based on the content and context of web pages rather than solely relying on user data, improving ad relevance and performance.\n\n(Feature Flag)\n\n__Performance Optimization__\n\nValue Add:\n\n* Campaign dashboard load times have been significantly improved by 40%, providing advertisers with faster access to critical performance data and enabling more responsive campaign management and optimization decisions.\n\n(General Availability)\n\n__Budget Management__\n\nValue Add:\n\n* The budget pacing algorithm has been refined to better handle weekend traffic patterns, ensuring more consistent ad spend distribution and preventing budget exhaustion during low-traffic periods while maintaining campaign effectiveness.\n\n(General Availability)",
+    "Audiences PL2": "__HCP Targeting__\n\nValue Add:\n\n* Healthcare campaign managers can now build highly targeted audience segments using National Provider Identifier (NPI) data, enabling precise targeting of specific healthcare professionals for pharmaceutical and medical device campaigns.\n* Oncology marketing teams can leverage comprehensive patient journey mapping capabilities to understand and target audiences based on treatment phases and care pathways, improving campaign relevance and engagement.\n* Cardiovascular campaign specialists can apply sophisticated filtering options to identify and target cardiology physicians based on practice type, patient volume, and specialty focus areas.\n\nGeneral Availability\n\n__Audience Analytics__\n\nValue Add:\n\n* Marketing analysts can visualize audience overlap relationships through intuitive Venn diagram representations, making it easier to identify redundancies and optimize campaign targeting strategies across multiple audience segments.\n\nGeneral Availability\n\n__Audience Management__\n\nValue Add:\n\n* Campaign operators can efficiently import large audience datasets through CSV file uploads with built-in validation, streamlining the process of bringing external audience data into the platform while ensuring data quality and consistency.\n\nGeneral Availability",
+    "DSP Core PL3": "__Attribution & Measurement__\n\nValue Add:\n\n* Campaign attribution now supports cross-device graph matching, enabling marketers to track user journeys across multiple devices and gain a complete view of how customers interact with campaigns before converting.\n* Multi-touch attribution model configuration has been added, allowing advertisers to customize how conversion credit is distributed across touchpoints throughout the customer journey for more accurate performance measurement.\n\n(General Availability)\n\n__Reporting Enhancements__\n\nValue Add:\n\n* The reporting dashboard now includes enhanced custom date range functionality, giving users the flexibility to analyze campaign performance across any time period that aligns with their business needs.\n* Automated report scheduling with email delivery has been implemented, enabling teams to receive regular performance updates without manual intervention and ensuring stakeholders stay informed on campaign progress.\n* Data export timeout issues for large campaign reports have been resolved, ensuring users can successfully download comprehensive datasets regardless of campaign size or date range.\n\n(General Availability)",
+    "DSP Core PL5": "__CTV Enhancements__\n\nValue Add:\n\n* Publishers can now leverage real-time inventory forecasting specifically designed for connected TV environments, enabling more accurate revenue projections and better inventory management decisions across streaming platforms.\n* Programmatic guaranteed deals are now available for connected TV publishers, providing them with the ability to secure premium inventory commitments while maintaining the efficiency and automation benefits of programmatic advertising.\n* Creative teams and advertisers can now preview how their advertisements will appear across various connected TV ad formats before campaigns go live, ensuring optimal creative presentation and reducing the risk of formatting issues.\n\n(General Availability)\n\n__OTT Improvements__\n\nValue Add:\n\n* Campaign targeting capabilities for over-the-top streaming platforms have been enhanced with comprehensive household demographic data, allowing advertisers to reach their desired audiences more precisely based on family composition, income levels, and other key household characteristics.\n\n(General Availability)\n\n__Ad Serving__\n\nValue Add:\n\n* The platform now supports the latest VAST 4.2 ad serving standard, ensuring compatibility with the most current video advertising specifications and enabling access to advanced features like improved error reporting, better ad verification, and enhanced measurement capabilities.\n\n(General Availability)",
+    "Developer Experience": "__API Enhancements__\n\nValue Add:\n\n* Developers can now manage campaigns programmatically through new REST API endpoints, enabling automated campaign creation, updates, and monitoring workflows that integrate seamlessly with existing marketing automation systems.\n* Teams can leverage our new GraphQL API to perform flexible audience queries with precise data fetching, reducing over-fetching and improving application performance when working with customer segments.\n* Enhanced rate limiting mechanisms ensure greater API reliability and predictable performance, protecting both client applications and our platform infrastructure from unexpected traffic spikes while maintaining consistent service availability.\n\nGeneral Availability\n\n__Documentation__\n\nValue Add:\n\n* Software Development Kit documentation now includes comprehensive code examples and implementation guides, enabling developers to integrate our platform more quickly and reducing time-to-value for new implementations.\n\nGeneral Availability\n\n__Integration Features__\n\nValue Add:\n\n* Webhook support for campaign status changes allows development teams to build real-time integrations that automatically respond to campaign lifecycle events, enabling sophisticated workflow automation and immediate notification systems without the need for polling our APIs.\n\nGeneral Availability"
+  },
+  "grouped_data": {
+    "DSP Core PL1": {
+      "Bidding Engine Improvements": [
+        "DI-1001",
+        "DI-1002"
+      ],
+      "Targeting Enhancements": [
+        "DI-1003"
+      ],
+      "Performance Optimization": [
+        "DI-1004"
+      ],
+      "Budget Management": [
+        "DI-1005"
+      ]
+    },
+    "Audiences PL2": {
+      "HCP Targeting": [
+        "DI-2001",
+        "DI-2002",
+        "DI-2003"
+      ],
+      "Audience Analytics": [
+        "DI-2004"
+      ],
+      "Audience Management": [
+        "DI-2005"
+      ]
+    },
+    "DSP Core PL3": {
+      "Attribution & Measurement": [
+        "DI-3001",
+        "DI-3002"
+      ],
+      "Reporting Enhancements": [
+        "DI-3003",
+        "DI-3004",
+        "DI-3005"
+      ]
+    },
+    "DSP Core PL5": {
+      "CTV Enhancements": [
+        "DI-5001",
+        "DI-5002",
+        "DI-5003"
+      ],
+      "OTT Improvements": [
+        "DI-5004"
+      ],
+      "Ad Serving": [
+        "DI-5005"
+      ]
+    },
+    "Developer Experience": {
+      "API Enhancements": [
+        "DI-6001",
+        "DI-6002",
+        "DI-6005"
+      ],
+      "Documentation": [
+        "DI-6003"
+      ],
+      "Integration Features": [
+        "DI-6004"
+      ]
+    }
+  }
+}
