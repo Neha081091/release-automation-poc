@@ -33,32 +33,35 @@ def consolidate_with_claude(client, product: str, summaries: list) -> str:
 
     message = client.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=500,
+        max_tokens=300,
         messages=[{
             "role": "user",
-            "content": f"""Consolidate these raw Jira ticket summaries into a concise TL;DR for executive review.
+            "content": f"""Write a SINGLE flowing sentence TL;DR for executive review.
 
 Product: {product}
-Raw Summaries:
+Raw Items:
 {summaries_text}
 
-Rules:
-1. Write 2-3 SHORT sentences maximum
-2. Focus on major features and business impact
-3. Use semicolons to separate different feature areas
-4. NO bullet points or lists
-5. Use present tense and action-oriented language
-6. Be concise - executives skim this section
-7. Output ONLY the consolidated prose (no product name prefix)
+STRICT FORMAT RULES:
+1. ONE sentence only - NO line breaks
+2. Use semicolons to separate different feature areas
+3. Use connectors: "with", "including", "featuring", "adding"
+4. Lead with main impact, then supporting details
+5. Action-oriented past tense: "enhanced", "added", "patched"
+6. NO bullet points, NO product name prefix
+7. Keep it SHORT - max 40 words
 
-Example format:
-"Order listing improvements with multi-select filtering and persistent preferences; forecasting enhancements with deal/exchange validation"
+EXAMPLE FORMAT:
+"Order listing improvements with multi-select filtering and persistent preferences; forecasting enhancements with deal/exchange validation; critical vulnerability patched"
 
-Now consolidate for {product}:"""
+Output ONLY the consolidated sentence:"""
         }]
     )
 
     result = message.content[0].text.strip()
+    # Remove quotes if present
+    if result.startswith('"') and result.endswith('"'):
+        result = result[1:-1]
     if result.lower().startswith(product.lower()):
         result = result[len(product):].lstrip(" -:")
     return result

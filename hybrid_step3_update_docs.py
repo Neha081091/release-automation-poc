@@ -46,6 +46,36 @@ def get_pl_category(pl_name: str) -> str:
         return pl_name
 
 
+def find_epic_url(line_text: str, epic_urls: dict) -> str:
+    """Find matching epic URL using flexible matching."""
+    line_lower = line_text.lower().strip()
+
+    # Direct match first
+    if line_text in epic_urls:
+        return epic_urls[line_text]
+
+    # Case-insensitive match
+    for epic_name, url in epic_urls.items():
+        if epic_name.lower() == line_lower:
+            return url
+
+    # Partial match - check if line contains epic name or vice versa
+    for epic_name, url in epic_urls.items():
+        epic_lower = epic_name.lower()
+        # Check if most of the words match
+        line_words = set(line_lower.split())
+        epic_words = set(epic_lower.split())
+        common_words = line_words & epic_words
+
+        # If 70% of words match, consider it a match
+        if len(epic_words) > 0:
+            match_ratio = len(common_words) / len(epic_words)
+            if match_ratio >= 0.7:
+                return url
+
+    return ""
+
+
 def update_google_docs(processed_data: dict) -> bool:
     """Update Google Docs with processed notes in executive style with formatting."""
     print("\n[Step 3a] Updating Google Docs...")
@@ -204,8 +234,8 @@ def update_google_docs(processed_data: dict) -> bool:
 
                         # Epic name detection: a line that's not "Value Add:", not a bullet, not status
                         if stripped and not stripped.startswith('•') and not stripped.startswith('Value Add') and stripped not in ['General Availability', 'Feature Flag'] and not stripped.startswith('-'):
-                            # Check if this epic name has a URL
-                            epic_url = epic_urls.get(stripped, "")
+                            # Check if this epic name has a URL (flexible matching)
+                            epic_url = find_epic_url(stripped, epic_urls)
                             if epic_url:
                                 formatting_positions["links"].append((line_start, line_start + len(stripped), epic_url))
 
