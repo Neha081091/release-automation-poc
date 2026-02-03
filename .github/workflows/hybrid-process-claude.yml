@@ -1,0 +1,72 @@
+name: Hybrid - Process with Claude API
+
+# Trigger when tickets_export.json is pushed
+on:
+  push:
+    paths:
+      - 'tickets_export.json'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  process-with-claude:
+    name: Process Tickets with Claude API
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Check if tickets_export.json exists
+        run: |
+          if [ ! -f tickets_export.json ]; then
+            echo "ERROR: tickets_export.json not found"
+            exit 1
+          fi
+          echo "Found tickets_export.json with $(cat tickets_export.json | python -c 'import json,sys; d=json.load(sys.stdin); print(d.get("ticket_count", 0))') tickets"
+
+      - name: Process with Claude API
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          echo "Processing tickets with Claude API..."
+          python hybrid_step2_process_claude.py
+
+      - name: Commit and push processed notes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add processed_notes.json
+          git commit -m "Auto-processed with Claude API [skip ci]" || echo "No changes to commit"
+          git push
+
+      - name: Notify Slack on Success
+        if: success()
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text":"✅ *Hybrid Workflow*\nClaude API processing complete!\nRun `python hybrid_automated.py --update` on Mac to finish."}' \
+            ${{ secrets.SLACK_WEBHOOK_URL }} || true
+
+      - name: Notify Slack on Failure
+        if: failure()
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text":"❌ *Hybrid Workflow Failed*\nClaude API processing failed.\nCheck: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' \
+            ${{ secrets.SLACK_WEBHOOK_URL }} || true
