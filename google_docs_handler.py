@@ -332,7 +332,8 @@ def parse_fix_version(fix_version: str) -> Tuple[str, str]:
 
 
 def create_formatted_requests(release_date: str, grouped_data: Dict,
-                             tldr: Dict, extract_value_adds_func) -> List[Dict]:
+                             tldr: Dict, extract_value_adds_func,
+                             consolidated_bodies: Dict = None) -> List[Dict]:
     """
     Create Google Docs API requests for formatted release notes.
 
@@ -344,6 +345,7 @@ def create_formatted_requests(release_date: str, grouped_data: Dict,
         grouped_data: Grouped ticket data by PL and Epic
         tldr: TL;DR dictionary
         extract_value_adds_func: Function to extract value adds from tickets
+        consolidated_bodies: Optional dict mapping PL name to LLM-consolidated body text
 
     Returns:
         List of Google Docs API requests
@@ -602,133 +604,148 @@ def create_formatted_requests(release_date: str, grouped_data: Dict,
         })
         current_index += len(approval_text)
 
-        # Process epics
-        for epic_name, items in epics.items():
-            epic_info = items[0]["epic_info"]
-
-            # Epic name
-            epic_text = f"{epic_name}\n\n"
-            epic_start = current_index
-            requests.append({
-                "insertText": {
-                    "location": {"index": current_index},
-                    "text": epic_text
-                }
-            })
-
-            # Make epic a hyperlink if URL exists
-            if epic_info.get("url"):
+        # Check if we have LLM-consolidated body for this PL
+        if consolidated_bodies and pl in consolidated_bodies:
+            # Use LLM-consolidated body text (polished prose)
+            consolidated_text = consolidated_bodies[pl]
+            if consolidated_text:
+                # Add the consolidated body text
+                body_text = f"{consolidated_text}\n\n"
                 requests.append({
-                    "updateTextStyle": {
-                        "range": {
-                            "startIndex": epic_start,
-                            "endIndex": epic_start + len(epic_name)
-                        },
-                        "textStyle": {
-                            "link": {"url": epic_info["url"]},
-                            "foregroundColor": {
-                                "color": {"rgbColor": {"red": 0.0, "green": 0.0, "blue": 1.0}}
-                            }
-                        },
-                        "fields": "link,foregroundColor"
+                    "insertText": {
+                        "location": {"index": current_index},
+                        "text": body_text
+                    }
+                })
+                current_index += len(body_text)
+        else:
+            # Fallback: Process epics individually (raw Jira summaries)
+            for epic_name, items in epics.items():
+                epic_info = items[0]["epic_info"]
+
+                # Epic name
+                epic_text = f"{epic_name}\n\n"
+                epic_start = current_index
+                requests.append({
+                    "insertText": {
+                        "location": {"index": current_index},
+                        "text": epic_text
                     }
                 })
 
-            current_index += len(epic_text)
-
-            # Value Add header
-            value_add_header = "Value Add:\n"
-            value_add_start = current_index
-            requests.append({
-                "insertText": {
-                    "location": {"index": current_index},
-                    "text": value_add_header
-                }
-            })
-            # Bold "Value Add:"
-            requests.append({
-                "updateTextStyle": {
-                    "range": {
-                        "startIndex": value_add_start,
-                        "endIndex": value_add_start + len("Value Add:")
-                    },
-                    "textStyle": {"bold": True},
-                    "fields": "bold"
-                }
-            })
-            current_index += len(value_add_header)
-
-            # Value add bullets
-            for item in items:
-                ticket = item["ticket"]
-                value_adds = extract_value_adds_func(ticket)
-                for value_add in value_adds:
-                    bullet = f"   * {value_add}\n"
+                # Make epic a hyperlink if URL exists
+                if epic_info.get("url"):
                     requests.append({
-                        "insertText": {
-                            "location": {"index": current_index},
-                            "text": bullet
-                        }
-                    })
-                    current_index += len(bullet)
-
-            # Release type tag for stories with colors
-            story_tickets = [i["ticket"] for i in items if i["ticket"].get("issue_type") == "Story"]
-            if story_tickets:
-                release_type = story_tickets[0].get("release_type")
-                if release_type:
-                    tag_text = f"\n{release_type}\n"
-                    tag_start = current_index + 1  # After the first newline
-                    requests.append({
-                        "insertText": {
-                            "location": {"index": current_index},
-                            "text": tag_text
+                        "updateTextStyle": {
+                            "range": {
+                                "startIndex": epic_start,
+                                "endIndex": epic_start + len(epic_name)
+                            },
+                            "textStyle": {
+                                "link": {"url": epic_info["url"]},
+                                "foregroundColor": {
+                                    "color": {"rgbColor": {"red": 0.0, "green": 0.0, "blue": 1.0}}
+                                }
+                            },
+                            "fields": "link,foregroundColor"
                         }
                     })
 
-                    # Apply color based on release type
-                    # Feature Flag = green, General Availability = green
-                    if "feature flag" in release_type.lower():
+                current_index += len(epic_text)
+
+                # Value Add header
+                value_add_header = "Value Add:\n"
+                value_add_start = current_index
+                requests.append({
+                    "insertText": {
+                        "location": {"index": current_index},
+                        "text": value_add_header
+                    }
+                })
+                # Bold "Value Add:"
+                requests.append({
+                    "updateTextStyle": {
+                        "range": {
+                            "startIndex": value_add_start,
+                            "endIndex": value_add_start + len("Value Add:")
+                        },
+                        "textStyle": {"bold": True},
+                        "fields": "bold"
+                    }
+                })
+                current_index += len(value_add_header)
+
+                # Value add bullets
+                for item in items:
+                    ticket = item["ticket"]
+                    value_adds = extract_value_adds_func(ticket)
+                    for value_add in value_adds:
+                        bullet = f"   * {value_add}\n"
                         requests.append({
-                            "updateTextStyle": {
-                                "range": {
-                                    "startIndex": tag_start,
-                                    "endIndex": tag_start + len(release_type)
-                                },
-                                "textStyle": {
-                                    "foregroundColor": {
-                                        "color": {"rgbColor": {"red": 0.13, "green": 0.55, "blue": 0.13}}
-                                    }
-                                },
-                                "fields": "foregroundColor"
+                            "insertText": {
+                                "location": {"index": current_index},
+                                "text": bullet
                             }
                         })
-                    elif "general availability" in release_type.lower() or release_type.lower() == "ga":
+                        current_index += len(bullet)
+
+                # Release type tag for stories with colors
+                story_tickets = [i["ticket"] for i in items if i["ticket"].get("issue_type") == "Story"]
+                if story_tickets:
+                    release_type = story_tickets[0].get("release_type")
+                    if release_type:
+                        tag_text = f"\n{release_type}\n"
+                        tag_start = current_index + 1  # After the first newline
                         requests.append({
-                            "updateTextStyle": {
-                                "range": {
-                                    "startIndex": tag_start,
-                                    "endIndex": tag_start + len(release_type)
-                                },
-                                "textStyle": {
-                                    "foregroundColor": {
-                                        "color": {"rgbColor": {"red": 0.13, "green": 0.55, "blue": 0.13}}
-                                    }
-                                },
-                                "fields": "foregroundColor"
+                            "insertText": {
+                                "location": {"index": current_index},
+                                "text": tag_text
                             }
                         })
 
-                    current_index += len(tag_text)
+                        # Apply color based on release type
+                        # Feature Flag = green, General Availability = green
+                        if "feature flag" in release_type.lower():
+                            requests.append({
+                                "updateTextStyle": {
+                                    "range": {
+                                        "startIndex": tag_start,
+                                        "endIndex": tag_start + len(release_type)
+                                    },
+                                    "textStyle": {
+                                        "foregroundColor": {
+                                            "color": {"rgbColor": {"red": 0.13, "green": 0.55, "blue": 0.13}}
+                                        }
+                                    },
+                                    "fields": "foregroundColor"
+                                }
+                            })
+                        elif "general availability" in release_type.lower() or release_type.lower() == "ga":
+                            requests.append({
+                                "updateTextStyle": {
+                                    "range": {
+                                        "startIndex": tag_start,
+                                        "endIndex": tag_start + len(release_type)
+                                    },
+                                    "textStyle": {
+                                        "foregroundColor": {
+                                            "color": {"rgbColor": {"red": 0.13, "green": 0.55, "blue": 0.13}}
+                                        }
+                                    },
+                                    "fields": "foregroundColor"
+                                }
+                            })
 
-            # Spacing
-            requests.append({
-                "insertText": {
-                    "location": {"index": current_index},
-                    "text": "\n"
-                }
-            })
-            current_index += 1
+                        current_index += len(tag_text)
+
+                # Spacing
+                requests.append({
+                    "insertText": {
+                        "location": {"index": current_index},
+                        "text": "\n"
+                    }
+                })
+                current_index += 1
 
         # Spacing between product lines
         requests.append({

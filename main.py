@@ -203,13 +203,19 @@ def step2_update_google_doc(formatter: ReleaseNotesFormatter) -> Tuple[bool, str
             print("[Step 2b] ERROR: Could not connect to Google Doc")
             return False, ""
 
-        # Generate formatted requests
+        # Generate formatted requests with LLM-consolidated body sections
         print("[Step 2b] Generating formatted content...")
+        print("[Step 2b] Using LLM consolidation for polished prose...")
+
+        # Generate LLM-consolidated body sections for each PL
+        consolidated_bodies = formatter.generate_consolidated_body_sections(use_llm=True)
+
         formatted_requests = create_formatted_requests(
             release_date=formatter.release_date,
             grouped_data=formatter.grouped_data,
             tldr=formatter.generate_tldr(),
-            extract_value_adds_func=formatter.extract_value_adds
+            extract_value_adds_func=formatter.extract_value_adds,
+            consolidated_bodies=consolidated_bodies
         )
 
         # Insert release notes
