@@ -277,6 +277,9 @@ def process_tickets_with_claude():
                     "status": status
                 })
 
+        # Sort sections: Bug Fixes should come LAST
+        sections.sort(key=lambda s: (1 if s["title"] == "Bug Fixes" else 0, s["title"]))
+
         if sections:
             print(f"  Processing {pl}...")
             release_ver = release_versions.get(pl, "Release 1.0")
