@@ -272,6 +272,18 @@ def update_google_docs(processed_data: dict) -> bool:
 
                     # Parse body to find epic names, Value Add, and status tags
                     lines = body_text.split('\n')
+
+                    # Filter out duplicate PL header lines (e.g., "DSP Core PL5 Release 6.0")
+                    pl_clean_lower = pl_clean.lower()
+                    release_ver_num = release_ver.replace("Release ", "").strip()
+                    filtered_lines = []
+                    for line in lines:
+                        line_lower = line.strip().lower()
+                        # Skip lines that look like "PL Name Release X.X" (duplicate header)
+                        if pl_clean_lower in line_lower and 'release' in line_lower and release_ver_num in line:
+                            continue
+                        filtered_lines.append(line)
+                    lines = filtered_lines
                     full_body = ""
 
                     epic_urls = epic_urls_by_pl.get(pl, {})
