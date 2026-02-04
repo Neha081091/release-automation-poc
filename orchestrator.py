@@ -104,7 +104,7 @@ def start_socket_mode():
     handler.start()
 
 
-def main():
+def main(daemon_mode=False):
     """Main orchestrator function."""
 
     print("""
@@ -157,7 +157,7 @@ def main():
     print(f"\n[Ready] Listening for Slack button clicks...")
 
     # Check if running in interactive mode (terminal) or background
-    if sys.stdin.isatty():
+    if not daemon_mode and sys.stdin.isatty():
         print("[Ready] Press Enter to run pipeline manually, or type 'quit' to exit\n")
         try:
             while True:
@@ -188,4 +188,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--daemon', action='store_true', help='Run in daemon mode (no input)')
+    args = parser.parse_args()
+    main(daemon_mode=args.daemon)
