@@ -132,7 +132,23 @@ Transform sections for {product} - BE CONCISE:"""
         }]
     )
 
-    return message.content[0].text.strip()
+    result = message.content[0].text.strip()
+
+    # Post-process: Force correct bullet format (● instead of *, -, •)
+    lines = result.split('\n')
+    processed_lines = []
+    for line in lines:
+        stripped = line.lstrip()
+        # Replace bullet characters at start of line
+        if stripped.startswith('* '):
+            line = line.replace('* ', '● ', 1)
+        elif stripped.startswith('- '):
+            line = line.replace('- ', '● ', 1)
+        elif stripped.startswith('• '):
+            line = line.replace('• ', '● ', 1)
+        processed_lines.append(line)
+
+    return '\n'.join(processed_lines)
 
 
 def process_tickets_with_claude():
