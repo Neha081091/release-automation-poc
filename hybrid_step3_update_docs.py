@@ -501,6 +501,80 @@ def send_slack_approval_message(processed_data: dict) -> bool:
         return send_slack_notification(processed_data)
 
 
+def load_deferred_pls_for_today() -> list:
+    """
+    Load deferred PLs from yesterday that should be included in today's release.
+
+    Returns:
+        List of deferred PL data dictionaries
+    """
+    today = datetime.now().strftime('%Y-%m-%d')
+    deferred_file = 'deferred_pls.json'
+
+    try:
+        with open(deferred_file, 'r') as f:
+            deferred_data = json.load(f)
+
+        if today in deferred_data:
+            pls = deferred_data[today]
+            print(f"[Step 3] Found {len(pls)} deferred PL(s) from yesterday")
+            return pls
+        return []
+
+    except FileNotFoundError:
+        return []
+    except Exception as e:
+        print(f"[Step 3] Error loading deferred PLs: {e}")
+        return []
+
+
+def merge_deferred_pls(processed_data: dict, deferred_pls: list) -> dict:
+    """
+    Merge deferred PLs into processed data.
+
+    Args:
+        processed_data: Current processed release notes
+        deferred_pls: List of deferred PL data from yesterday
+
+    Returns:
+        Updated processed_data with deferred PLs included
+    """
+    if not deferred_pls:
+        return processed_data
+
+    for deferred in deferred_pls:
+        pl_name = deferred.get('pl')
+        if not pl_name:
+            continue
+
+        # Add to product_lines if not already present
+        if pl_name not in processed_data.get('product_lines', []):
+            processed_data.setdefault('product_lines', []).append(pl_name)
+            print(f"[Step 3] Added deferred PL: {pl_name}")
+
+        # Add TL;DR
+        if deferred.get('tldr'):
+            processed_data.setdefault('tldr_by_pl', {})[pl_name] = deferred['tldr']
+
+        # Add body
+        if deferred.get('body'):
+            processed_data.setdefault('body_by_pl', {})[pl_name] = deferred['body']
+
+        # Add release version
+        if deferred.get('release_version'):
+            processed_data.setdefault('release_versions', {})[pl_name] = deferred['release_version']
+
+        # Add fix version URL
+        if deferred.get('fix_version_url'):
+            processed_data.setdefault('fix_version_urls', {})[pl_name] = deferred['fix_version_url']
+
+        # Add epic URLs
+        if deferred.get('epic_urls'):
+            processed_data.setdefault('epic_urls_by_pl', {})[pl_name] = deferred['epic_urls']
+
+    return processed_data
+
+
 def main():
     """Update Google Docs and Slack with processed notes."""
     parser = argparse.ArgumentParser(description='Update Google Docs & Slack with release notes')
@@ -526,6 +600,12 @@ def main():
 
     print(f"[Step 3] Loaded processed notes from {input_file}")
     print(f"[Step 3] Product lines: {len(processed_data.get('product_lines', []))}")
+
+    # Load and merge deferred PLs from yesterday
+    deferred_pls = load_deferred_pls_for_today()
+    if deferred_pls:
+        processed_data = merge_deferred_pls(processed_data, deferred_pls)
+        print(f"[Step 3] After merge: {len(processed_data.get('product_lines', []))} PLs")
 
     docs_success = True
     slack_success = True

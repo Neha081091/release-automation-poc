@@ -313,6 +313,138 @@ class GoogleDocsHandler:
             print(f"[Google Docs] Connection test failed: {e}")
             return False
 
+    def find_pl_section_range(self, pl_name: str) -> Optional[Tuple[int, int]]:
+        """
+        Find the start and end indices of a PL section in the document.
+
+        Looks for patterns like "PL Name: Release X.X" and finds the section
+        until the next PL header or separator.
+
+        Args:
+            pl_name: Name of the product line to find
+
+        Returns:
+            Tuple of (start_index, end_index) or None if not found
+        """
+        try:
+            doc = self.service.documents().get(documentId=self.document_id).execute()
+            content = doc.get('body', {}).get('content', [])
+
+            # Build full text and track indices
+            full_text = ""
+            for element in content:
+                if 'paragraph' in element:
+                    for text_run in element['paragraph'].get('elements', []):
+                        if 'textRun' in text_run:
+                            full_text += text_run['textRun'].get('content', '')
+
+            # Find the PL section start - look for "PL Name: Release" pattern
+            import re
+            # Clean PL name for matching (remove year suffix)
+            pl_clean = re.sub(r'\s+20\d{2}$', '', pl_name)
+
+            # Pattern to find the PL header line
+            pattern = rf'{re.escape(pl_clean)}:\s*Release\s+\d+\.\d+'
+            match = re.search(pattern, full_text, re.IGNORECASE)
+
+            if not match:
+                print(f"[Google Docs] Could not find section for PL: {pl_name}")
+                return None
+
+            # Find the start of this section (look back for category header or separator)
+            section_start = match.start()
+
+            # Look for the previous separator or category header
+            # Search backwards from match start
+            prev_text = full_text[:section_start]
+            # Find the last occurrence of dashes (--) which indicates a section header
+            last_header = prev_text.rfind('------------------')
+            if last_header != -1:
+                # Check if this is a category header like "------------------DSP------------------"
+                # or a TL;DR header
+                header_end = prev_text.find('\n', last_header)
+                if header_end != -1:
+                    header_line = prev_text[last_header:header_end]
+                    # If it's a category header that contains this PL's category, start from there
+                    # Otherwise start from after that header
+                    section_start = header_end + 1
+
+            # Find the end of this section (next PL header or separator)
+            rest_text = full_text[match.end():]
+
+            # Look for next PL header pattern or category separator
+            next_pl_pattern = r'\n[A-Za-z][\w\s]+:\s*Release\s+\d+\.\d+'
+            next_category_pattern = r'\n------------------[^-]+------------------'
+            next_release_pattern = r'\n═{20,}'  # Separator between releases
+
+            next_pl = re.search(next_pl_pattern, rest_text)
+            next_category = re.search(next_category_pattern, rest_text)
+            next_release = re.search(next_release_pattern, rest_text)
+
+            # Find the earliest boundary
+            boundaries = []
+            if next_pl:
+                boundaries.append(next_pl.start())
+            if next_category:
+                boundaries.append(next_category.start())
+            if next_release:
+                boundaries.append(next_release.start())
+
+            if boundaries:
+                section_end = match.end() + min(boundaries)
+            else:
+                # No boundary found, go to end of document
+                section_end = len(full_text)
+
+            # Adjust indices for Google Docs API (1-indexed)
+            return (section_start + 1, section_end + 1)
+
+        except HttpError as e:
+            print(f"[Google Docs] Error finding PL section: {e}")
+            return None
+
+    def remove_pl_section(self, pl_name: str) -> bool:
+        """
+        Remove a PL's section from the document.
+
+        Args:
+            pl_name: Name of the product line to remove
+
+        Returns:
+            True if successful, False otherwise
+        """
+        print(f"[Google Docs] Removing section for PL: {pl_name}")
+
+        range_indices = self.find_pl_section_range(pl_name)
+        if not range_indices:
+            print(f"[Google Docs] Could not find section to remove")
+            return False
+
+        start_idx, end_idx = range_indices
+        print(f"[Google Docs] Found section at indices {start_idx} to {end_idx}")
+
+        try:
+            requests = [{
+                'deleteContentRange': {
+                    'range': {
+                        'startIndex': start_idx,
+                        'endIndex': end_idx
+                    }
+                }
+            }]
+
+            self.service.documents().batchUpdate(
+                documentId=self.document_id,
+                body={'requests': requests}
+            ).execute()
+
+            print(f"[Google Docs] Successfully removed section for PL: {pl_name}")
+            return True
+
+        except HttpError as e:
+            print(f"[Google Docs] Error removing PL section: {e}")
+            return False
+
 
 def parse_fix_version(fix_version: str) -> Tuple[str, str]:
     """

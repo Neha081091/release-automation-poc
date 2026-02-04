@@ -386,7 +386,13 @@ def handle_reject(ack, body, action):
 
 @app.action(re.compile(r"^tomorrow_.+$"))
 def handle_tomorrow(ack, body, action):
-    """Handle Tomorrow button clicks for any PL."""
+    """Handle Tomorrow button clicks for any PL.
+
+    This will:
+    1. Mark the PL as 'tomorrow' in approval states
+    2. Save complete PL data for tomorrow's release
+    3. Remove the PL section from today's Google Doc
+    """
     ack()
 
     pl_name = get_pl_name_from_action(action['action_id'])
@@ -408,25 +414,67 @@ def handle_tomorrow(ack, body, action):
     }
     save_approval_states(approval_states)
 
-    # Store for tomorrow's release
+    # Store complete PL data for tomorrow's release
     tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
     deferred_pls = load_deferred_pls()
     if tomorrow not in deferred_pls:
         deferred_pls[tomorrow] = []
 
-    # Get PL notes from metadata if available
+    # Load processed_notes.json to get complete PL data
     message_metadata = load_message_metadata()
     pl_notes = message_metadata.get(message_ts, {}).get('notes_by_pl', {}).get(pl_name, '')
 
-    deferred_pls[tomorrow].append({
+    # Try to load full processed data for more complete info
+    pl_data = {
         'pl': pl_name,
         'notes': pl_notes,
         'deferred_by': user,
         'deferred_at': datetime.now().isoformat()
-    })
+    }
 
+    try:
+        with open('processed_notes.json', 'r') as f:
+            processed_data = json.load(f)
+
+        # Find the original PL name (may have year suffix)
+        original_pl = None
+        for pl in processed_data.get('product_lines', []):
+            if pl_name in pl or pl in pl_name or pl.replace(' 2026', '').replace(' 2025', '') == pl_name:
+                original_pl = pl
+                break
+
+        if original_pl:
+            # Save complete data for tomorrow
+            pl_data['tldr'] = processed_data.get('tldr_by_pl', {}).get(original_pl, '')
+            pl_data['body'] = processed_data.get('body_by_pl', {}).get(original_pl, '')
+            pl_data['release_version'] = processed_data.get('release_versions', {}).get(original_pl, 'Release 1.0')
+            pl_data['fix_version_url'] = processed_data.get('fix_version_urls', {}).get(original_pl, '')
+            pl_data['epic_urls'] = processed_data.get('epic_urls_by_pl', {}).get(original_pl, {})
+            print(f"[Socket Mode] Loaded complete data for {pl_name}")
+
+    except FileNotFoundError:
+        print("[Socket Mode] processed_notes.json not found, saving minimal data")
+    except Exception as e:
+        print(f"[Socket Mode] Error loading processed data: {e}")
+
+    deferred_pls[tomorrow].append(pl_data)
     save_deferred_pls(deferred_pls)
     print(f"[Socket Mode] Saved deferred PL {pl_name} for {tomorrow}")
+
+    # Remove PL section from today's Google Doc
+    try:
+        from google_docs_handler import GoogleDocsHandler
+
+        google_docs = GoogleDocsHandler()
+        if google_docs.authenticate():
+            if google_docs.remove_pl_section(pl_name):
+                print(f"[Socket Mode] Removed {pl_name} section from Google Doc")
+            else:
+                print(f"[Socket Mode] Could not remove {pl_name} from Google Doc (may need manual removal)")
+        else:
+            print("[Socket Mode] Could not authenticate with Google Docs")
+    except Exception as e:
+        print(f"[Socket Mode] Error removing from Google Doc: {e}")
 
     update_message_with_status(channel, message_ts)
 
