@@ -27,9 +27,9 @@ class JiraHandler:
             email: User email for authentication
             token: API token for authentication
         """
-        self.base_url = base_url or os.getenv('JIRA_BASE_URL', 'https://deepintent.atlassian.net')
+        self.base_url = base_url or os.getenv('JIRA_BASE_URL') or os.getenv('JIRA_URL', 'https://deepintent.atlassian.net')
         self.email = email or os.getenv('JIRA_EMAIL')
-        self.token = token or os.getenv('JIRA_TOKEN')
+        self.token = token or os.getenv('JIRA_TOKEN') or os.getenv('JIRA_API_TOKEN')
 
         if not self.email or not self.token:
             raise ValueError("JIRA_EMAIL and JIRA_TOKEN must be provided")
