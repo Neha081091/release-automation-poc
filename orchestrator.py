@@ -155,25 +155,36 @@ def main():
     print(f"[Scheduler] Pipeline scheduled to run daily at 12:00 PM")
     print(f"[Scheduler] Next run: {scheduler.get_job('daily_pipeline').next_run_time}")
     print(f"\n[Ready] Listening for Slack button clicks...")
-    print("[Ready] Press Enter to run pipeline manually, or type 'quit' to exit\n")
 
-    try:
-        while True:
-            user_input = input()
+    # Check if running in interactive mode (terminal) or background
+    if sys.stdin.isatty():
+        print("[Ready] Press Enter to run pipeline manually, or type 'quit' to exit\n")
+        try:
+            while True:
+                user_input = input()
 
-            if user_input.lower() == 'quit':
-                print("\n[Shutdown] Stopping orchestrator...")
-                scheduler.shutdown()
-                break
-            else:
-                # Run pipeline manually
-                print("\n[Manual] Running pipeline now...")
-                run_pipeline()
-                print("\n[Ready] Press Enter to run again, or type 'quit' to exit\n")
+                if user_input.lower() == 'quit':
+                    print("\n[Shutdown] Stopping orchestrator...")
+                    scheduler.shutdown()
+                    break
+                else:
+                    # Run pipeline manually
+                    print("\n[Manual] Running pipeline now...")
+                    run_pipeline()
+                    print("\n[Ready] Press Enter to run again, or type 'quit' to exit\n")
 
-    except KeyboardInterrupt:
-        print("\n[Shutdown] Stopping orchestrator...")
-        scheduler.shutdown()
+        except KeyboardInterrupt:
+            print("\n[Shutdown] Stopping orchestrator...")
+            scheduler.shutdown()
+    else:
+        # Running in background mode (nohup, etc.)
+        print("[Background] Running in daemon mode. Check logs for updates.\n")
+        try:
+            while True:
+                time.sleep(60)  # Keep alive, check every minute
+        except KeyboardInterrupt:
+            print("\n[Shutdown] Stopping orchestrator...")
+            scheduler.shutdown()
 
 
 if __name__ == "__main__":
