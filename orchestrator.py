@@ -26,12 +26,11 @@ from apscheduler.triggers.cron import CronTrigger
 load_dotenv()
 
 # Import the pipeline components
-from step1_jira_export import JiraExporter
-from step2_claude_processor import ClaudeProcessor
-from hybrid_step3_update_docs import GoogleDocsUpdater
 from slack_socket_mode import post_approval_message, app
-
 from slack_bolt.adapter.socket_mode import SocketModeHandler
+
+# Import the hybrid step modules
+import subprocess
 
 
 def run_pipeline():
@@ -43,40 +42,42 @@ def run_pipeline():
     try:
         # Step 1: Fetch Jira tickets
         print("[Pipeline] Step 1: Fetching Jira tickets...")
-        jira = JiraExporter()
-        tickets = jira.fetch_release_tickets()
-
-        if not tickets:
-            print("[Pipeline] No tickets found for today. Skipping...")
+        result = subprocess.run(
+            ['python', 'hybrid_step1_export_jira.py'],
+            capture_output=True,
+            text=True,
+            cwd=os.path.dirname(os.path.abspath(__file__))
+        )
+        print(result.stdout)
+        if result.returncode != 0:
+            print(f"[Pipeline] Step 1 failed: {result.stderr}")
             return False
-
-        print(f"[Pipeline] Found {len(tickets)} tickets")
 
         # Step 2: Process with Claude
         print("\n[Pipeline] Step 2: Processing with Claude API...")
-        claude = ClaudeProcessor()
-        release_notes = claude.generate_release_notes(tickets)
-
-        if not release_notes:
-            print("[Pipeline] Failed to generate release notes")
+        result = subprocess.run(
+            ['python', 'hybrid_step2_process_claude.py'],
+            capture_output=True,
+            text=True,
+            cwd=os.path.dirname(os.path.abspath(__file__))
+        )
+        print(result.stdout)
+        if result.returncode != 0:
+            print(f"[Pipeline] Step 2 failed: {result.stderr}")
             return False
 
-        print("[Pipeline] Release notes generated successfully")
-
-        # Step 3: Update Google Doc
-        print("\n[Pipeline] Step 3: Updating Google Doc...")
-        docs = GoogleDocsUpdater()
-        doc_url = docs.update_document(release_notes)
-
-        if doc_url:
-            print(f"[Pipeline] Google Doc updated: {doc_url}")
-
-        # Step 4: Post approval message to Slack
-        print("\n[Pipeline] Step 4: Posting approval message to Slack...")
-        message_ts = post_approval_message(release_notes)
-
-        if message_ts:
-            print(f"[Pipeline] Approval message posted: {message_ts}")
+        # Step 3: Update Google Doc & Post to Slack
+        print("\n[Pipeline] Step 3: Updating Google Doc & posting to Slack...")
+        result = subprocess.run(
+            ['python', 'hybrid_step3_update_docs.py'],
+            capture_output=True,
+            text=True,
+            cwd=os.path.dirname(os.path.abspath(__file__))
+        )
+        print(result.stdout)
+        if result.returncode != 0:
+            print(f"[Pipeline] Step 3 failed: {result.stderr}")
+            return False
 
         print(f"\n{'='*60}")
         print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Pipeline Complete!")
