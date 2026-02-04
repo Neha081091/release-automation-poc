@@ -574,23 +574,8 @@ def handle_good_to_announce(ack, body):
         ]
     })
 
-    # Remove rejected PLs from Google Doc before announcing
-    if rejected_pls:
-        print(f"[Socket Mode] Removing {len(rejected_pls)} rejected PL(s) from Google Doc...")
-        try:
-            from google_docs_handler import GoogleDocsHandler
-
-            google_docs = GoogleDocsHandler()
-            if google_docs.authenticate():
-                for pl_name in rejected_pls:
-                    if google_docs.remove_pl_section(pl_name):
-                        print(f"[Socket Mode] Removed rejected PL '{pl_name}' from Google Doc")
-                    else:
-                        print(f"[Socket Mode] Could not remove '{pl_name}' from Google Doc (may need manual removal)")
-            else:
-                print("[Socket Mode] Could not authenticate with Google Docs")
-        except Exception as e:
-            print(f"[Socket Mode] Error removing rejected PLs from Google Doc: {e}")
+    # Note: Rejected PLs stay in Google Doc, just excluded from Slack announcement
+    # Tomorrow PLs are already removed from Google Doc when the button was clicked
 
     try:
         # Post announcement
