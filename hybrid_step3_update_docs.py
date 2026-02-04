@@ -349,7 +349,7 @@ def update_google_docs(processed_data: dict) -> bool:
                     "textStyle": {
                         "link": {"url": url},
                         "foregroundColor": {"color": {"rgbColor": BLUE_COLOR}},
-                        "underline": True
+                        "underline": False
                     },
                     "fields": "link,foregroundColor,underline"
                 }
