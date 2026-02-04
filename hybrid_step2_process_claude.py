@@ -88,7 +88,7 @@ def consolidate_body_with_claude(client, product: str, sections: list, release_v
         max_tokens=2000,
         messages=[{
             "role": "user",
-            "content": f"""Transform these raw Jira sections into executive-style release notes.
+            "content": f"""Transform these raw Jira sections into CONCISE executive-style release notes.
 
 Product: {product}
 Release Version: {release_version}
@@ -96,36 +96,42 @@ Release Version: {release_version}
 Raw Sections:
 {sections_text}
 
+CRITICAL: Be EXTREMELY CONCISE. Each bullet must be ONE short sentence (max 20 words).
+
 STRICT FORMAT RULES:
 1. NO markdown formatting (no **, no __, no backticks)
 2. Use PLAIN TEXT only
 3. Epic names as simple headers (no formatting)
 4. Always include "Value Add:" header before bullets
-5. Use bullet character "•" (not *, not -)
-6. 2-4 action-oriented bullets per epic
-7. Each bullet is ONE complete sentence with period
-8. End each epic section with status tag on its own line: General Availability OR Feature Flag
-9. NO parentheses around status tags
+5. Use asterisk bullet character "*" (not •, not -)
+6. 1-2 SHORT bullets per epic - NO verbose explanations
+7. Each bullet is ONE SHORT sentence - start with "Users can now..." or action verb
+8. End each epic section with status tag: General Availability OR Feature Flag
+9. Bug fixes go on SINGLE LINE: "Bug Fix: [description]" (no separate section)
 10. One blank line between epic sections
+11. NEVER repeat information or over-explain
+
+BAD (too verbose):
+* Updated copy on the audience group builder UI to improve clarity and user comprehension when creating audience segments. Users can now more easily understand the interface options.
+
+GOOD (concise):
+* Users can now view updated audience name and ID formatting in the Audience Details Modal for consistent representation
+
+BAD (too verbose):
+* Removed the zip code chart and toggle from the geo chart in HCP Planner to streamline the interface and improve focus on key metrics. Users can now navigate the geographic data more efficiently.
+
+GOOD (concise):
+* Cleaner HCP Planner interface by removing the Zip code chart and toggle from the Geo Chart
 
 EXACT OUTPUT FORMAT:
 Epic Name Here
-
 Value Add:
-• First benefit statement explaining user value and impact.
-• Second benefit statement with clear business context.
-• Third benefit statement if needed.
-
+* Short, punchy benefit statement
+* Another concise user-focused change
 General Availability
+Bug Fix: Fixed [issue] in [component]
 
-Next Epic Name
-
-Value Add:
-• Benefit statement here.
-
-Feature Flag
-
-Transform the sections for {product} using this EXACT format:"""
+Transform sections for {product} - BE CONCISE:"""
         }]
     )
 
