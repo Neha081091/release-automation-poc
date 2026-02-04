@@ -96,28 +96,28 @@ Release Version: {release_version}
 Raw Sections:
 {sections_text}
 
-Write DESCRIPTIVE value add statements. Each bullet should explain WHAT changed and WHY it benefits users.
-
 STRICT FORMAT RULES:
 1. NO markdown formatting (no **, no __, no backticks)
 2. Use PLAIN TEXT only
 3. Epic names as simple headers (no formatting)
-4. For regular epics: include "Value Add:" header before bullets
-5. For "Bug Fixes" sections: use "Bug Fixes:" header (NOT "Value Add:")
+4. For regular epics: include "Value Add:" header - make bullets DESCRIPTIVE
+5. For "Bug Fixes" sections: use "Bug Fixes:" header - keep bullets SHORT and concise
 6. Use filled circle bullet "●" for all bullets
 7. 1-2 bullets per epic
-8. Each bullet is ONE sentence - describe the change AND its benefit to users
-9. End each epic section with status tag: General Availability OR Feature Flag
-10. One blank line between epic sections
+8. Value Add bullets: describe WHAT changed and WHY it benefits users (be descriptive)
+9. Bug Fix bullets: keep SHORT - just "Fixed [issue] in [component]"
+10. End each epic section with status tag: General Availability OR Feature Flag
+11. One blank line between epic sections
 
-BAD (too short, no context):
+VALUE ADD - BAD (too short):
 ● Updated bulk actions goals dropdown for enhanced user experience
 
-GOOD (descriptive with benefit):
+VALUE ADD - GOOD (descriptive with benefit):
 ● Updated Bulk Actions Goals dropdown to match the rest of the platform design, providing a cleaner and more intuitive user experience
 
-GOOD (descriptive):
-● Users can now view and manage creatives directly within the Ad Group Builder with a new listing functionality, eliminating the need to navigate away
+BUG FIX - GOOD (short and concise):
+● Fixed alignment issue with save draft button in HCP planner when using long names
+● Fixed query returning 0 results when This Month date range selected
 
 EXACT OUTPUT FORMAT FOR REGULAR EPICS:
 Epic Name Here
@@ -126,13 +126,13 @@ Value Add:
 ● Another change with clear user benefit
 General Availability
 
-EXACT OUTPUT FORMAT FOR BUG FIXES SECTION:
+EXACT OUTPUT FORMAT FOR BUG FIXES SECTION (keep bugs SHORT):
 Bug Fixes:
-● Fixed alignment issue with save draft button in HCP planner when using long names
-● Fixed query returning 0 results when This Month date range selected
+● Fixed [brief issue description]
+● Fixed [another brief issue]
 General Availability
 
-Transform sections for {product} - be DESCRIPTIVE:"""
+Transform sections for {product}:"""
         }]
     )
 
