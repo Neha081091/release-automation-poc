@@ -153,6 +153,7 @@ def run_server(host='0.0.0.0', port=5000, debug=False):
 
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 5000))
+    # Default to port 3000 to avoid macOS AirPlay conflict on port 5000
+    port = int(os.getenv('PORT', 3000))
     debug = os.getenv('FLASK_ENV') == 'development'
     run_server(port=port, debug=debug)
