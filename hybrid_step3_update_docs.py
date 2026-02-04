@@ -253,7 +253,7 @@ def update_google_docs(processed_data: dict) -> bool:
                 release_ver = release_versions.get(pl, "Release 1.0")
                 release_url = fix_version_urls.get(pl, "")
                 ver_start = current_index
-                ver_text = f"{release_ver}\n\n"
+                ver_text = f"{release_ver}\n"
                 insert_requests.append({
                     "insertText": {
                         "location": {"index": current_index},
@@ -273,15 +273,20 @@ def update_google_docs(processed_data: dict) -> bool:
                     # Parse body to find epic names, Value Add, and status tags
                     lines = body_text.split('\n')
 
-                    # Filter out duplicate PL header lines (e.g., "DSP Core PL5 Release 6.0")
+                    # Filter out duplicate PL header lines and leading empty lines
                     pl_clean_lower = pl_clean.lower()
                     release_ver_num = release_ver.replace("Release ", "").strip()
                     filtered_lines = []
+                    found_content = False
                     for line in lines:
                         line_lower = line.strip().lower()
                         # Skip lines that look like "PL Name Release X.X" (duplicate header)
                         if pl_clean_lower in line_lower and 'release' in line_lower and release_ver_num in line:
                             continue
+                        # Skip leading empty lines
+                        if not found_content and not line.strip():
+                            continue
+                        found_content = True
                         filtered_lines.append(line)
                     lines = filtered_lines
                     full_body = ""
