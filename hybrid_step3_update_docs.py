@@ -290,6 +290,8 @@ def update_google_docs(processed_data: dict) -> bool:
                             epic_url = find_epic_url(stripped, epic_urls)
                             if epic_url:
                                 formatting_positions["links"].append((line_start, line_start + len(stripped), epic_url))
+                                # Also make epic names bold
+                                formatting_positions["bold"].append((line_start, line_start + len(stripped)))
 
                         # Value Add: should be bold
                         if stripped.startswith('Value Add'):
