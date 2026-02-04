@@ -50,6 +50,20 @@ def get_pl_category(pl_name: str) -> str:
         return pl_name
 
 
+def clean_pl_name(pl_name: str) -> str:
+    """
+    Clean PL name by removing year suffixes.
+
+    Examples:
+        - "Developer Experience 2026" -> "Developer Experience"
+        - "DSP Core PL1" -> "DSP Core PL1" (unchanged)
+    """
+    import re
+    # Remove trailing year (4 digits at the end)
+    cleaned = re.sub(r'\s+20\d{2}$', '', pl_name)
+    return cleaned
+
+
 def find_epic_url(line_text: str, epic_urls: dict) -> str:
     """Find matching epic URL using flexible matching."""
     line_lower = line_text.lower().strip()
@@ -153,18 +167,45 @@ def update_google_docs(processed_data: dict) -> bool:
         })
         current_index += len(key_deploy_header)
 
-        # TL;DR per PL
+        # TL;DR per PL (with bold PL names)
         for pl in product_lines:
             if pl in tldr_by_pl:
                 summary = tldr_by_pl[pl]
-                deploy_line = f"• {pl} - {summary}\n"
+                # Clean PL name (remove year suffix)
+                pl_clean = clean_pl_name(pl)
+
+                # Build the line: "• {PL name} - {summary}\n"
+                bullet = "• "
+                separator = " - "
+
                 insert_requests.append({
                     "insertText": {
                         "location": {"index": current_index},
-                        "text": deploy_line
+                        "text": bullet
                     }
                 })
-                current_index += len(deploy_line)
+                current_index += len(bullet)
+
+                # PL name (bold)
+                pl_start = current_index
+                insert_requests.append({
+                    "insertText": {
+                        "location": {"index": current_index},
+                        "text": pl_clean
+                    }
+                })
+                formatting_positions["bold"].append((pl_start, current_index + len(pl_clean)))
+                current_index += len(pl_clean)
+
+                # Separator and summary
+                rest_of_line = f"{separator}{summary}\n"
+                insert_requests.append({
+                    "insertText": {
+                        "location": {"index": current_index},
+                        "text": rest_of_line
+                    }
+                })
+                current_index += len(rest_of_line)
 
         # Blank line
         insert_requests.append({
@@ -195,8 +236,9 @@ def update_google_docs(processed_data: dict) -> bool:
 
             # Each PL in this category
             for pl in pl_by_category[category]:
-                # PL name (bold)
-                pl_name_text = f"{pl}: "
+                # PL name (bold) - clean name without year
+                pl_clean = clean_pl_name(pl)
+                pl_name_text = f"{pl_clean}: "
                 pl_start = current_index
                 insert_requests.append({
                     "insertText": {
