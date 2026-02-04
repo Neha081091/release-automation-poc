@@ -11,6 +11,9 @@ This module handles all Google Docs operations:
 import os
 import json
 import pickle
+import ssl
+import certifi
+import httplib2
 from typing import List, Dict, Optional, Tuple
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -18,6 +21,12 @@ from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow, Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from google_auth_httplib2 import AuthorizedHttp
+
+# Disable SSL verification for corporate proxy environments
+ssl._create_default_https_context = ssl._create_unverified_context
+os.environ['REQUESTS_CA_BUNDLE'] = ''
+os.environ['CURL_CA_BUNDLE'] = ''
 
 
 # OAuth scopes required for Google Docs
@@ -66,7 +75,10 @@ class GoogleDocsHandler:
                 print("[Google Docs] Using service account authentication...")
                 self.creds = service_account.Credentials.from_service_account_file(
                     self.service_account_path, scopes=SCOPES)
-                self.service = build('docs', 'v1', credentials=self.creds)
+                # Create http object with SSL verification disabled for corporate proxy
+                http = httplib2.Http(disable_ssl_certificate_validation=True)
+                authed_http = AuthorizedHttp(self.creds, http=http)
+                self.service = build('docs', 'v1', http=authed_http)
                 print("[Google Docs] Service account authentication successful")
                 return True
 
@@ -116,8 +128,10 @@ class GoogleDocsHandler:
                     pickle.dump(self.creds, token)
                 print("[Google Docs] Saved new token")
 
-            # Build the service
-            self.service = build('docs', 'v1', credentials=self.creds)
+            # Build the service with SSL verification disabled for corporate proxy
+            http = httplib2.Http(disable_ssl_certificate_validation=True)
+            authed_http = AuthorizedHttp(self.creds, http=http)
+            self.service = build('docs', 'v1', http=authed_http)
             print("[Google Docs] Authentication successful")
             return True
 
