@@ -238,17 +238,15 @@ def update_google_docs(processed_data: dict) -> bool:
 
             # Each PL in this category
             for pl in pl_by_category[category]:
-                # PL name (bold) - clean name without year
+                # PL name - clean name without year (NOT bold per user request)
                 pl_clean = clean_pl_name(pl)
                 pl_name_text = f"{pl_clean}: "
-                pl_start = current_index
                 insert_requests.append({
                     "insertText": {
                         "location": {"index": current_index},
                         "text": pl_name_text
                     }
                 })
-                formatting_positions["bold"].append((pl_start, current_index + len(pl_name_text)))
                 current_index += len(pl_name_text)
 
                 # Release version (blue link)
