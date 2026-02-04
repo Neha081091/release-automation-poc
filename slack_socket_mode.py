@@ -517,6 +517,18 @@ def handle_good_to_announce(ack, body):
     doc_url = message_metadata.get(message_ts, {}).get('doc_url', '')
     release_date = message_metadata.get(message_ts, {}).get('release_date', datetime.now().strftime('%d %B %Y'))
 
+    # Load processed notes for full content
+    try:
+        with open('processed_notes.json', 'r') as f:
+            processed_data = json.load(f)
+    except Exception as e:
+        print(f"[Socket Mode] Error loading processed notes: {e}")
+        processed_data = {}
+
+    tldr_by_pl = processed_data.get('tldr_by_pl', {})
+    body_by_pl = processed_data.get('body_by_pl', {})
+    release_versions = processed_data.get('release_versions', {})
+
     announcement_blocks = [
         {
             "type": "header",
@@ -537,31 +549,91 @@ def handle_good_to_announce(ack, body):
             }
         })
 
-    if approved_pls:
+    announcement_blocks.append({"type": "divider"})
+
+    # TL;DR Section - only for approved PLs
+    tldr_text = "*🎯 TL;DR - Key Deployments:*\n"
+    for pl in approved_pls:
+        # Find matching PL in processed data (handle year suffix)
+        pl_tldr = None
+        for orig_pl, tldr in tldr_by_pl.items():
+            if pl in orig_pl or orig_pl in pl or orig_pl.replace(' 2026', '').replace(' 2025', '') == pl:
+                pl_tldr = tldr
+                break
+        if pl_tldr:
+            tldr_text += f"• *{pl}* - {pl_tldr}\n"
+
+    announcement_blocks.append({
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": tldr_text
+        }
+    })
+
+    announcement_blocks.append({"type": "divider"})
+
+    # Detailed sections for each approved PL
+    for pl in approved_pls:
+        # Find matching PL data
+        pl_body = None
+        pl_version = None
+        for orig_pl in body_by_pl.keys():
+            if pl in orig_pl or orig_pl in pl or orig_pl.replace(' 2026', '').replace(' 2025', '') == pl:
+                pl_body = body_by_pl.get(orig_pl, '')
+                pl_version = release_versions.get(orig_pl, '')
+                break
+
+        # PL Header with version
+        header_text = f"*{pl}*"
+        if pl_version:
+            header_text += f": {pl_version}"
+
         announcement_blocks.append({
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"✅ *Approved PLs:* {', '.join(approved_pls)}"
+                "text": header_text
             }
         })
 
+        # PL Body content (truncate if too long for Slack)
+        if pl_body:
+            # Slack has a 3000 char limit per text block
+            if len(pl_body) > 2900:
+                pl_body = pl_body[:2900] + "...\n_(See full notes in Google Doc)_"
+
+            announcement_blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": pl_body
+                }
+            })
+
+    announcement_blocks.append({"type": "divider"})
+
+    # Summary of statuses
     if rejected_pls:
         announcement_blocks.append({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"❌ *Deferred PLs:* {', '.join(rejected_pls)}"
-            }
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"❌ *Deferred (in doc, not announced):* {', '.join(rejected_pls)}"
+                }
+            ]
         })
 
     if tomorrow_pls:
         announcement_blocks.append({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"⏰ *Moved to Tomorrow:* {', '.join(tomorrow_pls)}"
-            }
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"⏰ *Moved to Tomorrow:* {', '.join(tomorrow_pls)}"
+                }
+            ]
         })
 
     announcement_blocks.append({
