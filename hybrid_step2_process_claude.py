@@ -96,7 +96,7 @@ Release Version: {release_version}
 Raw Sections:
 {sections_text}
 
-CRITICAL: Be CONCISE. Each bullet must be ONE sentence (max 30 words).
+Write DESCRIPTIVE value add statements. Each bullet should explain WHAT changed and WHY it benefits users.
 
 STRICT FORMAT RULES:
 1. NO markdown formatting (no **, no __, no backticks)
@@ -105,23 +105,25 @@ STRICT FORMAT RULES:
 4. For regular epics: include "Value Add:" header before bullets
 5. For "Bug Fixes" sections: use "Bug Fixes:" header (NOT "Value Add:")
 6. Use filled circle bullet "●" for all bullets
-7. 1-2 bullets per epic - NO verbose explanations
-8. Each bullet is ONE sentence (max 30 words) - start with "Fixed..." for bugs
+7. 1-2 bullets per epic
+8. Each bullet is ONE sentence - describe the change AND its benefit to users
 9. End each epic section with status tag: General Availability OR Feature Flag
 10. One blank line between epic sections
-11. NEVER repeat information or over-explain
 
-BAD (too verbose):
-● Updated copy on the audience group builder UI to improve clarity. Users can now more easily understand.
+BAD (too short, no context):
+● Updated bulk actions goals dropdown for enhanced user experience
 
-GOOD (concise):
-● Users can now view and manage creatives directly within the Ad Group Builder with a new listing functionality
+GOOD (descriptive with benefit):
+● Updated Bulk Actions Goals dropdown to match the rest of the platform design, providing a cleaner and more intuitive user experience
+
+GOOD (descriptive):
+● Users can now view and manage creatives directly within the Ad Group Builder with a new listing functionality, eliminating the need to navigate away
 
 EXACT OUTPUT FORMAT FOR REGULAR EPICS:
 Epic Name Here
 Value Add:
-● Concise benefit statement in one sentence
-● Another user-focused change in one sentence
+● Descriptive statement explaining what changed and how it benefits users
+● Another change with clear user benefit
 General Availability
 
 EXACT OUTPUT FORMAT FOR BUG FIXES SECTION:
@@ -130,7 +132,7 @@ Bug Fixes:
 ● Fixed query returning 0 results when This Month date range selected
 General Availability
 
-Transform sections for {product} - BE CONCISE:"""
+Transform sections for {product} - be DESCRIPTIVE:"""
         }]
     )
 
