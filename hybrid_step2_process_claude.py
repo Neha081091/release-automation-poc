@@ -102,31 +102,33 @@ STRICT FORMAT RULES:
 1. NO markdown formatting (no **, no __, no backticks)
 2. Use PLAIN TEXT only
 3. Epic names as simple headers (no formatting)
-4. Always include "Value Add:" header before bullets
-5. Use filled circle bullet "●" for all bullets
-6. 1-2 bullets per epic - NO verbose explanations
-7. Each bullet is ONE sentence - start with "Users can now..." or action verb
-8. End each epic section with status tag: General Availability OR Feature Flag
-9. Bug fixes go on SINGLE LINE: "Bug Fix: [description]" (no separate section)
+4. For regular epics: include "Value Add:" header before bullets
+5. For "Bug Fixes" sections: use "Bug Fixes:" header (NOT "Value Add:")
+6. Use filled circle bullet "●" for all bullets
+7. 1-2 bullets per epic - NO verbose explanations
+8. Each bullet is ONE sentence (max 30 words) - start with "Fixed..." for bugs
+9. End each epic section with status tag: General Availability OR Feature Flag
 10. One blank line between epic sections
 11. NEVER repeat information or over-explain
 
-BAD (too verbose - multiple sentences):
-● Updated copy on the audience group builder UI to improve clarity. Users can now more easily understand the interface options.
-
-GOOD (concise - single sentence, max 30 words):
-● Users can now view and manage creatives directly within the Ad Group Builder with a new listing functionality
+BAD (too verbose):
+● Updated copy on the audience group builder UI to improve clarity. Users can now more easily understand.
 
 GOOD (concise):
-● Streamlined creative creation workflow allows users to create new creatives within the Ad Group Builder and automatically link them to the current ad group upon save
+● Users can now view and manage creatives directly within the Ad Group Builder with a new listing functionality
 
-EXACT OUTPUT FORMAT:
+EXACT OUTPUT FORMAT FOR REGULAR EPICS:
 Epic Name Here
 Value Add:
 ● Concise benefit statement in one sentence
 ● Another user-focused change in one sentence
 General Availability
-Bug Fix: Fixed [issue] in [component]
+
+EXACT OUTPUT FORMAT FOR BUG FIXES SECTION:
+Bug Fixes:
+● Fixed alignment issue with save draft button in HCP planner when using long names
+● Fixed query returning 0 results when This Month date range selected
+General Availability
 
 Transform sections for {product} - BE CONCISE:"""
         }]
@@ -193,7 +195,16 @@ def process_tickets_with_claude():
             match = re.match(r'^(.+?):\s*Release', fix_version)
             pl = match.group(1).strip() if match else "Other"
 
-        epic_name = ticket.get("epic_name") or "Uncategorized"
+        epic_name = ticket.get("epic_name")
+        issue_type = ticket.get("issue_type", "").lower()
+
+        # If no epic, categorize based on issue type
+        if not epic_name:
+            if issue_type == "bug":
+                epic_name = "Bug Fixes"
+            else:
+                epic_name = "Uncategorized"
+
         grouped[pl][epic_name].append(ticket)
 
     print(f"[Step 2] Grouped into {len(grouped)} product lines")
