@@ -343,13 +343,28 @@ class GoogleDocsHandler:
             # Clean PL name for matching (remove year suffix)
             pl_clean = re.sub(r'\s+20\d{2}$', '', pl_name)
 
-            # Pattern to find the PL header line
-            pattern = rf'{re.escape(pl_clean)}:\s*Release\s+\d+\.\d+'
+            # Pattern to find the PL header line (may have year suffix in doc)
+            # Try with year first, then without
+            pattern = rf'{re.escape(pl_clean)}(?:\s+20\d{{2}})?:\s*Release\s+\d+\.\d+'
             match = re.search(pattern, full_text, re.IGNORECASE)
 
             if not match:
+                # Try simpler pattern - just PL name followed by colon
+                pattern2 = rf'{re.escape(pl_clean)}[^:\n]*:\s*Release'
+                match = re.search(pattern2, full_text, re.IGNORECASE)
+                if match:
+                    print(f"[Google Docs] Found section with flexible pattern: {match.group()}")
+
+            if not match:
                 print(f"[Google Docs] Could not find section for PL: {pl_name}")
+                print(f"[Google Docs] Searched for: {pattern}")
+                # Show what's in the doc for debugging
+                if pl_clean.lower() in full_text.lower():
+                    idx = full_text.lower().find(pl_clean.lower())
+                    print(f"[Google Docs] Found '{pl_clean}' at index {idx}: '{full_text[idx:idx+100]}'")
                 return None
+
+            print(f"[Google Docs] Found main section at: {match.group()}")
 
             # Find the start of this section (look back for category header or separator)
             section_start = match.start()
@@ -437,20 +452,52 @@ class GoogleDocsHandler:
                 print(f"[Google Docs] Could not find TL;DR section")
                 return None
 
-            # Find end of TL;DR section (next major section with dashes)
-            tldr_section_end = full_text.find('------------------', tldr_start + 50)
+            # Find the end of the TL;DR header line first
+            tldr_header_end = full_text.find('\n', tldr_start)
+            if tldr_header_end == -1:
+                tldr_header_end = tldr_start + 50
+
+            # Find end of TL;DR section (next major section with dashes AFTER the header)
+            tldr_section_end = full_text.find('------------------', tldr_header_end)
             if tldr_section_end == -1:
                 tldr_section_end = len(full_text)
 
+            print(f"[Google Docs] TL;DR section: start={tldr_start}, header_end={tldr_header_end}, section_end={tldr_section_end}")
+
             tldr_section = full_text[tldr_start:tldr_section_end]
 
+            print(f"[Google Docs] TL;DR section preview (first 500 chars): {tldr_section[:500]}")
+
             # Pattern to find the TL;DR bullet line: "• PL Name - description...\n"
-            # The bullet can be •, *, or -
-            pattern = rf'[•\*\-]\s*{re.escape(pl_clean)}\s*-\s*[^\n]+\n?'
+            # The bullet can be •, ●, *, or -
+            # PL name might have bold formatting (*PL Name*) and optional year suffix
+            # Dash can be -, –, or —
+            pattern = rf'[•●\*\-]\s*\*?{re.escape(pl_clean)}(?:\s+20\d{{2}})?\*?\s*[-–—]\s*[^\n]+\n?'
+            print(f"[Google Docs] Searching TL;DR with pattern: {pattern}")
             match = re.search(pattern, tldr_section, re.IGNORECASE)
 
             if not match:
+                # Try a more flexible pattern without bullet requirement
+                pattern2 = rf'\*?{re.escape(pl_clean)}(?:\s+20\d{{2}})?\*?\s*[-–—]\s*[^\n]+\n?'
+                print(f"[Google Docs] Trying flexible pattern: {pattern2}")
+                match = re.search(pattern2, tldr_section, re.IGNORECASE)
+                if match:
+                    # Try to include the bullet at the start of line
+                    line_start = tldr_section.rfind('\n', 0, match.start())
+                    if line_start == -1:
+                        line_start = 0
+                    else:
+                        line_start += 1  # Skip the newline
+                    # Adjust match to start from line beginning
+                    actual_start = line_start
+                    actual_end = match.end()
+                    print(f"[Google Docs] Found TL;DR with flexible pattern, adjusting range: {actual_start}-{actual_end}")
+                    # Return adjusted range
+                    return (tldr_start + actual_start + 1, tldr_start + actual_end + 1)
+
+            if not match:
                 print(f"[Google Docs] Could not find TL;DR line for PL: {pl_name}")
+                print(f"[Google Docs] Searched for pattern: {pattern}")
                 return None
 
             # Calculate absolute position in document

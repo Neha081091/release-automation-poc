@@ -465,16 +465,20 @@ def handle_tomorrow(ack, body, action):
     try:
         from google_docs_handler import GoogleDocsHandler
 
+        print(f"[Socket Mode] Attempting to remove PL from Google Doc: '{pl_name}'")
         google_docs = GoogleDocsHandler()
         if google_docs.authenticate():
+            print(f"[Socket Mode] Google Docs authenticated, calling remove_pl_section('{pl_name}')")
             if google_docs.remove_pl_section(pl_name):
-                print(f"[Socket Mode] Removed {pl_name} section from Google Doc")
+                print(f"[Socket Mode] Successfully removed {pl_name} section from Google Doc")
             else:
                 print(f"[Socket Mode] Could not remove {pl_name} from Google Doc (may need manual removal)")
         else:
             print("[Socket Mode] Could not authenticate with Google Docs")
     except Exception as e:
         print(f"[Socket Mode] Error removing from Google Doc: {e}")
+        import traceback
+        traceback.print_exc()
 
     update_message_with_status(channel, message_ts)
 
