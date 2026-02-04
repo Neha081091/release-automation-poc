@@ -269,10 +269,20 @@ def update_google_docs(processed_data: dict) -> bool:
                     })
                     current_index += len(full_body) + 1
 
-        # Clear document first
-        google_docs.clear_document()
+        # Add separator line between this release and older releases
+        separator = "\n" + "═" * 60 + "\n\n"
+        insert_requests.append({
+            "insertText": {
+                "location": {"index": current_index},
+                "text": separator
+            }
+        })
+        current_index += len(separator)
 
-        # Insert all text
+        # DO NOT clear document - prepend new content at top
+        # This keeps older releases below the new one
+
+        # Insert all text at the beginning (index 1)
         google_docs.update_document(insert_requests)
 
         # Now apply formatting
