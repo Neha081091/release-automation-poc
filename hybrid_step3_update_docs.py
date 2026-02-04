@@ -120,75 +120,49 @@ def update_google_docs(processed_data: dict) -> bool:
         }
 
         # ========================================
-        # APPROVAL TABLE AT TOP
+        # APPROVAL SECTION AT TOP
         # ========================================
-        approval_header = f"📅 Release: {release_date}\n\n"
+        # Instructions for adding dropdowns
+        approval_header = f"📋 APPROVAL STATUS - {release_date}\n\n"
+        approval_header += "How to use: Select each @PENDING below → Delete → Insert → Smart chips → Dropdown\n"
+        approval_header += "Create options: ✅ Approved | ❌ Rejected | ➡️ Tomorrow\n\n"
         insert_requests.append({
             "insertText": {
                 "location": {"index": current_index},
                 "text": approval_header
             }
         })
-        formatting_positions["bold"].append((current_index, current_index + len(approval_header.strip())))
+        formatting_positions["bold"].append((current_index, current_index + 30))
         current_index += len(approval_header)
 
-        # Table header
-        table_header = "PL Name                      │ Version      │ Status    │ ✓  │ ✗  │ →\n"
-        table_divider = "─" * 80 + "\n"
-
-        insert_requests.append({
-            "insertText": {
-                "location": {"index": current_index},
-                "text": table_header
-            }
-        })
-        formatting_positions["bold"].append((current_index, current_index + len(table_header.strip())))
-        current_index += len(table_header)
-
-        insert_requests.append({
-            "insertText": {
-                "location": {"index": current_index},
-                "text": table_divider
-            }
-        })
-        current_index += len(table_divider)
-
-        # Table rows for each PL
+        # PL rows with dropdown placeholder
         for pl in product_lines:
             version = release_versions.get(pl, "Release")
-            # Truncate PL name if too long
-            pl_display = pl[:28].ljust(28) if len(pl) > 28 else pl.ljust(28)
-            ver_display = version[:12].ljust(12) if len(version) > 12 else version.ljust(12)
-
-            row = f"{pl_display} │ {ver_display} │ ⏳ Pending │ ☐  │ ☐  │ ☐\n"
+            row = f"• {pl}: {version}  →  @PENDING\n"
             insert_requests.append({
                 "insertText": {
                     "location": {"index": current_index},
                     "text": row
                 }
             })
+            # Bold the PL name
+            formatting_positions["bold"].append((current_index + 2, current_index + 2 + len(pl)))
             current_index += len(row)
 
-        # Instructions
-        instructions = "\n✓ = Approve   ✗ = Reject   → = Tomorrow\n"
-        instructions += "Mark the options once QA verification is complete.\n"
+        # Good to Announce section
+        announce_section = "\n"
+        announce_section += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        announce_section += "🎉 GOOD TO ANNOUNCE\n"
+        announce_section += "Once all reviewed → Menu: 🚀 Release Approval → Good to Announce\n"
+        announce_section += "(First time: Extensions → Apps Script → Paste google_docs_approval.js)\n"
+        announce_section += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         insert_requests.append({
             "insertText": {
                 "location": {"index": current_index},
-                "text": instructions
+                "text": announce_section
             }
         })
-        current_index += len(instructions)
-
-        # Separator between approval table and release notes
-        separator = "\n" + "═" * 80 + "\n\n"
-        insert_requests.append({
-            "insertText": {
-                "location": {"index": current_index},
-                "text": separator
-            }
-        })
-        current_index += len(separator)
+        current_index += len(announce_section)
 
         # ========================================
         # RELEASE NOTES BELOW
