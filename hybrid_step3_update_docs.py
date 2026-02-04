@@ -157,14 +157,16 @@ def update_google_docs(processed_data: dict) -> bool:
         })
         current_index += len(tldr_header)
 
-        # Key Deployments
+        # Key Deployments (bold)
         key_deploy_header = "Key Deployments:\n"
+        key_deploy_start = current_index
         insert_requests.append({
             "insertText": {
                 "location": {"index": current_index},
                 "text": key_deploy_header
             }
         })
+        formatting_positions["bold"].append((key_deploy_start, current_index + len("Key Deployments:")))
         current_index += len(key_deploy_header)
 
         # TL;DR per PL (with bold PL names)
