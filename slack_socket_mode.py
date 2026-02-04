@@ -529,122 +529,87 @@ def handle_good_to_announce(ack, body):
     body_by_pl = processed_data.get('body_by_pl', {})
     release_versions = processed_data.get('release_versions', {})
 
-    announcement_blocks = [
-        {
-            "type": "header",
-            "text": {
-                "type": "plain_text",
-                "text": f"📢 Daily Deployment Summary: {release_date}",
-                "emoji": True
-            }
-        }
-    ]
+    # Build announcement in exact Google Doc format
+    announcement_text = f"*Daily Deployment Summary: {release_date}*\n\n"
+    announcement_text += "------------------TL;DR:------------------\n\n"
+    announcement_text += "*Key Deployments:*\n"
 
-    if doc_url:
-        announcement_blocks.append({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"<{doc_url}|📄 View Full Release Notes>"
-            }
-        })
-
-    announcement_blocks.append({"type": "divider"})
-
-    # TL;DR Section - only for approved PLs
-    tldr_text = "*🎯 TL;DR - Key Deployments:*\n"
+    # TL;DR bullets for approved PLs only
     for pl in approved_pls:
-        # Find matching PL in processed data (handle year suffix)
         pl_tldr = None
         for orig_pl, tldr in tldr_by_pl.items():
             if pl in orig_pl or orig_pl in pl or orig_pl.replace(' 2026', '').replace(' 2025', '') == pl:
                 pl_tldr = tldr
                 break
         if pl_tldr:
-            tldr_text += f"• *{pl}* - {pl_tldr}\n"
+            announcement_text += f"● *{pl}* - {pl_tldr}\n"
 
-    announcement_blocks.append({
-        "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": tldr_text
-        }
-    })
-
-    announcement_blocks.append({"type": "divider"})
+    announcement_text += "\n"
 
     # Detailed sections for each approved PL
     for pl in approved_pls:
-        # Find matching PL data
         pl_body = None
         pl_version = None
+        orig_pl_name = pl
         for orig_pl in body_by_pl.keys():
             if pl in orig_pl or orig_pl in pl or orig_pl.replace(' 2026', '').replace(' 2025', '') == pl:
                 pl_body = body_by_pl.get(orig_pl, '')
                 pl_version = release_versions.get(orig_pl, '')
+                orig_pl_name = orig_pl
                 break
 
-        # PL Header with version
-        header_text = f"*{pl}*"
+        # PL Section Header with dashes
+        announcement_text += f"------------------{pl}------------------\n"
         if pl_version:
-            header_text += f": {pl_version}"
+            announcement_text += f"{orig_pl_name}: {pl_version}\n"
+        else:
+            announcement_text += f"{orig_pl_name}\n"
 
+        # PL Body content
+        if pl_body:
+            announcement_text += f"{pl_body}\n\n"
+
+    # Split into chunks for Slack's 3000 char limit per block
+    announcement_blocks = []
+    chunks = []
+    current_chunk = ""
+
+    for line in announcement_text.split('\n'):
+        if len(current_chunk) + len(line) + 1 > 2900:
+            chunks.append(current_chunk)
+            current_chunk = line + '\n'
+        else:
+            current_chunk += line + '\n'
+    if current_chunk:
+        chunks.append(current_chunk)
+
+    for chunk in chunks:
         announcement_blocks.append({
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": header_text
+                "text": chunk
             }
         })
 
-        # PL Body content (truncate if too long for Slack)
-        if pl_body:
-            # Slack has a 3000 char limit per text block
-            if len(pl_body) > 2900:
-                pl_body = pl_body[:2900] + "...\n_(See full notes in Google Doc)_"
-
-            announcement_blocks.append({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": pl_body
-                }
-            })
-
-    announcement_blocks.append({"type": "divider"})
-
-    # Summary of statuses
-    if rejected_pls:
+    # Add link to Google Doc
+    if doc_url:
         announcement_blocks.append({
             "type": "context",
-            "elements": [
-                {
-                    "type": "mrkdwn",
-                    "text": f"❌ *Deferred (in doc, not announced):* {', '.join(rejected_pls)}"
-                }
-            ]
+            "elements": [{"type": "mrkdwn", "text": f"<{doc_url}|📄 View Full Release Notes>"}]
         })
 
-    if tomorrow_pls:
+    # Footer with deferred/tomorrow info
+    if rejected_pls or tomorrow_pls:
+        footer = ""
+        if rejected_pls:
+            footer += f"❌ Deferred: {', '.join(rejected_pls)}  "
+        if tomorrow_pls:
+            footer += f"⏰ Tomorrow: {', '.join(tomorrow_pls)}"
         announcement_blocks.append({
             "type": "context",
-            "elements": [
-                {
-                    "type": "mrkdwn",
-                    "text": f"⏰ *Moved to Tomorrow:* {', '.join(tomorrow_pls)}"
-                }
-            ]
+            "elements": [{"type": "mrkdwn", "text": footer.strip()}]
         })
-
-    announcement_blocks.append({
-        "type": "context",
-        "elements": [
-            {
-                "type": "mrkdwn",
-                "text": f"Announced by @{user} at {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-            }
-        ]
-    })
 
     # Note: Rejected PLs stay in Google Doc, just excluded from Slack announcement
     # Tomorrow PLs are already removed from Google Doc when the button was clicked
