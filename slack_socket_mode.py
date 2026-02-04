@@ -39,16 +39,73 @@ app = App(token=os.getenv("SLACK_BOT_TOKEN"))
 # Slack client for API calls
 client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
 
-# Store approval states per message
-# Format: {message_ts: {pl_name: {'status': 'approved/rejected/tomorrow', 'user': 'username'}}}
-approval_states = {}
+# File paths for state persistence (shared between processes)
+APPROVAL_STATES_FILE = 'approval_states.json'
+MESSAGE_METADATA_FILE = 'message_metadata.json'
+DEFERRED_PLS_FILE = 'deferred_pls.json'
 
-# Store deferred PLs for tomorrow
-# Format: {date_str: [{'pl': 'PL Name', 'notes': '...'}]}
-deferred_pls = {}
 
-# Store message metadata (which PLs are in this message)
-message_metadata = {}
+def load_approval_states() -> dict:
+    """Load approval states from file."""
+    try:
+        with open(APPROVAL_STATES_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        print(f"[Socket Mode] Error loading approval states: {e}")
+        return {}
+
+
+def save_approval_states(states: dict):
+    """Save approval states to file."""
+    try:
+        with open(APPROVAL_STATES_FILE, 'w') as f:
+            json.dump(states, f, indent=2)
+    except Exception as e:
+        print(f"[Socket Mode] Error saving approval states: {e}")
+
+
+def load_message_metadata() -> dict:
+    """Load message metadata from file."""
+    try:
+        with open(MESSAGE_METADATA_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        print(f"[Socket Mode] Error loading message metadata: {e}")
+        return {}
+
+
+def save_message_metadata(metadata: dict):
+    """Save message metadata to file."""
+    try:
+        with open(MESSAGE_METADATA_FILE, 'w') as f:
+            json.dump(metadata, f, indent=2)
+    except Exception as e:
+        print(f"[Socket Mode] Error saving message metadata: {e}")
+
+
+def load_deferred_pls() -> dict:
+    """Load deferred PLs from file."""
+    try:
+        with open(DEFERRED_PLS_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        print(f"[Socket Mode] Error loading deferred PLs: {e}")
+        return {}
+
+
+def save_deferred_pls(deferred: dict):
+    """Save deferred PLs to file."""
+    try:
+        with open(DEFERRED_PLS_FILE, 'w') as f:
+            json.dump(deferred, f, indent=2)
+    except Exception as e:
+        print(f"[Socket Mode] Error saving deferred PLs: {e}")
 
 
 def get_pl_name_from_action(action_id: str) -> str:
@@ -68,6 +125,9 @@ def clean_pl_name_for_action(pl_name: str) -> str:
 
 def count_pending_reviews(message_ts: str) -> int:
     """Count how many PLs are still pending review."""
+    message_metadata = load_message_metadata()
+    approval_states = load_approval_states()
+
     if message_ts not in message_metadata:
         return 0
 
@@ -85,6 +145,7 @@ def all_pls_reviewed(message_ts: str) -> bool:
 def build_pl_blocks(pls: list, message_ts: str = None) -> list:
     """Build Slack blocks for PL review sections."""
     blocks = []
+    approval_states = load_approval_states()
 
     for pl in pls:
         pl_action_id = clean_pl_name_for_action(pl)
@@ -210,8 +271,10 @@ def build_footer_blocks(message_ts: str = None, pls: list = None) -> list:
 
 def update_message_with_status(channel: str, message_ts: str):
     """Update the entire message to reflect current approval states."""
+    message_metadata = load_message_metadata()
 
     if message_ts not in message_metadata:
+        print(f"[Socket Mode] Warning: message_ts {message_ts} not found in metadata")
         return
 
     pls = message_metadata[message_ts].get('pls', [])
@@ -279,6 +342,8 @@ def handle_approve(ack, body, action):
 
     print(f"[Socket Mode] {user} APPROVED {pl_name}")
 
+    # Load, update, and save approval states
+    approval_states = load_approval_states()
     if message_ts not in approval_states:
         approval_states[message_ts] = {}
 
@@ -287,6 +352,7 @@ def handle_approve(ack, body, action):
         'user': user,
         'timestamp': datetime.now().isoformat()
     }
+    save_approval_states(approval_states)
 
     update_message_with_status(channel, message_ts)
 
@@ -303,6 +369,8 @@ def handle_reject(ack, body, action):
 
     print(f"[Socket Mode] {user} REJECTED {pl_name}")
 
+    # Load, update, and save approval states
+    approval_states = load_approval_states()
     if message_ts not in approval_states:
         approval_states[message_ts] = {}
 
@@ -311,6 +379,7 @@ def handle_reject(ack, body, action):
         'user': user,
         'timestamp': datetime.now().isoformat()
     }
+    save_approval_states(approval_states)
 
     update_message_with_status(channel, message_ts)
 
@@ -327,6 +396,8 @@ def handle_tomorrow(ack, body, action):
 
     print(f"[Socket Mode] {user} marked {pl_name} for TOMORROW")
 
+    # Load, update, and save approval states
+    approval_states = load_approval_states()
     if message_ts not in approval_states:
         approval_states[message_ts] = {}
 
@@ -335,13 +406,16 @@ def handle_tomorrow(ack, body, action):
         'user': user,
         'timestamp': datetime.now().isoformat()
     }
+    save_approval_states(approval_states)
 
     # Store for tomorrow's release
     tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+    deferred_pls = load_deferred_pls()
     if tomorrow not in deferred_pls:
         deferred_pls[tomorrow] = []
 
     # Get PL notes from metadata if available
+    message_metadata = load_message_metadata()
     pl_notes = message_metadata.get(message_ts, {}).get('notes_by_pl', {}).get(pl_name, '')
 
     deferred_pls[tomorrow].append({
@@ -351,13 +425,8 @@ def handle_tomorrow(ack, body, action):
         'deferred_at': datetime.now().isoformat()
     })
 
-    # Save deferred PLs to file for persistence
-    try:
-        with open('deferred_pls.json', 'w') as f:
-            json.dump(deferred_pls, f, indent=2)
-        print(f"[Socket Mode] Saved deferred PL {pl_name} for {tomorrow}")
-    except Exception as e:
-        print(f"[Socket Mode] Error saving deferred PLs: {e}")
+    save_deferred_pls(deferred_pls)
+    print(f"[Socket Mode] Saved deferred PL {pl_name} for {tomorrow}")
 
     update_message_with_status(channel, message_ts)
 
@@ -377,6 +446,10 @@ def handle_good_to_announce(ack, body):
     if not all_pls_reviewed(message_ts):
         print("[Socket Mode] Not all PLs reviewed yet!")
         return
+
+    # Load state from files
+    approval_states = load_approval_states()
+    message_metadata = load_message_metadata()
 
     # Get approved PLs
     approved_pls = []
@@ -527,18 +600,12 @@ def post_approval_message(pls: list = None, doc_url: str = None, release_date: s
 
     # Check for deferred PLs from yesterday
     today = datetime.now().strftime('%Y-%m-%d')
-    try:
-        with open('deferred_pls.json', 'r') as f:
-            deferred_data = json.load(f)
-            if today in deferred_data:
-                for deferred in deferred_data[today]:
-                    if deferred['pl'] not in clean_pls:
-                        clean_pls.append(deferred['pl'])
-                        print(f"[Socket Mode] Added deferred PL from yesterday: {deferred['pl']}")
-    except FileNotFoundError:
-        pass
-    except Exception as e:
-        print(f"[Socket Mode] Error loading deferred PLs: {e}")
+    deferred_data = load_deferred_pls()
+    if today in deferred_data:
+        for deferred in deferred_data[today]:
+            if deferred['pl'] not in clean_pls:
+                clean_pls.append(deferred['pl'])
+                print(f"[Socket Mode] Added deferred PL from yesterday: {deferred['pl']}")
 
     blocks = [
         {
@@ -585,16 +652,20 @@ def post_approval_message(pls: list = None, doc_url: str = None, release_date: s
         )
         message_ts = result['ts']
 
-        # Store metadata for this message
+        # Load existing metadata, add new entry, and save
+        message_metadata = load_message_metadata()
         message_metadata[message_ts] = {
             'pls': clean_pls,
             'doc_url': doc_url,
             'release_date': release_date,
-            'notes_by_pl': notes_by_pl or {}
+            'notes_by_pl': notes_by_pl or {},
+            'channel': channel
         }
+        save_message_metadata(message_metadata)
 
         print(f"[Socket Mode] Approval message posted: {message_ts}")
         print(f"[Socket Mode] PLs: {clean_pls}")
+        print(f"[Socket Mode] Metadata saved to {MESSAGE_METADATA_FILE}")
         return message_ts
 
     except Exception as e:
