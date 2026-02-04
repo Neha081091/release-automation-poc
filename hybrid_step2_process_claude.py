@@ -96,38 +96,35 @@ Release Version: {release_version}
 Raw Sections:
 {sections_text}
 
-CRITICAL: Be EXTREMELY CONCISE. Each bullet must be ONE short sentence (max 20 words).
+CRITICAL: Be CONCISE. Each bullet must be ONE sentence (max 30 words).
 
 STRICT FORMAT RULES:
 1. NO markdown formatting (no **, no __, no backticks)
 2. Use PLAIN TEXT only
 3. Epic names as simple headers (no formatting)
 4. Always include "Value Add:" header before bullets
-5. Use asterisk bullet character "*" (not •, not -)
-6. 1-2 SHORT bullets per epic - NO verbose explanations
-7. Each bullet is ONE SHORT sentence - start with "Users can now..." or action verb
+5. Use filled circle bullet "●" for all bullets
+6. 1-2 bullets per epic - NO verbose explanations
+7. Each bullet is ONE sentence - start with "Users can now..." or action verb
 8. End each epic section with status tag: General Availability OR Feature Flag
 9. Bug fixes go on SINGLE LINE: "Bug Fix: [description]" (no separate section)
 10. One blank line between epic sections
 11. NEVER repeat information or over-explain
 
-BAD (too verbose):
-* Updated copy on the audience group builder UI to improve clarity and user comprehension when creating audience segments. Users can now more easily understand the interface options.
+BAD (too verbose - multiple sentences):
+● Updated copy on the audience group builder UI to improve clarity. Users can now more easily understand the interface options.
+
+GOOD (concise - single sentence, max 30 words):
+● Users can now view and manage creatives directly within the Ad Group Builder with a new listing functionality
 
 GOOD (concise):
-* Users can now view updated audience name and ID formatting in the Audience Details Modal for consistent representation
-
-BAD (too verbose):
-* Removed the zip code chart and toggle from the geo chart in HCP Planner to streamline the interface and improve focus on key metrics. Users can now navigate the geographic data more efficiently.
-
-GOOD (concise):
-* Cleaner HCP Planner interface by removing the Zip code chart and toggle from the Geo Chart
+● Streamlined creative creation workflow allows users to create new creatives within the Ad Group Builder and automatically link them to the current ad group upon save
 
 EXACT OUTPUT FORMAT:
 Epic Name Here
 Value Add:
-* Short, punchy benefit statement
-* Another concise user-focused change
+● Concise benefit statement in one sentence
+● Another user-focused change in one sentence
 General Availability
 Bug Fix: Fixed [issue] in [component]
 
