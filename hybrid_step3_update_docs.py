@@ -94,7 +94,7 @@ def find_epic_url(line_text: str, epic_urls: dict) -> str:
     return ""
 
 
-def update_google_docs(processed_data: dict) -> bool:
+def update_google_docs(processed_data: dict, force_update: bool = False) -> bool:
     """Update Google Docs with processed notes in executive style with formatting."""
     print("\n[Step 3a] Updating Google Docs...")
 
@@ -113,6 +113,18 @@ def update_google_docs(processed_data: dict) -> bool:
         release_date = processed_data.get("release_summary", "").replace("Release ", "")
         if not release_date:
             release_date = datetime.now().strftime("%d %B %Y")
+
+        # Check if this release already exists in the document
+        existing_content = google_docs.get_document_content()
+        release_header = f"Daily Deployment Summary: {release_date}"
+
+        if existing_content and release_header in existing_content:
+            if not force_update:
+                print(f"[Step 3a] WARNING: Release '{release_date}' already exists in document")
+                print("[Step 3a] Skipping to avoid duplicates. Use --force to override.")
+                return True  # Return True since it's not an error
+            else:
+                print(f"[Step 3a] Force update: Adding '{release_date}' even though it exists")
 
         tldr_by_pl = processed_data.get("tldr_by_pl", {})
         body_by_pl = processed_data.get("body_by_pl", {})
@@ -495,6 +507,7 @@ def main():
     parser.add_argument('--no-slack', action='store_true', help='Skip Slack notification')
     parser.add_argument('--approval', action='store_true', help='Send only Slack approval message')
     parser.add_argument('--simple-slack', action='store_true', help='Use simple Slack notification (no buttons)')
+    parser.add_argument('--force', action='store_true', help='Force update even if release already exists')
     args = parser.parse_args()
 
     print("=" * 60)
@@ -528,7 +541,7 @@ def main():
         return
 
     # Update Google Docs
-    docs_success = update_google_docs(processed_data)
+    docs_success = update_google_docs(processed_data, force_update=args.force)
 
     # Send Slack notification (unless skipped)
     if not args.no_slack:
