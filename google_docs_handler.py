@@ -403,9 +403,70 @@ class GoogleDocsHandler:
             print(f"[Google Docs] Error finding PL section: {e}")
             return None
 
+    def find_tldr_line_range(self, pl_name: str) -> Optional[Tuple[int, int]]:
+        """
+        Find the TL;DR bullet line for a specific PL.
+
+        Looks for patterns like "• Audiences PL1 - description..." in the TL;DR section.
+
+        Args:
+            pl_name: Name of the product line to find
+
+        Returns:
+            Tuple of (start_index, end_index) or None if not found
+        """
+        try:
+            doc = self.service.documents().get(documentId=self.document_id).execute()
+            content = doc.get('body', {}).get('content', [])
+
+            # Build full text
+            full_text = ""
+            for element in content:
+                if 'paragraph' in element:
+                    for text_run in element['paragraph'].get('elements', []):
+                        if 'textRun' in text_run:
+                            full_text += text_run['textRun'].get('content', '')
+
+            import re
+            # Clean PL name for matching (remove year suffix)
+            pl_clean = re.sub(r'\s+20\d{2}$', '', pl_name)
+
+            # Find the TL;DR section boundaries
+            tldr_start = full_text.find('TL;DR')
+            if tldr_start == -1:
+                print(f"[Google Docs] Could not find TL;DR section")
+                return None
+
+            # Find end of TL;DR section (next major section with dashes)
+            tldr_section_end = full_text.find('------------------', tldr_start + 50)
+            if tldr_section_end == -1:
+                tldr_section_end = len(full_text)
+
+            tldr_section = full_text[tldr_start:tldr_section_end]
+
+            # Pattern to find the TL;DR bullet line: "• PL Name - description...\n"
+            # The bullet can be •, *, or -
+            pattern = rf'[•\*\-]\s*{re.escape(pl_clean)}\s*-\s*[^\n]+\n?'
+            match = re.search(pattern, tldr_section, re.IGNORECASE)
+
+            if not match:
+                print(f"[Google Docs] Could not find TL;DR line for PL: {pl_name}")
+                return None
+
+            # Calculate absolute position in document
+            line_start = tldr_start + match.start()
+            line_end = tldr_start + match.end()
+
+            # Adjust indices for Google Docs API (1-indexed)
+            return (line_start + 1, line_end + 1)
+
+        except HttpError as e:
+            print(f"[Google Docs] Error finding TL;DR line: {e}")
+            return None
+
     def remove_pl_section(self, pl_name: str) -> bool:
         """
-        Remove a PL's section from the document.
+        Remove a PL's section AND its TL;DR entry from the document.
 
         Args:
             pl_name: Name of the product line to remove
@@ -415,30 +476,50 @@ class GoogleDocsHandler:
         """
         print(f"[Google Docs] Removing section for PL: {pl_name}")
 
-        range_indices = self.find_pl_section_range(pl_name)
-        if not range_indices:
-            print(f"[Google Docs] Could not find section to remove")
+        # Find the main section range
+        section_range = self.find_pl_section_range(pl_name)
+
+        # Find the TL;DR line range
+        tldr_range = self.find_tldr_line_range(pl_name)
+
+        if not section_range and not tldr_range:
+            print(f"[Google Docs] Could not find any content to remove for PL: {pl_name}")
             return False
 
-        start_idx, end_idx = range_indices
-        print(f"[Google Docs] Found section at indices {start_idx} to {end_idx}")
-
         try:
-            requests = [{
-                'deleteContentRange': {
-                    'range': {
-                        'startIndex': start_idx,
-                        'endIndex': end_idx
+            requests = []
+
+            # IMPORTANT: Delete in reverse order (higher indices first)
+            # to avoid index shifting issues
+            ranges_to_delete = []
+
+            if section_range:
+                ranges_to_delete.append(section_range)
+                print(f"[Google Docs] Found main section at indices {section_range[0]} to {section_range[1]}")
+
+            if tldr_range:
+                ranges_to_delete.append(tldr_range)
+                print(f"[Google Docs] Found TL;DR line at indices {tldr_range[0]} to {tldr_range[1]}")
+
+            # Sort by start index in descending order (delete from end first)
+            ranges_to_delete.sort(key=lambda x: x[0], reverse=True)
+
+            for start_idx, end_idx in ranges_to_delete:
+                requests.append({
+                    'deleteContentRange': {
+                        'range': {
+                            'startIndex': start_idx,
+                            'endIndex': end_idx
+                        }
                     }
-                }
-            }]
+                })
 
             self.service.documents().batchUpdate(
                 documentId=self.document_id,
                 body={'requests': requests}
             ).execute()
 
-            print(f"[Google Docs] Successfully removed section for PL: {pl_name}")
+            print(f"[Google Docs] Successfully removed {len(requests)} section(s) for PL: {pl_name}")
             return True
 
         except HttpError as e:
