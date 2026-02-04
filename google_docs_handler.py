@@ -330,89 +330,97 @@ class GoogleDocsHandler:
             doc = self.service.documents().get(documentId=self.document_id).execute()
             content = doc.get('body', {}).get('content', [])
 
-            # Build full text and track indices
-            full_text = ""
-            for element in content:
-                if 'paragraph' in element:
-                    for text_run in element['paragraph'].get('elements', []):
-                        if 'textRun' in text_run:
-                            full_text += text_run['textRun'].get('content', '')
-
-            # Find the PL section start - look for "PL Name: Release" pattern
             import re
             # Clean PL name for matching (remove year suffix)
             pl_clean = re.sub(r'\s+20\d{2}$', '', pl_name)
 
-            # Pattern to find the PL header line (may have year suffix in doc)
-            # Try with year first, then without
+            # Build text with document index tracking
+            # Each entry: (text, doc_start_index, doc_end_index)
+            text_segments = []
+            full_text = ""
+
+            for element in content:
+                elem_start = element.get('startIndex', 0)
+                elem_end = element.get('endIndex', elem_start)
+
+                if 'paragraph' in element:
+                    for text_run in element['paragraph'].get('elements', []):
+                        if 'textRun' in text_run:
+                            text_content = text_run['textRun'].get('content', '')
+                            run_start = text_run.get('startIndex', elem_start)
+                            run_end = text_run.get('endIndex', run_start + len(text_content))
+                            text_segments.append((text_content, run_start, run_end))
+                            full_text += text_content
+
+            print(f"[Google Docs] Document text length: {len(full_text)}, segments: {len(text_segments)}")
+
+            # Pattern to find the PL header line
             pattern = rf'{re.escape(pl_clean)}(?:\s+20\d{{2}})?:\s*Release\s+\d+\.\d+'
             match = re.search(pattern, full_text, re.IGNORECASE)
 
             if not match:
-                # Try simpler pattern - just PL name followed by colon
                 pattern2 = rf'{re.escape(pl_clean)}[^:\n]*:\s*Release'
                 match = re.search(pattern2, full_text, re.IGNORECASE)
-                if match:
-                    print(f"[Google Docs] Found section with flexible pattern: {match.group()}")
 
             if not match:
                 print(f"[Google Docs] Could not find section for PL: {pl_name}")
-                print(f"[Google Docs] Searched for: {pattern}")
-                # Show what's in the doc for debugging
                 if pl_clean.lower() in full_text.lower():
                     idx = full_text.lower().find(pl_clean.lower())
-                    print(f"[Google Docs] Found '{pl_clean}' at index {idx}: '{full_text[idx:idx+100]}'")
+                    print(f"[Google Docs] Found '{pl_clean}' at text index {idx}: '{full_text[idx:idx+100]}'")
                 return None
 
-            print(f"[Google Docs] Found main section at: {match.group()}")
+            print(f"[Google Docs] Found main section: {match.group()}")
 
-            # Find the start of this section (look back for category header or separator)
-            section_start = match.start()
+            # Convert text position to document index
+            def text_pos_to_doc_index(text_pos: int) -> int:
+                """Convert text position to Google Docs document index."""
+                current_pos = 0
+                for text, doc_start, doc_end in text_segments:
+                    if current_pos + len(text) > text_pos:
+                        offset = text_pos - current_pos
+                        return doc_start + offset
+                    current_pos += len(text)
+                # If past all segments, return last index
+                return text_segments[-1][2] if text_segments else 1
 
-            # Look for the previous separator or category header
-            # Search backwards from match start
-            prev_text = full_text[:section_start]
-            # Find the last occurrence of dashes (--) which indicates a section header
-            last_header = prev_text.rfind('------------------')
-            if last_header != -1:
-                # Check if this is a category header like "------------------DSP------------------"
-                # or a TL;DR header
-                header_end = prev_text.find('\n', last_header)
-                if header_end != -1:
-                    header_line = prev_text[last_header:header_end]
-                    # If it's a category header that contains this PL's category, start from there
-                    # Otherwise start from after that header
-                    section_start = header_end + 1
+            # Find section boundaries
+            section_text_start = match.start()
+            section_text_end = match.end()
 
-            # Find the end of this section (next PL header or separator)
+            # Look back for section header (dashes)
+            prev_text = full_text[:section_text_start]
+            header_pos = prev_text.rfind('------------------')
+            if header_pos != -1:
+                # Start from after the header line
+                header_end = full_text.find('\n', header_pos)
+                if header_end != -1 and header_end < section_text_start:
+                    section_text_start = header_end + 1
+
+            # Look forward for next section
             rest_text = full_text[match.end():]
+            next_patterns = [
+                r'\n[A-Za-z][\w\s]+:\s*Release\s+\d+\.\d+',  # Next PL
+                r'\n------------------[^-]+------------------',  # Category header
+                r'\n═{20,}'  # Release separator
+            ]
 
-            # Look for next PL header pattern or category separator
-            next_pl_pattern = r'\n[A-Za-z][\w\s]+:\s*Release\s+\d+\.\d+'
-            next_category_pattern = r'\n------------------[^-]+------------------'
-            next_release_pattern = r'\n═{20,}'  # Separator between releases
-
-            next_pl = re.search(next_pl_pattern, rest_text)
-            next_category = re.search(next_category_pattern, rest_text)
-            next_release = re.search(next_release_pattern, rest_text)
-
-            # Find the earliest boundary
             boundaries = []
-            if next_pl:
-                boundaries.append(next_pl.start())
-            if next_category:
-                boundaries.append(next_category.start())
-            if next_release:
-                boundaries.append(next_release.start())
+            for pattern in next_patterns:
+                next_match = re.search(pattern, rest_text)
+                if next_match:
+                    boundaries.append(next_match.start())
 
             if boundaries:
-                section_end = match.end() + min(boundaries)
+                section_text_end = match.end() + min(boundaries)
             else:
-                # No boundary found, go to end of document
-                section_end = len(full_text)
+                section_text_end = len(full_text)
 
-            # Adjust indices for Google Docs API (1-indexed)
-            return (section_start + 1, section_end + 1)
+            # Convert to document indices
+            doc_start = text_pos_to_doc_index(section_text_start)
+            doc_end = text_pos_to_doc_index(section_text_end)
+
+            print(f"[Google Docs] Section range: text={section_text_start}-{section_text_end}, doc={doc_start}-{doc_end}")
+            return (doc_start, doc_end)
 
         except HttpError as e:
             print(f"[Google Docs] Error finding PL section: {e}")
@@ -434,17 +442,23 @@ class GoogleDocsHandler:
             doc = self.service.documents().get(documentId=self.document_id).execute()
             content = doc.get('body', {}).get('content', [])
 
-            # Build full text
+            import re
+            # Clean PL name for matching (remove year suffix)
+            pl_clean = re.sub(r'\s+20\d{2}$', '', pl_name)
+
+            # Build text with document index tracking
+            text_segments = []
             full_text = ""
+
             for element in content:
                 if 'paragraph' in element:
                     for text_run in element['paragraph'].get('elements', []):
                         if 'textRun' in text_run:
-                            full_text += text_run['textRun'].get('content', '')
-
-            import re
-            # Clean PL name for matching (remove year suffix)
-            pl_clean = re.sub(r'\s+20\d{2}$', '', pl_name)
+                            text_content = text_run['textRun'].get('content', '')
+                            run_start = text_run.get('startIndex', 0)
+                            run_end = text_run.get('endIndex', run_start + len(text_content))
+                            text_segments.append((text_content, run_start, run_end))
+                            full_text += text_content
 
             # Find the TL;DR section boundaries
             tldr_start = full_text.find('TL;DR')
@@ -452,60 +466,67 @@ class GoogleDocsHandler:
                 print(f"[Google Docs] Could not find TL;DR section")
                 return None
 
-            # Find the end of the TL;DR header line first
+            # Find end of TL;DR header line
             tldr_header_end = full_text.find('\n', tldr_start)
             if tldr_header_end == -1:
                 tldr_header_end = tldr_start + 50
 
-            # Find end of TL;DR section (next major section with dashes AFTER the header)
+            # Find end of TL;DR section (next major section with dashes)
             tldr_section_end = full_text.find('------------------', tldr_header_end)
             if tldr_section_end == -1:
                 tldr_section_end = len(full_text)
 
-            print(f"[Google Docs] TL;DR section: start={tldr_start}, header_end={tldr_header_end}, section_end={tldr_section_end}")
+            tldr_section = full_text[tldr_header_end:tldr_section_end]
+            print(f"[Google Docs] TL;DR section preview: {tldr_section[:300]}...")
 
-            tldr_section = full_text[tldr_start:tldr_section_end]
+            # Patterns to find the TL;DR bullet line
+            # Try multiple patterns from strict to flexible
+            patterns = [
+                rf'[•●]\s*{re.escape(pl_clean)}(?:\s+20\d{{2}})?\s*[-–—]\s*[^\n]+\n?',  # Unicode bullet
+                rf'[•●\*\-]\s*\*?{re.escape(pl_clean)}(?:\s+20\d{{2}})?\*?\s*[-–—]\s*[^\n]+\n?',  # With bold
+                rf'{re.escape(pl_clean)}(?:\s+20\d{{2}})?\s*[-–—]\s*[^\n]+\n?',  # No bullet
+            ]
 
-            print(f"[Google Docs] TL;DR section preview (first 500 chars): {tldr_section[:500]}")
-
-            # Pattern to find the TL;DR bullet line: "• PL Name - description...\n"
-            # The bullet can be •, ●, *, or -
-            # PL name might have bold formatting (*PL Name*) and optional year suffix
-            # Dash can be -, –, or —
-            pattern = rf'[•●\*\-]\s*\*?{re.escape(pl_clean)}(?:\s+20\d{{2}})?\*?\s*[-–—]\s*[^\n]+\n?'
-            print(f"[Google Docs] Searching TL;DR with pattern: {pattern}")
-            match = re.search(pattern, tldr_section, re.IGNORECASE)
-
-            if not match:
-                # Try a more flexible pattern without bullet requirement
-                pattern2 = rf'\*?{re.escape(pl_clean)}(?:\s+20\d{{2}})?\*?\s*[-–—]\s*[^\n]+\n?'
-                print(f"[Google Docs] Trying flexible pattern: {pattern2}")
-                match = re.search(pattern2, tldr_section, re.IGNORECASE)
+            match = None
+            for i, pattern in enumerate(patterns):
+                match = re.search(pattern, tldr_section, re.IGNORECASE)
                 if match:
-                    # Try to include the bullet at the start of line
-                    line_start = tldr_section.rfind('\n', 0, match.start())
-                    if line_start == -1:
-                        line_start = 0
-                    else:
-                        line_start += 1  # Skip the newline
-                    # Adjust match to start from line beginning
-                    actual_start = line_start
-                    actual_end = match.end()
-                    print(f"[Google Docs] Found TL;DR with flexible pattern, adjusting range: {actual_start}-{actual_end}")
-                    # Return adjusted range
-                    return (tldr_start + actual_start + 1, tldr_start + actual_end + 1)
+                    print(f"[Google Docs] Found TL;DR with pattern {i+1}: '{match.group()[:60]}...'")
+                    break
 
             if not match:
                 print(f"[Google Docs] Could not find TL;DR line for PL: {pl_name}")
-                print(f"[Google Docs] Searched for pattern: {pattern}")
+                print(f"[Google Docs] PL clean name: '{pl_clean}'")
                 return None
 
-            # Calculate absolute position in document
-            line_start = tldr_start + match.start()
-            line_end = tldr_start + match.end()
+            # Find the full line (from line start to line end)
+            line_start_in_section = tldr_section.rfind('\n', 0, match.start())
+            if line_start_in_section == -1:
+                line_start_in_section = 0
+            else:
+                line_start_in_section += 1  # Skip the newline
 
-            # Adjust indices for Google Docs API (1-indexed)
-            return (line_start + 1, line_end + 1)
+            line_end_in_section = match.end()
+
+            # Convert to full text positions
+            text_start = tldr_header_end + line_start_in_section
+            text_end = tldr_header_end + line_end_in_section
+
+            # Convert text position to document index
+            def text_pos_to_doc_index(text_pos: int) -> int:
+                current_pos = 0
+                for text, doc_start, doc_end in text_segments:
+                    if current_pos + len(text) > text_pos:
+                        offset = text_pos - current_pos
+                        return doc_start + offset
+                    current_pos += len(text)
+                return text_segments[-1][2] if text_segments else 1
+
+            doc_start = text_pos_to_doc_index(text_start)
+            doc_end = text_pos_to_doc_index(text_end)
+
+            print(f"[Google Docs] TL;DR line range: text={text_start}-{text_end}, doc={doc_start}-{doc_end}")
+            return (doc_start, doc_end)
 
         except HttpError as e:
             print(f"[Google Docs] Error finding TL;DR line: {e}")
