@@ -120,52 +120,7 @@ def update_google_docs(processed_data: dict) -> bool:
         }
 
         # ========================================
-        # APPROVAL SECTION AT TOP
-        # ========================================
-        # Instructions for adding dropdowns
-        approval_header = f"📋 APPROVAL STATUS - {release_date}\n\n"
-        approval_header += "How to use: Select each @PENDING below → Delete → Insert → Smart chips → Dropdown\n"
-        approval_header += "Create options: ✅ Approved | ❌ Rejected | ➡️ Tomorrow\n\n"
-        insert_requests.append({
-            "insertText": {
-                "location": {"index": current_index},
-                "text": approval_header
-            }
-        })
-        formatting_positions["bold"].append((current_index, current_index + 30))
-        current_index += len(approval_header)
-
-        # PL rows with dropdown placeholder
-        for pl in product_lines:
-            version = release_versions.get(pl, "Release")
-            row = f"• {pl}: {version}  →  @PENDING\n"
-            insert_requests.append({
-                "insertText": {
-                    "location": {"index": current_index},
-                    "text": row
-                }
-            })
-            # Bold the PL name
-            formatting_positions["bold"].append((current_index + 2, current_index + 2 + len(pl)))
-            current_index += len(row)
-
-        # Good to Announce section
-        announce_section = "\n"
-        announce_section += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        announce_section += "🎉 GOOD TO ANNOUNCE\n"
-        announce_section += "Once all reviewed → Menu: 🚀 Release Approval → Good to Announce\n"
-        announce_section += "(First time: Extensions → Apps Script → Paste google_docs_approval.js)\n"
-        announce_section += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        insert_requests.append({
-            "insertText": {
-                "location": {"index": current_index},
-                "text": announce_section
-            }
-        })
-        current_index += len(announce_section)
-
-        # ========================================
-        # RELEASE NOTES BELOW
+        # RELEASE NOTES (No approval section - handled in Slack)
         # ========================================
 
         # Title
