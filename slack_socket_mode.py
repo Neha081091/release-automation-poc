@@ -4,6 +4,13 @@ Slack Socket Mode Handler for Interactive Buttons
 This uses Slack's Socket Mode - no public URL or ngrok needed!
 Slack connects directly to your app via WebSocket.
 
+Features:
+- Dynamic PL buttons from processed_notes.json
+- Buttons disable after selection (Approve/Reject/Tomorrow)
+- "X PL(s) pending review" counter
+- Good to Announce only enabled when all PLs reviewed
+- Tomorrow defers PL to next day's release
+
 Setup:
 1. Go to your Slack App settings: https://api.slack.com/apps
 2. Click "Socket Mode" in the left sidebar
@@ -17,7 +24,8 @@ Usage:
 
 import os
 import json
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -31,99 +39,327 @@ app = App(token=os.getenv("SLACK_BOT_TOKEN"))
 # Slack client for API calls
 client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
 
-# Store approval states
+# Store approval states per message
+# Format: {message_ts: {pl_name: {'status': 'approved/rejected/tomorrow', 'user': 'username'}}}
 approval_states = {}
+
+# Store deferred PLs for tomorrow
+# Format: {date_str: [{'pl': 'PL Name', 'notes': '...'}]}
+deferred_pls = {}
+
+# Store message metadata (which PLs are in this message)
+message_metadata = {}
 
 
 def get_pl_name_from_action(action_id: str) -> str:
-    """Extract PL name from action_id like 'approve_Platform'."""
+    """Extract PL name from action_id like 'approve_Helix_PL2'."""
+    # action_id format: action_PLName (with underscores replacing spaces)
     parts = action_id.split('_', 1)
     if len(parts) > 1:
-        return parts[1]
+        return parts[1].replace('_', ' ')
     return action_id
 
 
-@app.action("approve_Platform")
-@app.action("approve_Data")
-@app.action("approve_Bidder")
-@app.action("approve_AdOps")
+def clean_pl_name_for_action(pl_name: str) -> str:
+    """Convert PL name to action_id safe format."""
+    # Replace spaces and special chars with underscores
+    return re.sub(r'[^a-zA-Z0-9]', '_', pl_name)
+
+
+def count_pending_reviews(message_ts: str) -> int:
+    """Count how many PLs are still pending review."""
+    if message_ts not in message_metadata:
+        return 0
+
+    all_pls = message_metadata[message_ts].get('pls', [])
+    reviewed = approval_states.get(message_ts, {})
+
+    return len(all_pls) - len(reviewed)
+
+
+def all_pls_reviewed(message_ts: str) -> bool:
+    """Check if all PLs have been reviewed."""
+    return count_pending_reviews(message_ts) == 0
+
+
+def build_pl_blocks(pls: list, message_ts: str = None) -> list:
+    """Build Slack blocks for PL review sections."""
+    blocks = []
+
+    for pl in pls:
+        pl_action_id = clean_pl_name_for_action(pl)
+
+        # Check if this PL has been reviewed
+        reviewed_status = None
+        reviewed_by = None
+        if message_ts and message_ts in approval_states:
+            pl_state = approval_states[message_ts].get(pl)
+            if pl_state:
+                reviewed_status = pl_state['status']
+                reviewed_by = pl_state['user']
+
+        if reviewed_status:
+            # Show reviewed status with disabled buttons
+            status_emoji = {
+                'approved': '✅',
+                'rejected': '❌',
+                'tomorrow': '⏰'
+            }
+            status_text = {
+                'approved': 'Approved',
+                'rejected': 'Rejected (deferred)',
+                'tomorrow': 'Moved to Tomorrow'
+            }
+
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*{pl}*\n{status_emoji.get(reviewed_status, '❓')} {status_text.get(reviewed_status, reviewed_status)} by @{reviewed_by}"
+                }
+            })
+        else:
+            # Show pending with active buttons
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*{pl}*"
+                }
+            })
+            blocks.append({
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "✓ Approve", "emoji": True},
+                        "style": "primary",
+                        "action_id": f"approve_{pl_action_id}"
+                    },
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "✗ Reject", "emoji": True},
+                        "style": "danger",
+                        "action_id": f"reject_{pl_action_id}"
+                    },
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "⏰ Tomorrow", "emoji": True},
+                        "action_id": f"tomorrow_{pl_action_id}"
+                    }
+                ]
+            })
+
+    return blocks
+
+
+def build_footer_blocks(message_ts: str = None, pls: list = None) -> list:
+    """Build footer with pending count and Good to Announce button."""
+    blocks = []
+
+    pending_count = count_pending_reviews(message_ts) if message_ts else len(pls or [])
+    all_reviewed = pending_count == 0
+
+    # Pending count section
+    if pending_count > 0:
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"⏳ *{pending_count} PL(s) pending review*"
+                }
+            ]
+        })
+    else:
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": "✅ *All PLs reviewed!*"
+                }
+            ]
+        })
+
+    # Good to Announce button
+    if all_reviewed:
+        blocks.append({
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "✓ Good to Announce", "emoji": True},
+                    "style": "primary",
+                    "action_id": "good_to_announce"
+                }
+            ]
+        })
+    else:
+        # Disabled-looking button (Slack doesn't support disabled, so we use a different style)
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "_Good to Announce (review all PLs first)_"
+            }
+        })
+
+    return blocks
+
+
+def update_message_with_status(channel: str, message_ts: str):
+    """Update the entire message to reflect current approval states."""
+
+    if message_ts not in message_metadata:
+        return
+
+    pls = message_metadata[message_ts].get('pls', [])
+    doc_url = message_metadata[message_ts].get('doc_url', '')
+    release_date = message_metadata[message_ts].get('release_date', '')
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "Release Notes Review",
+                "emoji": True
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"Daily Consolidated Deployment Summary" + (f" - {release_date}" if release_date else "")
+            }
+        }
+    ]
+
+    if doc_url:
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"<{doc_url}|📄 View Release Notes>"
+            }
+        })
+
+    blocks.append({"type": "divider"})
+
+    # Add PL blocks
+    blocks.extend(build_pl_blocks(pls, message_ts))
+
+    blocks.append({"type": "divider"})
+
+    # Add footer
+    blocks.extend(build_footer_blocks(message_ts, pls))
+
+    try:
+        client.chat_update(
+            channel=channel,
+            ts=message_ts,
+            blocks=blocks,
+            text="Release Notes Review"
+        )
+    except Exception as e:
+        print(f"[Socket Mode] Error updating message: {e}")
+
+
+# Generic action handler that matches any PL
+@app.action(re.compile(r"^approve_.+$"))
 def handle_approve(ack, body, action):
-    """Handle Approve button clicks."""
+    """Handle Approve button clicks for any PL."""
     ack()
 
     pl_name = get_pl_name_from_action(action['action_id'])
     user = body['user']['username']
-
-    print(f"[Socket Mode] {user} APPROVED {pl_name}")
-
-    # Store the approval
     message_ts = body['message']['ts']
     channel = body['channel']['id']
 
+    print(f"[Socket Mode] {user} APPROVED {pl_name}")
+
     if message_ts not in approval_states:
         approval_states[message_ts] = {}
+
     approval_states[message_ts][pl_name] = {
         'status': 'approved',
         'user': user,
         'timestamp': datetime.now().isoformat()
     }
 
-    # Update the message to show the approval
-    update_approval_message(channel, message_ts, body['message'], pl_name, 'approved', user)
+    update_message_with_status(channel, message_ts)
 
 
-@app.action("reject_Platform")
-@app.action("reject_Data")
-@app.action("reject_Bidder")
-@app.action("reject_AdOps")
+@app.action(re.compile(r"^reject_.+$"))
 def handle_reject(ack, body, action):
-    """Handle Reject button clicks."""
+    """Handle Reject button clicks for any PL."""
     ack()
 
     pl_name = get_pl_name_from_action(action['action_id'])
     user = body['user']['username']
-
-    print(f"[Socket Mode] {user} REJECTED {pl_name}")
-
     message_ts = body['message']['ts']
     channel = body['channel']['id']
 
+    print(f"[Socket Mode] {user} REJECTED {pl_name}")
+
     if message_ts not in approval_states:
         approval_states[message_ts] = {}
+
     approval_states[message_ts][pl_name] = {
         'status': 'rejected',
         'user': user,
         'timestamp': datetime.now().isoformat()
     }
 
-    update_approval_message(channel, message_ts, body['message'], pl_name, 'rejected', user)
+    update_message_with_status(channel, message_ts)
 
 
-@app.action("tomorrow_Platform")
-@app.action("tomorrow_Data")
-@app.action("tomorrow_Bidder")
-@app.action("tomorrow_AdOps")
+@app.action(re.compile(r"^tomorrow_.+$"))
 def handle_tomorrow(ack, body, action):
-    """Handle Tomorrow button clicks."""
+    """Handle Tomorrow button clicks for any PL."""
     ack()
 
     pl_name = get_pl_name_from_action(action['action_id'])
     user = body['user']['username']
-
-    print(f"[Socket Mode] {user} marked {pl_name} for TOMORROW")
-
     message_ts = body['message']['ts']
     channel = body['channel']['id']
 
+    print(f"[Socket Mode] {user} marked {pl_name} for TOMORROW")
+
     if message_ts not in approval_states:
         approval_states[message_ts] = {}
+
     approval_states[message_ts][pl_name] = {
         'status': 'tomorrow',
         'user': user,
         'timestamp': datetime.now().isoformat()
     }
 
-    update_approval_message(channel, message_ts, body['message'], pl_name, 'tomorrow', user)
+    # Store for tomorrow's release
+    tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+    if tomorrow not in deferred_pls:
+        deferred_pls[tomorrow] = []
+
+    # Get PL notes from metadata if available
+    pl_notes = message_metadata.get(message_ts, {}).get('notes_by_pl', {}).get(pl_name, '')
+
+    deferred_pls[tomorrow].append({
+        'pl': pl_name,
+        'notes': pl_notes,
+        'deferred_by': user,
+        'deferred_at': datetime.now().isoformat()
+    })
+
+    # Save deferred PLs to file for persistence
+    try:
+        with open('deferred_pls.json', 'w') as f:
+            json.dump(deferred_pls, f, indent=2)
+        print(f"[Socket Mode] Saved deferred PL {pl_name} for {tomorrow}")
+    except Exception as e:
+        print(f"[Socket Mode] Error saving deferred PLs: {e}")
+
+    update_message_with_status(channel, message_ts)
 
 
 @app.action("good_to_announce")
@@ -137,57 +373,117 @@ def handle_good_to_announce(ack, body):
 
     print(f"[Socket Mode] {user} clicked GOOD TO ANNOUNCE")
 
-    # Get the announce channel
-    announce_channel = os.getenv('SLACK_ANNOUNCE_CHANNEL', channel)
+    # Check if all PLs are reviewed
+    if not all_pls_reviewed(message_ts):
+        print("[Socket Mode] Not all PLs reviewed yet!")
+        return
 
-    # Post the announcement
+    # Get approved PLs
+    approved_pls = []
+    rejected_pls = []
+    tomorrow_pls = []
+
+    for pl, state in approval_states.get(message_ts, {}).items():
+        if state['status'] == 'approved':
+            approved_pls.append(pl)
+        elif state['status'] == 'rejected':
+            rejected_pls.append(pl)
+        elif state['status'] == 'tomorrow':
+            tomorrow_pls.append(pl)
+
+    # Build announcement message
+    announce_channel = os.getenv('SLACK_ANNOUNCE_CHANNEL', channel)
+    doc_url = message_metadata.get(message_ts, {}).get('doc_url', '')
+    release_date = message_metadata.get(message_ts, {}).get('release_date', datetime.now().strftime('%d %B %Y'))
+
+    announcement_blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"📢 Daily Deployment Summary: {release_date}",
+                "emoji": True
+            }
+        }
+    ]
+
+    if doc_url:
+        announcement_blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"<{doc_url}|📄 View Full Release Notes>"
+            }
+        })
+
+    if approved_pls:
+        announcement_blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"✅ *Approved PLs:* {', '.join(approved_pls)}"
+            }
+        })
+
+    if rejected_pls:
+        announcement_blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"❌ *Deferred PLs:* {', '.join(rejected_pls)}"
+            }
+        })
+
+    if tomorrow_pls:
+        announcement_blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"⏰ *Moved to Tomorrow:* {', '.join(tomorrow_pls)}"
+            }
+        })
+
+    announcement_blocks.append({
+        "type": "context",
+        "elements": [
+            {
+                "type": "mrkdwn",
+                "text": f"Announced by @{user} at {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            }
+        ]
+    })
+
     try:
+        # Post announcement
         client.chat_postMessage(
             channel=announce_channel,
-            text=":mega: *Release Announcement*\n\nThe release has been approved and is ready for deployment!",
-            blocks=[
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": ":white_check_mark: *Release Approved and Announced*\n\nAll approvals received. The release is good to go!"
-                    }
-                },
-                {
-                    "type": "context",
-                    "elements": [
-                        {
-                            "type": "mrkdwn",
-                            "text": f"Announced by @{user} at {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-                        }
-                    ]
-                }
-            ]
+            text=f"Daily Deployment Summary: {release_date}",
+            blocks=announcement_blocks
         )
 
-        # Update the original message
+        # Update original message to show it's been announced
+        final_blocks = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"✅ *Release Announced Successfully*\n\nAnnounced by @{user} at {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                }
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"• Approved: {', '.join(approved_pls) if approved_pls else 'None'}\n• Rejected: {', '.join(rejected_pls) if rejected_pls else 'None'}\n• Tomorrow: {', '.join(tomorrow_pls) if tomorrow_pls else 'None'}"
+                }
+            }
+        ]
+
         client.chat_update(
             channel=channel,
             ts=message_ts,
-            text="Release has been announced!",
-            blocks=[
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": ":white_check_mark: *Release Announced Successfully*\n\nThis release has been approved and announced."
-                    }
-                },
-                {
-                    "type": "context",
-                    "elements": [
-                        {
-                            "type": "mrkdwn",
-                            "text": f"Announced by @{user} at {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-                        }
-                    ]
-                }
-            ]
+            blocks=final_blocks,
+            text="Release has been announced!"
         )
 
         print(f"[Socket Mode] Announcement posted to {announce_channel}")
@@ -196,75 +492,60 @@ def handle_good_to_announce(ack, body):
         print(f"[Socket Mode] Error posting announcement: {e}")
 
 
-def update_approval_message(channel: str, message_ts: str, original_message: dict, pl_name: str, status: str, user: str):
-    """Update the message to reflect the approval status."""
-
-    status_emoji = {
-        'approved': ':white_check_mark:',
-        'rejected': ':x:',
-        'tomorrow': ':arrow_right:'
-    }
-
-    status_text = {
-        'approved': 'Approved',
-        'rejected': 'Rejected',
-        'tomorrow': 'Tomorrow'
-    }
-
-    # Get current blocks and update them
-    blocks = original_message.get('blocks', [])
-
-    # Find and update the section for this PL
-    for i, block in enumerate(blocks):
-        if block.get('type') == 'section':
-            text = block.get('text', {}).get('text', '')
-            if pl_name in text:
-                # Update this section with status
-                emoji = status_emoji.get(status, ':question:')
-                new_text = f"{emoji} *{pl_name}*: {status_text.get(status, status)} by @{user}"
-                blocks[i] = {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": new_text
-                    }
-                }
-                # Remove the actions block for this PL (next block)
-                if i + 1 < len(blocks) and blocks[i + 1].get('type') == 'actions':
-                    action_block = blocks[i + 1]
-                    # Check if this action block belongs to this PL
-                    actions = action_block.get('elements', [])
-                    if actions and pl_name in actions[0].get('action_id', ''):
-                        blocks.pop(i + 1)
-                break
-
-    try:
-        client.chat_update(
-            channel=channel,
-            ts=message_ts,
-            blocks=blocks,
-            text=f"Approval status updated for {pl_name}"
-        )
-    except Exception as e:
-        print(f"[Socket Mode] Error updating message: {e}")
-
-
-def post_approval_message(release_notes: str = None):
+def post_approval_message(pls: list = None, doc_url: str = None, release_date: str = None, notes_by_pl: dict = None):
     """Post an approval message with buttons to the review channel."""
 
     channel = os.getenv('SLACK_REVIEW_CHANNEL')
     if not channel:
         print("Error: SLACK_REVIEW_CHANNEL not set")
-        return
+        return None
 
+    # Default PLs if not provided
+    if not pls:
+        # Try to load from processed_notes.json
+        try:
+            with open('processed_notes.json', 'r') as f:
+                data = json.load(f)
+                pls = data.get('product_lines', [])
+                if not doc_url:
+                    doc_id = os.getenv('GOOGLE_DOC_ID')
+                    if doc_id:
+                        doc_url = f"https://docs.google.com/document/d/{doc_id}/edit"
+                if not release_date:
+                    release_date = data.get('release_summary', '').replace('Release ', '')
+                if not notes_by_pl:
+                    notes_by_pl = data.get('body_by_pl', {})
+        except Exception as e:
+            print(f"[Socket Mode] Could not load processed_notes.json: {e}")
+            pls = ["Platform", "Data", "Bidder", "AdOps"]  # Fallback
+
+    # Clean PL names (remove year suffix)
+    clean_pls = []
+    for pl in pls:
+        clean_name = re.sub(r'\s+20\d{2}$', '', pl)
+        clean_pls.append(clean_name)
+
+    # Check for deferred PLs from yesterday
     today = datetime.now().strftime('%Y-%m-%d')
+    try:
+        with open('deferred_pls.json', 'r') as f:
+            deferred_data = json.load(f)
+            if today in deferred_data:
+                for deferred in deferred_data[today]:
+                    if deferred['pl'] not in clean_pls:
+                        clean_pls.append(deferred['pl'])
+                        print(f"[Socket Mode] Added deferred PL from yesterday: {deferred['pl']}")
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"[Socket Mode] Error loading deferred PLs: {e}")
 
     blocks = [
         {
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": f":clipboard: Release Approval - {today}",
+                "text": "Release Notes Review",
                 "emoji": True
             }
         },
@@ -272,67 +553,50 @@ def post_approval_message(release_notes: str = None):
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "Please review and approve the release notes for your Product Line."
+                "text": f"Daily Consolidated Deployment Summary" + (f" - {release_date}" if release_date else "")
             }
-        },
-        {"type": "divider"}
+        }
     ]
 
-    # Add approval sections for each PL
-    pls = ["Platform", "Data", "Bidder", "AdOps"]
-
-    for pl in pls:
+    if doc_url:
         blocks.append({
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f":hourglass: *{pl}*: Pending approval"
+                "text": f"<{doc_url}|📄 View Release Notes>"
             }
-        })
-        blocks.append({
-            "type": "actions",
-            "elements": [
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "Approve", "emoji": True},
-                    "style": "primary",
-                    "action_id": f"approve_{pl}"
-                },
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "Reject", "emoji": True},
-                    "style": "danger",
-                    "action_id": f"reject_{pl}"
-                },
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "Tomorrow", "emoji": True},
-                    "action_id": f"tomorrow_{pl}"
-                }
-            ]
         })
 
     blocks.append({"type": "divider"})
-    blocks.append({
-        "type": "actions",
-        "elements": [
-            {
-                "type": "button",
-                "text": {"type": "plain_text", "text": ":mega: Good to Announce", "emoji": True},
-                "style": "primary",
-                "action_id": "good_to_announce"
-            }
-        ]
-    })
+
+    # Add PL blocks (no message_ts yet, so all will be pending)
+    blocks.extend(build_pl_blocks(clean_pls))
+
+    blocks.append({"type": "divider"})
+
+    # Add footer
+    blocks.extend(build_footer_blocks(pls=clean_pls))
 
     try:
         result = client.chat_postMessage(
             channel=channel,
-            text=f"Release Approval Request - {today}",
+            text=f"Release Notes Review - {release_date}",
             blocks=blocks
         )
-        print(f"[Socket Mode] Approval message posted: {result['ts']}")
-        return result['ts']
+        message_ts = result['ts']
+
+        # Store metadata for this message
+        message_metadata[message_ts] = {
+            'pls': clean_pls,
+            'doc_url': doc_url,
+            'release_date': release_date,
+            'notes_by_pl': notes_by_pl or {}
+        }
+
+        print(f"[Socket Mode] Approval message posted: {message_ts}")
+        print(f"[Socket Mode] PLs: {clean_pls}")
+        return message_ts
+
     except Exception as e:
         print(f"[Socket Mode] Error posting message: {e}")
         return None
@@ -365,8 +629,15 @@ To set up Socket Mode:
 ║  No ngrok or public URL needed!                              ║
 ║  Slack connects directly via WebSocket.                      ║
 ║                                                              ║
+║  Features:                                                   ║
+║  • Dynamic PLs from processed_notes.json                     ║
+║  • Buttons disable after selection                           ║
+║  • "X PL(s) pending" counter                                 ║
+║  • Good to Announce enabled after all reviewed               ║
+║  • Tomorrow defers PL to next day                            ║
+║                                                              ║
 ║  Listening for button clicks...                              ║
-║  Press Ctrl+C to stop                                         ║
+║  Press Ctrl+C to stop                                        ║
 ╚══════════════════════════════════════════════════════════════╝
 """)
 
