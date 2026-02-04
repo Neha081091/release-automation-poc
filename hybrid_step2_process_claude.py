@@ -46,13 +46,21 @@ STRICT FORMAT RULES:
 1. ONE sentence only - NO line breaks
 2. Use semicolons to separate different feature areas
 3. Use connectors: "with", "including", "featuring", "adding"
-4. Lead with main impact, then supporting details
-5. Action-oriented past tense: "enhanced", "added", "patched"
+4. Start DIRECTLY with the specific change - NO vague opening phrases
+5. Action-oriented past tense: "enhanced", "added", "patched", "restructured"
 6. NO bullet points, NO product name prefix
 7. Keep it SHORT - max 40 words
+8. NEVER use generic phrases like "Q1 2026 product improvements", "delivering enhanced functionality", "platform enhancements"
+9. Lead with CONCRETE SPECIFICS - name the actual feature, pipeline, or component being changed
 
-EXAMPLE FORMAT:
-"Order listing improvements with multi-select filtering and persistent preferences; forecasting enhancements with deal/exchange validation; critical vulnerability patched"
+BAD EXAMPLES (never do this):
+- "Q1 2026 product improvements delivering enhanced platform functionality"
+- "Platform enhancements with improved capabilities"
+
+GOOD EXAMPLES:
+- "Symphony Monthly pipeline restructured with fail-fast approach; batch processing optimizations"
+- "Audience Details page enhanced with new filtering options; export functionality added"
+- "Order listing improvements with multi-select filtering and persistent preferences"
 
 Output ONLY the consolidated sentence:"""
         }]
