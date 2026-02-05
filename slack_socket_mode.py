@@ -972,6 +972,22 @@ def handle_edit_modal_submission(ack, body, view):
         print("[Socket Mode] Missing channel or message_ts in edit modal")
         return
 
+    # Load processed notes for URLs
+    try:
+        with open('processed_notes.json', 'r') as f:
+            processed_data = json.load(f)
+    except:
+        processed_data = {}
+
+    fix_version_urls = processed_data.get('fix_version_urls', {})
+    epic_urls_by_pl = processed_data.get('epic_urls_by_pl', {})
+
+    # Flatten epic URLs for easier lookup
+    all_epic_urls = {}
+    for pl, epics in epic_urls_by_pl.items():
+        for epic_name, epic_url in epics.items():
+            all_epic_urls[epic_name.lower()] = (epic_name, epic_url)
+
     # Auto-format the text (detect and apply Slack markdown)
     def auto_format_text(text: str) -> str:
         """Auto-detect and apply Slack formatting to plain text."""
@@ -997,6 +1013,33 @@ def handle_edit_modal_submission(ack, body, view):
             # Auto-format release type indicators as code (if not already)
             if stripped in ('General Availability', 'Feature Flag', 'Beta') and not stripped.startswith('`'):
                 formatted_lines.append(f'`{stripped}`')
+                continue
+
+            # Check for PL: Release pattern and add hyperlink
+            # Pattern: "PL Name: Release X.X" or "PL Name 2026: Release X.X"
+            release_match = re.match(r'^(.+?):\s*(Release\s+\d+\.\d+)$', stripped)
+            if release_match and '<' not in stripped:  # Not already linked
+                pl_name = release_match.group(1).strip()
+                release_ver = release_match.group(2)
+                # Find matching fix version URL
+                url = None
+                for stored_pl, stored_url in fix_version_urls.items():
+                    if pl_name in stored_pl or stored_pl in pl_name:
+                        url = stored_url
+                        break
+                if url:
+                    formatted_lines.append(f"{pl_name}: <{url}|{release_ver}>")
+                    continue
+
+            # Check for epic names and add hyperlink + bold
+            found_epic = False
+            for epic_lower, (epic_name, epic_url) in all_epic_urls.items():
+                if stripped.lower() == epic_lower or epic_name.lower() in stripped.lower():
+                    if '<' not in stripped:  # Not already linked
+                        formatted_lines.append(f"<{epic_url}|*{stripped}*>")
+                        found_epic = True
+                        break
+            if found_epic:
                 continue
 
             # Keep line as-is (preserves existing formatting)
