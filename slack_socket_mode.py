@@ -664,25 +664,6 @@ def handle_good_to_announce(ack, body):
             }
         })
 
-    # Add link to Google Doc
-    if doc_url:
-        announcement_blocks.append({
-            "type": "context",
-            "elements": [{"type": "mrkdwn", "text": f"<{doc_url}|📄 View Full Release Notes>"}]
-        })
-
-    # Footer with deferred/tomorrow info
-    if rejected_pls or tomorrow_pls:
-        footer = ""
-        if rejected_pls:
-            footer += f"❌ Deferred: {', '.join(rejected_pls)}  "
-        if tomorrow_pls:
-            footer += f"⏰ Tomorrow: {', '.join(tomorrow_pls)}"
-        announcement_blocks.append({
-            "type": "context",
-            "elements": [{"type": "mrkdwn", "text": footer.strip()}]
-        })
-
     # Note: Rejected PLs stay in Google Doc, just excluded from Slack announcement
     # Tomorrow PLs are already removed from Google Doc when the button was clicked
 
