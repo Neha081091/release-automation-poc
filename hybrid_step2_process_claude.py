@@ -140,7 +140,17 @@ Value Add:
 InventoryTier dimension is now available in Reporting for seats that have enabled priority tiers, providing visibility into inventory tier performance.
 General Availability
 
+IMPORTANT FOR BUG FIXES SECTIONS:
+- When the epic name is "Bug Fixes", do NOT repeat "Bug Fixes" as a header
+- Just use "Bug Fixes:" directly (no epic name above it)
+
 Epic: Bug Fixes
+WRONG OUTPUT (duplicated header - DO NOT DO THIS):
+Bug Fixes
+Bug Fixes:
+Fixed alignment issues...
+
+CORRECT OUTPUT (no duplication):
 Bug Fixes:
 Fixed alignment issues with save draft button in HCP planner and resolved query returning empty results when This Month date range was selected.
 General Availability
