@@ -30,7 +30,7 @@ load_dotenv()
 
 from google_docs_handler import GoogleDocsHandler
 from slack_handler import SlackHandler
-from slack_approval_handler import SlackApprovalHandler
+from slack_socket_mode import post_approval_message as socket_post_approval
 
 # Color definitions (RGB values 0-1)
 BLUE_COLOR = {"red": 0.06, "green": 0.36, "blue": 0.7}  # Link blue
@@ -478,15 +478,25 @@ def send_slack_approval_message(processed_data: dict) -> bool:
             print("[Step 3b] WARNING: SLACK_BOT_TOKEN not set, falling back to simple notification")
             return send_slack_notification(processed_data)
 
-        approval_handler = SlackApprovalHandler()
+        # Get PLs and metadata from processed data
+        pls = processed_data.get('product_lines', [])
+        doc_id = os.getenv('GOOGLE_DOC_ID')
+        doc_url = f"https://docs.google.com/document/d/{doc_id}/edit" if doc_id else None
+        release_date = processed_data.get('release_summary', '').replace('Release ', '')
+        notes_by_pl = processed_data.get('body_by_pl', {})
 
-        # Post the approval message
-        result = approval_handler.post_approval_message(processed_data)
+        # Use socket mode post_approval_message
+        result = socket_post_approval(
+            pls=pls,
+            doc_url=doc_url,
+            release_date=release_date,
+            notes_by_pl=notes_by_pl
+        )
 
         if result:
-            print(f"[Step 3b] ✅ Approval message sent (ts: {result.get('ts')})")
-            print(f"[Step 3b] Channel: {result.get('channel')}")
+            print(f"[Step 3b] ✅ Approval message sent (ts: {result})")
             print("[Step 3b] Interactive buttons are now active - waiting for PMO review")
+            print("[Step 3b] Make sure slack_socket_mode.py is running to handle button clicks!")
             return True
         else:
             print("[Step 3b] ❌ Failed to send approval message")
