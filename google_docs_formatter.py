@@ -38,6 +38,53 @@ BLUE_COLOR = {"red": 0.06, "green": 0.36, "blue": 0.7}  # Link blue
 GREEN_COLOR = {"red": 0.13, "green": 0.55, "blue": 0.13}  # Dark green for status tags
 GRAY_COLOR = {"red": 0.5, "green": 0.5, "blue": 0.5}  # Gray for section headers
 
+# Product Line order - grouped by category for consistent display
+PRODUCT_LINE_ORDER = [
+    # Media PLs
+    "Media PL1",
+    "Media PL2",
+    "Media",
+    # Audiences PLs
+    "Audiences PL1",
+    "Audiences PL2",
+    "Audiences",
+    # DSP Core PLs
+    "DSP Core PL1",
+    "DSP Core PL2",
+    "DSP Core PL3",
+    "DSP Core PL5",
+    "DSP PL1",
+    "DSP PL2",
+    "DSP PL3",
+    "DSP",
+    # Developer Experience
+    "Developer Experience",
+    "Developer Experience 2026",
+    # Data Ingress
+    "Data Ingress",
+    "Data Ingress 2026",
+    # Helix PLs
+    "Helix PL3",
+    "Helix",
+    # Data Governance
+    "Data Governance",
+    "Other"
+]
+
+
+def get_ordered_pls(pl_list: list) -> list:
+    """Sort product lines according to PRODUCT_LINE_ORDER."""
+    ordered = []
+    # First add PLs that are in the preferred order
+    for pl in PRODUCT_LINE_ORDER:
+        if pl in pl_list:
+            ordered.append(pl)
+    # Then add any PLs not in the preferred order (at the end)
+    for pl in pl_list:
+        if pl not in ordered:
+            ordered.append(pl)
+    return ordered
+
 
 class GoogleDocsFormatter:
     """
@@ -367,7 +414,9 @@ class GoogleDocsFormatter:
 
         # TL;DR items per PL (prose format, no bullets)
         # Skip "Other" category as it's a catch-all for unclassified tickets
-        for pl in product_lines:
+        # Sort PLs according to PRODUCT_LINE_ORDER for consistent display
+        sorted_product_lines = get_ordered_pls(product_lines)
+        for pl in sorted_product_lines:
             if pl not in tldr_by_pl:
                 continue
             if pl.lower() == "other":
@@ -402,10 +451,11 @@ class GoogleDocsFormatter:
             category = self._get_pl_category(pl)
             pl_by_category[category].append(pl)
 
-        # Define category order (excluding "Other")
+        # Define category order (grouped similar PLs together)
+        # Order: Media -> Audiences -> DSP -> Developer Experience -> Data Ingress -> Helix -> Data Governance
         category_order = [
-            "Media", "Developer Experience", "Audiences", "Data Ingress",
-            "Data Governance", "Helix", "DSP"
+            "Media", "Audiences", "DSP", "Developer Experience", "Data Ingress",
+            "Helix", "Data Governance"
         ]
 
         # Process each category
@@ -417,8 +467,11 @@ class GoogleDocsFormatter:
             category_header = f"------------------{category}------------------\n\n"
             self._insert_text(category_header)
 
+            # Sort PLs within this category according to PRODUCT_LINE_ORDER
+            sorted_category_pls = get_ordered_pls(pl_by_category[category])
+
             # Process each PL in this category
-            for pl in pl_by_category[category]:
+            for pl in sorted_category_pls:
                 pl_clean = self._clean_pl_name(pl)
 
                 # PL name and release version line
