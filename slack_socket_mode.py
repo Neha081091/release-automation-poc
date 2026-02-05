@@ -963,20 +963,36 @@ def handle_edit_modal_submission(ack, body, view):
         return
 
     try:
+        # Split into chunks for Slack's 3000 char limit per block (same as original)
+        chunks = []
+        current_chunk = ""
+
+        for line in new_text.split('\n'):
+            if len(current_chunk) + len(line) + 1 > 2900:
+                chunks.append(current_chunk)
+                current_chunk = line + '\n'
+            else:
+                current_chunk += line + '\n'
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        # Build blocks with mrkdwn formatting
+        blocks = []
+        for chunk in chunks:
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": chunk
+                }
+            })
+
         # Update the message
         client.chat_update(
             channel=channel,
             ts=message_ts,
-            text=new_text,
-            blocks=[
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": new_text
-                    }
-                }
-            ]
+            text=new_text[:100] + "...",
+            blocks=blocks
         )
 
         # Update saved announcement
