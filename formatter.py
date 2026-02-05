@@ -54,7 +54,17 @@ PRODUCT_LINE_MAPPING = {
 
 # Order for displaying product lines (dynamic - will be populated from fix versions)
 # These are fallback/common names; actual names come from fix versions
+# Grouped by category: Media -> Audiences -> DSP Core -> Developer Experience -> Data Ingress -> Helix -> Data Governance
 PRODUCT_LINE_ORDER = [
+    # Media PLs
+    "Media PL1",
+    "Media PL2",
+    "Media",
+    # Audiences PLs
+    "Audiences PL1",
+    "Audiences PL2",
+    "Audiences",
+    # DSP Core PLs
     "DSP Core PL1",
     "DSP Core PL2",
     "DSP Core PL3",
@@ -63,15 +73,16 @@ PRODUCT_LINE_ORDER = [
     "DSP PL2",
     "DSP PL3",
     "DSP",
-    "Audiences PL1",
-    "Audiences PL2",
-    "Audiences",
-    "Media PL1",
-    "Media",
-    "Helix PL3",
-    "Helix",
+    # Developer Experience
     "Developer Experience",
     "Developer Experience 2026",
+    # Data Ingress
+    "Data Ingress",
+    "Data Ingress 2026",
+    # Helix PLs
+    "Helix PL3",
+    "Helix",
+    # Data Governance
     "Data Governance",
     "Other"
 ]
@@ -131,12 +142,26 @@ def consolidate_tldr_with_claude(raw_summaries_by_product: Dict[str, List[str]])
     """
     if not ANTHROPIC_AVAILABLE:
         print("[Formatter] Anthropic not available, returning raw summaries")
-        return {product: "; ".join(summaries) for product, summaries in raw_summaries_by_product.items()}
+        # Capitalize first letter of joined summaries
+        result = {}
+        for product, summaries in raw_summaries_by_product.items():
+            text = "; ".join(summaries)
+            if text:
+                text = text[0].upper() + text[1:]
+            result[product] = text
+        return result
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         print("[Formatter] ANTHROPIC_API_KEY not set, returning raw summaries")
-        return {product: "; ".join(summaries) for product, summaries in raw_summaries_by_product.items()}
+        # Capitalize first letter of joined summaries
+        result = {}
+        for product, summaries in raw_summaries_by_product.items():
+            text = "; ".join(summaries)
+            if text:
+                text = text[0].upper() + text[1:]
+            result[product] = text
+        return result
 
     client = anthropic.Anthropic(api_key=api_key)
     consolidated = {}
@@ -185,13 +210,19 @@ Now consolidate for {product}:"""
             # Remove product name prefix if Claude added it
             if result.lower().startswith(product.lower()):
                 result = result[len(product):].lstrip(" -:")
+            # Capitalize the first letter of the summary
+            if result:
+                result = result[0].upper() + result[1:]
             consolidated[product] = result
             print(f"[Formatter] Consolidated TLDR for {product}")
 
         except Exception as e:
             print(f"[Formatter] Error consolidating {product}: {str(e)}")
-            # Fallback to joining with semicolons
-            consolidated[product] = "; ".join(summaries)
+            # Fallback to joining with semicolons, capitalize first letter
+            text = "; ".join(summaries)
+            if text:
+                text = text[0].upper() + text[1:]
+            consolidated[product] = text
 
     return consolidated
 
@@ -521,7 +552,11 @@ class ReleaseNotesFormatter:
                 cleaned.append(s)
 
         # Join all summaries with semicolons
-        return '; '.join(cleaned)
+        result = '; '.join(cleaned)
+        # Capitalize the first letter
+        if result:
+            result = result[0].upper() + result[1:]
+        return result
 
     def generate_tldr(self, use_llm: bool = True) -> Dict[str, Any]:
         """
