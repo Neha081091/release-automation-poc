@@ -499,6 +499,9 @@ class ReleaseNotesFormatter:
         for prefix in prefixes_to_remove:
             if text.upper().startswith(prefix.upper()):
                 text = text[len(prefix):].strip()
+        # Capitalize the first letter
+        if text:
+            text = text[0].upper() + text[1:]
         return text
 
     def _extract_bullets_from_description(self, description: str) -> List[str]:
