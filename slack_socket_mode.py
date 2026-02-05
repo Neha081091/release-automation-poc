@@ -925,6 +925,16 @@ def handle_edit_announcement(ack, command, respond):
                 }),
                 "blocks": [
                     {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": "*Formatting Tips:*\n• Bold: `*text*`\n• Link: `<url|text>`\n• Code: surround with backticks\n• Keep existing formatting syntax!"
+                        }
+                    },
+                    {
+                        "type": "divider"
+                    },
+                    {
                         "type": "input",
                         "block_id": "announcement_text",
                         "element": {
@@ -933,7 +943,7 @@ def handle_edit_announcement(ack, command, respond):
                             "multiline": True,
                             "initial_value": last.get('text', '')[:3000]  # Slack limit
                         },
-                        "label": {"type": "plain_text", "text": "Announcement Text"}
+                        "label": {"type": "plain_text", "text": "Announcement Text (use Slack markdown)"}
                     }
                 ]
             }
