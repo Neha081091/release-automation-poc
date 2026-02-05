@@ -567,8 +567,13 @@ def handle_good_to_announce(ack, body):
                 formatted_lines.append('*Value Add:*')
                 continue
 
+            # Format release type indicators as code
+            if stripped in ('General Availability', 'Feature Flag', 'Beta'):
+                formatted_lines.append(f'`{stripped}`')
+                continue
+
             # Reset seen_headers when we hit a new epic (non-header, non-bullet line)
-            if not stripped.startswith(('●', '•', '*', '-')) and stripped not in ('General Availability', 'Feature Flag', 'Beta'):
+            if not stripped.startswith(('●', '•', '*', '-')):
                 # This might be an epic name - check if it matches
                 epic_matched = False
                 for epic_name, epic_url in epic_urls.items():
@@ -580,11 +585,7 @@ def handle_good_to_announce(ack, body):
                         break
 
                 if not epic_matched:
-                    # Check if it's a release type indicator
-                    if stripped in ('General Availability', 'Feature Flag', 'Beta'):
-                        formatted_lines.append(f"_{stripped}_")
-                    else:
-                        formatted_lines.append(stripped)
+                    formatted_lines.append(stripped)
             else:
                 formatted_lines.append(stripped)
 
