@@ -972,12 +972,47 @@ def handle_edit_modal_submission(ack, body, view):
         print("[Socket Mode] Missing channel or message_ts in edit modal")
         return
 
+    # Auto-format the text (detect and apply Slack markdown)
+    def auto_format_text(text: str) -> str:
+        """Auto-detect and apply Slack formatting to plain text."""
+        lines = text.split('\n')
+        formatted_lines = []
+
+        for line in lines:
+            stripped = line.strip()
+
+            # Skip empty lines
+            if not stripped:
+                formatted_lines.append('')
+                continue
+
+            # Auto-format "Value Add:" and "Bug Fixes:" as bold (if not already)
+            if stripped in ('Value Add:', 'Value Add') and not stripped.startswith('*'):
+                formatted_lines.append('*Value Add:*')
+                continue
+            if stripped in ('Bug Fixes:', 'Bug Fixes') and not stripped.startswith('*'):
+                formatted_lines.append('*Bug Fixes:*')
+                continue
+
+            # Auto-format release type indicators as code (if not already)
+            if stripped in ('General Availability', 'Feature Flag', 'Beta') and not stripped.startswith('`'):
+                formatted_lines.append(f'`{stripped}`')
+                continue
+
+            # Keep line as-is (preserves existing formatting)
+            formatted_lines.append(line)
+
+        return '\n'.join(formatted_lines)
+
+    # Apply auto-formatting
+    formatted_text = auto_format_text(new_text)
+
     try:
         # Split into chunks for Slack's 3000 char limit per block (same as original)
         chunks = []
         current_chunk = ""
 
-        for line in new_text.split('\n'):
+        for line in formatted_text.split('\n'):
             if len(current_chunk) + len(line) + 1 > 2900:
                 chunks.append(current_chunk)
                 current_chunk = line + '\n'
@@ -1005,8 +1040,8 @@ def handle_edit_modal_submission(ack, body, view):
             blocks=blocks
         )
 
-        # Update saved announcement
-        save_last_announcement(channel, message_ts, new_text)
+        # Update saved announcement (with formatting)
+        save_last_announcement(channel, message_ts, formatted_text)
 
         print(f"[Socket Mode] {user} updated announcement {message_ts}")
 
