@@ -76,7 +76,7 @@ Output ONLY the consolidated sentence:"""
 
 
 def consolidate_body_with_claude(client, product: str, sections: list, release_version: str) -> str:
-    """Consolidate body sections into executive-style release notes using Claude."""
+    """Consolidate body sections into executive-style prose release notes using Claude."""
     sections_text = ""
     for section in sections:
         items_list = "\n".join([f"- {item}" for item in section.get("items", [])])
@@ -88,7 +88,7 @@ def consolidate_body_with_claude(client, product: str, sections: list, release_v
         max_tokens=2000,
         messages=[{
             "role": "user",
-            "content": f"""Transform these raw Jira sections into CONCISE executive-style release notes.
+            "content": f"""Transform these raw Jira sections into PROSE-STYLE executive release notes.
 
 Product: {product}
 Release Version: {release_version}
@@ -99,37 +99,50 @@ Raw Sections:
 STRICT FORMAT RULES:
 1. NO markdown formatting (no **, no __, no backticks)
 2. Use PLAIN TEXT only
-3. Epic names as simple headers (no formatting)
-4. For regular epics: include "Value Add:" header - make bullets DESCRIPTIVE
-5. For "Bug Fixes" sections: use "Bug Fixes:" header - keep bullets SHORT and concise
-6. Use filled circle bullet "●" for all bullets
-7. 1-2 bullets per epic
-8. Value Add bullets: describe WHAT changed and WHY it benefits users (be descriptive)
-9. Bug Fix bullets: keep SHORT - just "Fixed [issue] in [component]"
-10. End each epic section with status tag: General Availability OR Feature Flag
-11. One blank line between epic sections
+3. Epic names as simple headers on their own line
+4. For regular epics: include "Value Add:" header followed by a SINGLE PROSE SENTENCE
+5. For "Bug Fixes" sections: use "Bug Fixes:" header followed by prose description
+6. NO bullet points - write flowing prose sentences instead
+7. Consolidate all items under an epic into ONE descriptive sentence
+8. The sentence should explain WHAT was done and WHERE (name specific components/repos)
+9. End each epic section with status tag on its own line: General Availability OR Feature Flag
+10. One blank line between epic sections
 
-VALUE ADD - BAD (too short):
-● Updated bulk actions goals dropdown for enhanced user experience
+TRANSFORMATION EXAMPLE:
+Raw Input:
+Epic: Saarthi Code Reviewer integration across major repositories
+Items:
+- Integrating saarthi into di-agentic-service repo
+- Integrating saarthi into common-graphql repo
 
-VALUE ADD - GOOD (descriptive with benefit):
-● Updated Bulk Actions Goals dropdown to match the rest of the platform design, providing a cleaner and more intuitive user experience
-
-BUG FIX - GOOD (short and concise):
-● Fixed alignment issue with save draft button in HCP planner when using long names
-● Fixed query returning 0 results when This Month date range selected
-
-EXACT OUTPUT FORMAT FOR REGULAR EPICS:
-Epic Name Here
+WRONG OUTPUT (bullet format - DO NOT DO THIS):
+Saarthi Code Reviewer integration across major repositories
 Value Add:
-● Descriptive statement explaining what changed and how it benefits users
-● Another change with clear user benefit
+● Integrating saarthi into di-agentic-service repo
+● Integrating saarthi into common-graphql repo
 General Availability
 
-EXACT OUTPUT FORMAT FOR BUG FIXES SECTION (keep bugs SHORT):
+CORRECT OUTPUT (prose format - DO THIS):
+Saarthi Code Reviewer integration across major repositories
+Value Add:
+Saarthi AI code reviewer is now integrated into di-agentic-service and common-graphql repositories, enabling automated code review across more codebases.
+General Availability
+
+MORE EXAMPLES OF CORRECT PROSE FORMAT:
+
+Epic: Migration of data pipelines from spring batch to airflow
+Value Add:
+REST API changes have been evaluated and prepared for Airflow upgrade across planner-service, patient-planner-service, event-consumer-service, di-match-service, and account-manager-service.
+General Availability
+
+Epic: Inventory Priority Tiers - Reporting
+Value Add:
+InventoryTier dimension is now available in Reporting for seats that have enabled priority tiers, providing visibility into inventory tier performance.
+General Availability
+
+Epic: Bug Fixes
 Bug Fixes:
-● Fixed [brief issue description]
-● Fixed [another brief issue]
+Fixed alignment issues with save draft button in HCP planner and resolved query returning empty results when This Month date range was selected.
 General Availability
 
 Transform sections for {product}:"""
@@ -138,18 +151,20 @@ Transform sections for {product}:"""
 
     result = message.content[0].text.strip()
 
-    # Post-process: Force correct bullet format (● instead of *, -, •)
+    # Post-process: Remove any bullet characters that Claude might have added
     lines = result.split('\n')
     processed_lines = []
     for line in lines:
         stripped = line.lstrip()
-        # Replace bullet characters at start of line
-        if stripped.startswith('* '):
-            line = line.replace('* ', '● ', 1)
-        elif stripped.startswith('- '):
-            line = line.replace('- ', '● ', 1)
+        # Remove bullet characters at start of line (convert to prose)
+        if stripped.startswith('● '):
+            line = line.replace('● ', '', 1)
         elif stripped.startswith('• '):
-            line = line.replace('• ', '● ', 1)
+            line = line.replace('• ', '', 1)
+        elif stripped.startswith('* '):
+            line = line.replace('* ', '', 1)
+        elif stripped.startswith('- '):
+            line = line.replace('- ', '', 1)
         processed_lines.append(line)
 
     return '\n'.join(processed_lines)

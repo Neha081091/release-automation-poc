@@ -184,6 +184,13 @@ class GoogleDocsFormatter:
         This is the core interpreter logic that understands the structure
         of Claude's output and identifies what needs formatting.
 
+        The expected format is prose-style (not bullet points):
+
+        Epic Name Here
+        Value Add:
+        Single descriptive prose sentence about what was accomplished.
+        General Availability
+
         Args:
             body_text: Raw body text from Claude
             epic_urls: Dictionary of epic names to URLs
@@ -213,73 +220,96 @@ class GoogleDocsFormatter:
             found_content = True
             filtered_lines.append(line)
 
+        # Track context - are we after a "Value Add:" or "Bug Fixes:" header?
+        in_value_section = False
+
         for line in filtered_lines:
             stripped = line.strip()
 
             if not stripped:
                 elements.append({"type": "blank", "text": "\n"})
+                in_value_section = False
                 continue
 
-            # Detect line type and formatting
-            if stripped.startswith('●') or stripped.startswith('•') or stripped.startswith('*') or stripped.startswith('-'):
-                # Bullet point
-                # Normalize bullet character to filled circle
-                clean_bullet = re.sub(r'^[●•\*\-]\s*', '● ', stripped)
+            # Check for Value Add header
+            if stripped.lower().startswith('value add'):
                 elements.append({
-                    "type": "bullet",
-                    "text": clean_bullet + "\n",
-                    "original": stripped
-                })
-            elif stripped.lower().startswith('value add'):
-                # Value Add header - should be bold
-                elements.append({
-                    "type": "value_add",
+                    "type": "value_add_header",
                     "text": stripped + "\n",
                     "bold_range": (0, len("Value Add:"))
                 })
-            elif stripped.lower().startswith('bug fix'):
-                # Bug Fixes header - should be bold
+                in_value_section = True
+                continue
+
+            # Check for Bug Fixes header
+            if stripped.lower().startswith('bug fix'):
                 elements.append({
-                    "type": "bug_fixes",
+                    "type": "bug_fixes_header",
                     "text": stripped + "\n",
                     "bold_range": (0, len("Bug Fixes:"))
                 })
-            elif stripped == 'General Availability':
-                # Status tag - green
+                in_value_section = True
+                continue
+
+            # Check for status tags
+            if stripped == 'General Availability':
                 elements.append({
                     "type": "status",
                     "text": stripped + "\n",
                     "color": "green"
                 })
-            elif stripped == 'Feature Flag':
-                # Status tag - green
+                in_value_section = False
+                continue
+
+            if stripped == 'Feature Flag':
                 elements.append({
                     "type": "status",
                     "text": stripped + "\n",
                     "color": "green"
+                })
+                in_value_section = False
+                continue
+
+            # If we're in a value section, this is prose content
+            if in_value_section:
+                # This is the prose description - just regular text
+                # Remove any accidental bullet characters
+                clean_text = re.sub(r'^[●•\*\-]\s*', '', stripped)
+                elements.append({
+                    "type": "prose",
+                    "text": clean_text + "\n"
+                })
+                continue
+
+            # Otherwise, check if it's an epic name
+            epic_url = self._find_epic_url(stripped, epic_urls)
+            if epic_url:
+                elements.append({
+                    "type": "epic",
+                    "text": stripped + "\n",
+                    "url": epic_url,
+                    "bold": True
                 })
             else:
-                # Potential epic name - check for URL
-                epic_url = self._find_epic_url(stripped, epic_urls)
-                if epic_url:
+                # Could be an epic without URL, or other text
+                # Check if it looks like an epic name (not too long, not ending with period)
+                is_likely_epic = (
+                    len(stripped) < 100 and
+                    not stripped.endswith('.') and
+                    not stripped.endswith(':') and
+                    not stripped.startswith('http')
+                )
+                if is_likely_epic:
                     elements.append({
                         "type": "epic",
                         "text": stripped + "\n",
-                        "url": epic_url,
                         "bold": True
                     })
                 else:
-                    # Regular text (could still be an epic without URL)
-                    # Check if it looks like an epic name (title case, not too long)
-                    is_likely_epic = (
-                        len(stripped) < 100 and
-                        not stripped.endswith(':') and
-                        not stripped.startswith('http')
-                    )
+                    # Regular prose text
                     elements.append({
-                        "type": "epic" if is_likely_epic else "text",
-                        "text": stripped + "\n",
-                        "bold": is_likely_epic
+                        "type": "prose",
+                        "text": stripped + "\n"
                     })
 
         return elements
@@ -421,7 +451,7 @@ class GoogleDocsFormatter:
                                 # Add hyperlink
                                 self._mark_link(elem_start, elem_end - 1, element["url"])
 
-                        elif element["type"] == "value_add" or element["type"] == "bug_fixes":
+                        elif element["type"] in ("value_add_header", "bug_fixes_header"):
                             # Bold the header portion
                             bold_start, bold_end = element.get("bold_range", (0, 0))
                             if bold_end > bold_start:
@@ -431,6 +461,8 @@ class GoogleDocsFormatter:
                             # Green color for status tags
                             if element.get("color") == "green":
                                 self._mark_green(elem_start, elem_end - 1)
+
+                        # "prose" type has no special formatting - just regular text
 
                     # Add spacing after body
                     self._insert_text("\n")
@@ -553,28 +585,25 @@ if __name__ == "__main__":
         "body_by_pl": {
             "Media PL1": """Inventory Priority Tiers - Reporting
 Value Add:
-● InventoryTier dimension in Reporting should be shown to seats which have enabled priority tiers
+InventoryTier dimension is now available in Reporting for seats that have enabled priority tiers, providing visibility into inventory tier performance.
 General Availability
 
 Ops UI Enhancements
 Value Add:
-● OA Enablement Flag for Deal IDs
-● Add Negotiated Bid Floor Value
+OA Enablement Flag has been added for Deal IDs along with the Negotiated Bid Floor Value, enhancing deal management capabilities in Ops UI.
 General Availability""",
             "Developer Experience": """Migration of data pipelines from spring batch to airflow
 Value Add:
-● planner-service - Evaluate REST API changes for Airflow upgrade
-● patient-planner-service - Evaluate REST API changes for Airflow upgrade
+REST API changes have been evaluated and prepared for Airflow upgrade across planner-service, patient-planner-service, event-consumer-service, di-match-service, and account-manager-service.
 General Availability
 
 Saarthi Code Reviewer integration across major repositories
 Value Add:
-● Integrating saarthi into di-agentic-service repo
-● Integrating saarthi into common-graphql repo
+Saarthi AI code reviewer is now integrated into di-agentic-service and common-graphql repositories, enabling automated code review across more codebases.
 General Availability""",
             "DSP Core PL1": """Forecasting
 Value Add:
-● Move FCAP calculation logic to API side
+FCAP calculation logic has been moved to the API side, improving forecasting performance and maintainability.
 General Availability"""
         },
         "release_versions": {
