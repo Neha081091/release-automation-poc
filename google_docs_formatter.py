@@ -490,16 +490,19 @@ class GoogleDocsFormatter:
     def _build_format_requests(self):
         """Build formatting requests from tracked positions."""
 
-        # First, reset ALL text to black to override any inherited formatting
-        # This ensures only status tags are green
+        # First, reset ALL text formatting to defaults (black color, NOT bold)
+        # This is critical because Google Docs API causes inserted text to inherit
+        # formatting from preceding characters. Without this reset, text inserted
+        # after bold text would also be bold.
         if self.current_index > 1:
             self.format_requests.append({
                 "updateTextStyle": {
                     "range": {"startIndex": 1, "endIndex": self.current_index},
                     "textStyle": {
-                        "foregroundColor": {"color": {"rgbColor": {"red": 0.0, "green": 0.0, "blue": 0.0}}}
+                        "foregroundColor": {"color": {"rgbColor": {"red": 0.0, "green": 0.0, "blue": 0.0}}},
+                        "bold": False
                     },
-                    "fields": "foregroundColor"
+                    "fields": "foregroundColor,bold"
                 }
             })
 
