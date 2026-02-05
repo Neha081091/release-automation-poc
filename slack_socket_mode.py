@@ -669,11 +669,16 @@ def handle_good_to_announce(ack, body):
 
     try:
         # Post announcement
-        client.chat_postMessage(
+        result = client.chat_postMessage(
             channel=announce_channel,
             text=f"Daily Deployment Summary: {release_date}",
             blocks=announcement_blocks
         )
+
+        # Save announcement for later edit/delete
+        announcement_ts = result.get('ts')
+        save_last_announcement(announce_channel, announcement_ts, announcement_text)
+        print(f"[Socket Mode] Announcement saved (ts: {announcement_ts}) - use /delete-announcement or /edit-announcement to modify")
 
         # Update original message to show it's been announced
         final_blocks = [
@@ -814,6 +819,184 @@ def post_approval_message(pls: list = None, doc_url: str = None, release_date: s
         return None
 
 
+# File to store last announcement info
+LAST_ANNOUNCEMENT_FILE = 'last_announcement.json'
+
+
+def save_last_announcement(channel: str, message_ts: str, text: str):
+    """Save the last announcement details for edit/delete."""
+    try:
+        with open(LAST_ANNOUNCEMENT_FILE, 'w') as f:
+            json.dump({
+                'channel': channel,
+                'message_ts': message_ts,
+                'text': text,
+                'posted_at': datetime.now().isoformat()
+            }, f, indent=2)
+    except Exception as e:
+        print(f"[Socket Mode] Error saving last announcement: {e}")
+
+
+def load_last_announcement() -> dict:
+    """Load the last announcement details."""
+    try:
+        with open(LAST_ANNOUNCEMENT_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        print(f"[Socket Mode] Error loading last announcement: {e}")
+        return {}
+
+
+@app.command("/delete-announcement")
+def handle_delete_announcement(ack, command, respond):
+    """Handle /delete-announcement slash command."""
+    ack()
+
+    user = command['user_name']
+    text = command.get('text', '').strip()
+
+    print(f"[Socket Mode] {user} triggered /delete-announcement")
+
+    # Get message to delete
+    if text:
+        # User provided specific message_ts
+        parts = text.split()
+        if len(parts) >= 2:
+            channel = parts[0]
+            message_ts = parts[1]
+        else:
+            # Assume it's just the message_ts, use announce channel
+            channel = os.getenv('SLACK_ANNOUNCE_CHANNEL', command['channel_id'])
+            message_ts = parts[0]
+    else:
+        # Use last announcement
+        last = load_last_announcement()
+        if not last:
+            respond("No announcement found to delete. Use `/delete-announcement <channel_id> <message_ts>` to specify.")
+            return
+        channel = last.get('channel')
+        message_ts = last.get('message_ts')
+
+    try:
+        client.chat_delete(channel=channel, ts=message_ts)
+        respond(f"✅ Announcement deleted successfully!")
+        print(f"[Socket Mode] Deleted message {message_ts} from {channel}")
+
+        # Clear the saved announcement
+        if os.path.exists(LAST_ANNOUNCEMENT_FILE):
+            os.remove(LAST_ANNOUNCEMENT_FILE)
+
+    except Exception as e:
+        respond(f"❌ Failed to delete announcement: {str(e)}")
+        print(f"[Socket Mode] Error deleting announcement: {e}")
+
+
+@app.command("/edit-announcement")
+def handle_edit_announcement(ack, command, respond):
+    """Handle /edit-announcement slash command - opens a modal for editing."""
+    ack()
+
+    user = command['user_name']
+    trigger_id = command['trigger_id']
+
+    print(f"[Socket Mode] {user} triggered /edit-announcement")
+
+    # Load last announcement
+    last = load_last_announcement()
+    if not last:
+        respond("No announcement found to edit. Post an announcement first using 'Good to Announce'.")
+        return
+
+    # Open modal for editing
+    try:
+        client.views_open(
+            trigger_id=trigger_id,
+            view={
+                "type": "modal",
+                "callback_id": "edit_announcement_modal",
+                "title": {"type": "plain_text", "text": "Edit Announcement"},
+                "submit": {"type": "plain_text", "text": "Update"},
+                "close": {"type": "plain_text", "text": "Cancel"},
+                "private_metadata": json.dumps({
+                    'channel': last.get('channel'),
+                    'message_ts': last.get('message_ts')
+                }),
+                "blocks": [
+                    {
+                        "type": "input",
+                        "block_id": "announcement_text",
+                        "element": {
+                            "type": "plain_text_input",
+                            "action_id": "text_input",
+                            "multiline": True,
+                            "initial_value": last.get('text', '')[:3000]  # Slack limit
+                        },
+                        "label": {"type": "plain_text", "text": "Announcement Text"}
+                    }
+                ]
+            }
+        )
+    except Exception as e:
+        respond(f"❌ Failed to open edit modal: {str(e)}")
+        print(f"[Socket Mode] Error opening edit modal: {e}")
+
+
+@app.view("edit_announcement_modal")
+def handle_edit_modal_submission(ack, body, view):
+    """Handle the edit announcement modal submission."""
+    ack()
+
+    user = body['user']['username']
+
+    # Get the new text
+    new_text = view['state']['values']['announcement_text']['text_input']['value']
+
+    # Get channel and message_ts from private_metadata
+    metadata = json.loads(view.get('private_metadata', '{}'))
+    channel = metadata.get('channel')
+    message_ts = metadata.get('message_ts')
+
+    if not channel or not message_ts:
+        print("[Socket Mode] Missing channel or message_ts in edit modal")
+        return
+
+    try:
+        # Update the message
+        client.chat_update(
+            channel=channel,
+            ts=message_ts,
+            text=new_text,
+            blocks=[
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": new_text
+                    }
+                }
+            ]
+        )
+
+        # Update saved announcement
+        save_last_announcement(channel, message_ts, new_text)
+
+        print(f"[Socket Mode] {user} updated announcement {message_ts}")
+
+        # Send confirmation DM to user
+        try:
+            client.chat_postMessage(
+                channel=body['user']['id'],
+                text="✅ Announcement updated successfully!"
+            )
+        except:
+            pass  # DM might fail if not allowed
+
+    except Exception as e:
+        print(f"[Socket Mode] Error updating announcement: {e}")
+
+
 def main():
     """Start the Socket Mode handler."""
 
@@ -844,6 +1027,8 @@ To set up Socket Mode:
 ║  Features:                                                   ║
 ║  • Dynamic PLs from processed_notes.json                     ║
 ║  • Buttons disable after selection                           ║
+║  • /delete-announcement - Delete last announcement           ║
+║  • /edit-announcement - Edit last announcement               ║
 ║  • "X PL(s) pending" counter                                 ║
 ║  • Good to Announce enabled after all reviewed               ║
 ║  • Tomorrow defers PL to next day                            ║
