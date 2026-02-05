@@ -425,15 +425,17 @@ class GoogleDocsFormatter:
             summary = tldr_by_pl[pl]
             pl_clean = self._clean_pl_name(pl)
 
-            # Insert PL name (bold, with link if available) - NO bullet
+            # Capitalize first letter of summary after the dash
+            if summary:
+                summary = summary[0].upper() + summary[1:] if len(summary) > 1 else summary.upper()
+
+            # Insert PL name (bold, NO hyperlink - black text) - NO bullet
             pl_start = self.current_index
             self._insert_text(pl_clean)
             pl_end = self.current_index
             self._mark_bold(pl_start, pl_end)
 
-            # Check if there's a release version URL
-            if pl in fix_version_urls:
-                self._mark_link(pl_start, pl_end, fix_version_urls[pl])
+            # NOTE: Removed hyperlink from PL name in TLDR - should be plain black bold text
 
             # Insert separator and summary
             rest_of_line = f" - {summary}\n"
