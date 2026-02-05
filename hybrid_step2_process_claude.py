@@ -33,36 +33,36 @@ def consolidate_with_claude(client, product: str, summaries: list) -> str:
 
     message = client.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=300,
+        max_tokens=500,
         messages=[{
             "role": "user",
-            "content": f"""Write a SINGLE flowing sentence TL;DR for executive review.
+            "content": f"""Write a 1-2 sentence TL;DR summary for executive review.
 
 Product: {product}
 Raw Items:
 {summaries_text}
 
 STRICT FORMAT RULES:
-1. ONE sentence only - NO line breaks
-2. Use semicolons to separate different feature areas
-3. Use connectors: "with", "including", "featuring", "adding"
-4. Start DIRECTLY with the specific change - NO vague opening phrases
-5. Action-oriented past tense: "enhanced", "added", "patched", "restructured"
-6. NO bullet points, NO product name prefix
-7. Keep it SHORT - max 40 words
-8. NEVER use generic phrases like "Q1 2026 product improvements", "delivering enhanced functionality", "platform enhancements"
-9. Lead with CONCRETE SPECIFICS - name the actual feature, pipeline, or component being changed
+1. Write 1-2 flowing SENTENCES (not a list of items separated by semicolons)
+2. Describe the IMPORTANT deployments and their PURPOSE/BENEFIT
+3. Use past tense verbs: "updated", "added", "implemented", "integrated", "fixed"
+4. Name SPECIFIC components, services, or features that were changed
+5. NO bullet points, NO semicolons as separators
+6. If multiple items, weave them into cohesive sentences
+7. Keep it concise but descriptive - max 50 words
+8. NEVER just list ticket titles - transform them into meaningful descriptions
 
-BAD EXAMPLES (never do this):
-- "Q1 2026 product improvements delivering enhanced platform functionality"
-- "Platform enhancements with improved capabilities"
+BAD EXAMPLES (semicolon-separated list - DO NOT DO THIS):
+- "InventoryTier dimension in Reporting; OA Enablement Flag for Deal IDs; Add Negotiated Bid Floor Value"
+- "Integrating saarthi into di-agentic-service repo; Integrating saarthi into common-graphql repo"
 
-GOOD EXAMPLES:
-- "Symphony Monthly pipeline restructured with fail-fast approach; batch processing optimizations"
-- "Audience Details page enhanced with new filtering options; export functionality added"
-- "Order listing improvements with multi-select filtering and persistent preferences"
+GOOD EXAMPLES (prose sentences - DO THIS):
+- "InventoryTier dimension now visible in Reporting for seats with enabled priority tiers; Open Auction enablement flag added for Deal IDs with new Negotiated Bid Floor field for internal auction dynamics"
+- "Saarthi AI code reviewer integrated into di-agentic-service and common-graphql repos; Airflow upgrade compatibility with logical_date parameter support across 5 services"
+- "Channel chart scale updated to use 4MM HCP Universe for better visualization of reach differences between EHR and other channels; improved scale readability when filters are applied"
+- "Household frequency and recency capping support at Seat, Order, Campaign, and AdGroup levels with updated scheduling chart visualization; GraphQL schema and API updates for householding"
 
-Output ONLY the consolidated sentence:"""
+Output ONLY the 1-2 sentence summary:"""
         }]
     )
 

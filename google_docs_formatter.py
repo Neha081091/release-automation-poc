@@ -358,7 +358,7 @@ class GoogleDocsFormatter:
         key_deploy_start = self._insert_text(key_deploy_header)
         self._mark_bold(key_deploy_start, key_deploy_start + len("Key Deployments:"))
 
-        # TL;DR items per PL
+        # TL;DR items per PL (prose format, no bullets)
         for pl in product_lines:
             if pl not in tldr_by_pl:
                 continue
@@ -366,11 +366,7 @@ class GoogleDocsFormatter:
             summary = tldr_by_pl[pl]
             pl_clean = self._clean_pl_name(pl)
 
-            # Insert bullet
-            bullet = "• "
-            self._insert_text(bullet)
-
-            # Insert PL name (bold, with link if available)
+            # Insert PL name (bold, with link if available) - NO bullet
             pl_start = self.current_index
             self._insert_text(pl_clean)
             pl_end = self.current_index
@@ -578,9 +574,9 @@ if __name__ == "__main__":
         "release_summary": "5th February 2026",
         "product_lines": ["Media PL1", "Developer Experience", "DSP Core PL1"],
         "tldr_by_pl": {
-            "Media PL1": "InventoryTier dimension in Reporting; OA Enablement Flag for Deal IDs",
-            "Developer Experience": "Integrating saarthi into repos; Airflow upgrade evaluations",
-            "DSP Core PL1": "Forecasting FCAP calculation logic moved to API side"
+            "Media PL1": "InventoryTier dimension now visible in Reporting for seats with enabled priority tiers; Open Auction enablement flag added for Deal IDs with new Negotiated Bid Floor field for internal auction dynamics",
+            "Developer Experience": "Saarthi AI code reviewer integrated into di-agentic-service and common-graphql repos; Airflow upgrade compatibility with logical_date parameter support across 5 services",
+            "DSP Core PL1": "Forecasting improvements with frequency cap calculation logic moved to API side, returning minimum FCAP per day with timeframe for consistent results"
         },
         "body_by_pl": {
             "Media PL1": """Inventory Priority Tiers - Reporting
