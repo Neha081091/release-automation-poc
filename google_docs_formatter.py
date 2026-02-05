@@ -359,9 +359,12 @@ class GoogleDocsFormatter:
         self._mark_bold(key_deploy_start, key_deploy_start + len("Key Deployments:"))
 
         # TL;DR items per PL (prose format, no bullets)
+        # Skip "Other" category as it's a catch-all for unclassified tickets
         for pl in product_lines:
             if pl not in tldr_by_pl:
                 continue
+            if pl.lower() == "other":
+                continue  # Skip "Other" in TL;DR
 
             summary = tldr_by_pl[pl]
             pl_clean = self._clean_pl_name(pl)
@@ -384,16 +387,18 @@ class GoogleDocsFormatter:
         self._insert_text("\n")
 
         # === BODY SECTIONS BY CATEGORY ===
-        # Group PLs by category
+        # Group PLs by category, skip "Other" as it's for unclassified tickets
         pl_by_category = defaultdict(list)
         for pl in product_lines:
+            if pl.lower() == "other":
+                continue  # Skip "Other" category
             category = self._get_pl_category(pl)
             pl_by_category[category].append(pl)
 
-        # Define category order
+        # Define category order (excluding "Other")
         category_order = [
             "Media", "Developer Experience", "Audiences", "Data Ingress",
-            "Data Governance", "Helix", "DSP", "Other"
+            "Data Governance", "Helix", "DSP"
         ]
 
         # Process each category

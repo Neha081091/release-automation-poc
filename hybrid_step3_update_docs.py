@@ -178,11 +178,13 @@ def send_slack_notification(processed_data: dict) -> bool:
         tldr_by_pl = processed_data.get("tldr_by_pl", {})
         product_lines = processed_data.get("product_lines", [])
 
-        # Build TL;DR summary
+        # Build TL;DR summary (prose format, no bullets)
         tldr_lines = ["*Key Deployments:*"]
         for pl in product_lines:
-            if pl in tldr_by_pl:
-                tldr_lines.append(f"   • {pl}: {tldr_by_pl[pl]}")
+            if pl in tldr_by_pl and pl.lower() != "other":
+                # Clean PL name (remove year suffix)
+                pl_clean = clean_pl_name(pl)
+                tldr_lines.append(f"{pl_clean} - {tldr_by_pl[pl]}")
 
         tldr_summary = "\n".join(tldr_lines)
 
