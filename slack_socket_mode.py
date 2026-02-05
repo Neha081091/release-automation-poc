@@ -168,7 +168,7 @@ def build_pl_blocks(pls: list, message_ts: str = None) -> list:
             }
             status_text = {
                 'approved': 'Approved',
-                'rejected': 'Rejected (deferred)',
+                'rejected': 'Deferred',
                 'tomorrow': 'Moved to Tomorrow'
             }
 
@@ -199,7 +199,7 @@ def build_pl_blocks(pls: list, message_ts: str = None) -> list:
                     },
                     {
                         "type": "button",
-                        "text": {"type": "plain_text", "text": "✗ Reject", "emoji": True},
+                        "text": {"type": "plain_text", "text": "✗ Defer", "emoji": True},
                         "style": "danger",
                         "action_id": f"reject_{pl_action_id}"
                     },
@@ -688,7 +688,7 @@ def handle_good_to_announce(ack, body):
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"• Approved: {', '.join(approved_pls) if approved_pls else 'None'}\n• Rejected: {', '.join(rejected_pls) if rejected_pls else 'None'}\n• Tomorrow: {', '.join(tomorrow_pls) if tomorrow_pls else 'None'}"
+                    "text": f"• Approved: {', '.join(approved_pls) if approved_pls else 'None'}\n• Deferred: {', '.join(rejected_pls) if rejected_pls else 'None'}\n• Tomorrow: {', '.join(tomorrow_pls) if tomorrow_pls else 'None'}"
                 }
             }
         ]
