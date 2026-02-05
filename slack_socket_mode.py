@@ -532,6 +532,63 @@ def handle_good_to_announce(ack, body):
     tldr_by_pl = processed_data.get('tldr_by_pl', {})
     body_by_pl = processed_data.get('body_by_pl', {})
     release_versions = processed_data.get('release_versions', {})
+    fix_version_urls = processed_data.get('fix_version_urls', {})
+    epic_urls_by_pl = processed_data.get('epic_urls_by_pl', {})
+
+    def format_body_for_slack(pl_body: str, epic_urls: dict) -> str:
+        """Format body content with proper Slack markdown."""
+        if not pl_body:
+            return ""
+
+        lines = pl_body.split('\n')
+        formatted_lines = []
+        seen_headers = set()  # Track headers to avoid duplicates
+
+        for line in lines:
+            stripped = line.strip()
+
+            # Skip empty lines but keep structure
+            if not stripped:
+                formatted_lines.append('')
+                continue
+
+            # Check for duplicate headers (Bug Fixes, Value Add)
+            if stripped in ('Bug Fixes', 'Bug Fixes:'):
+                if 'bug_fixes' in seen_headers:
+                    continue  # Skip duplicate
+                seen_headers.add('bug_fixes')
+                formatted_lines.append('*Bug Fixes:*')
+                continue
+
+            if stripped in ('Value Add', 'Value Add:'):
+                if 'value_add' in seen_headers:
+                    continue  # Skip duplicate
+                seen_headers.add('value_add')
+                formatted_lines.append('*Value Add:*')
+                continue
+
+            # Reset seen_headers when we hit a new epic (non-header, non-bullet line)
+            if not stripped.startswith(('●', '•', '*', '-')) and stripped not in ('General Availability', 'Feature Flag', 'Beta'):
+                # This might be an epic name - check if it matches
+                epic_matched = False
+                for epic_name, epic_url in epic_urls.items():
+                    if epic_name in stripped or stripped in epic_name:
+                        # Bold and hyperlink the epic name
+                        formatted_lines.append(f"<{epic_url}|*{stripped}*>")
+                        epic_matched = True
+                        seen_headers = set()  # Reset for new epic section
+                        break
+
+                if not epic_matched:
+                    # Check if it's a release type indicator
+                    if stripped in ('General Availability', 'Feature Flag', 'Beta'):
+                        formatted_lines.append(f"_{stripped}_")
+                    else:
+                        formatted_lines.append(stripped)
+            else:
+                formatted_lines.append(stripped)
+
+        return '\n'.join(formatted_lines)
 
     # Build announcement in exact Google Doc format
     announcement_text = f"*Daily Deployment Summary: {release_date}*\n\n"
@@ -554,24 +611,34 @@ def handle_good_to_announce(ack, body):
     for pl in approved_pls:
         pl_body = None
         pl_version = None
+        pl_fix_url = None
+        pl_epics = {}
         orig_pl_name = pl
+
         for orig_pl in body_by_pl.keys():
             if pl in orig_pl or orig_pl in pl or orig_pl.replace(' 2026', '').replace(' 2025', '') == pl:
                 pl_body = body_by_pl.get(orig_pl, '')
                 pl_version = release_versions.get(orig_pl, '')
+                pl_fix_url = fix_version_urls.get(orig_pl, '')
+                pl_epics = epic_urls_by_pl.get(orig_pl, {})
                 orig_pl_name = orig_pl
                 break
 
         # PL Section Header with dashes
         announcement_text += f"------------------{pl}------------------\n"
-        if pl_version:
+
+        # Release version line with hyperlink
+        if pl_version and pl_fix_url:
+            announcement_text += f"{orig_pl_name}: <{pl_fix_url}|{pl_version}>\n"
+        elif pl_version:
             announcement_text += f"{orig_pl_name}: {pl_version}\n"
         else:
             announcement_text += f"{orig_pl_name}\n"
 
-        # PL Body content
+        # PL Body content with formatting
         if pl_body:
-            announcement_text += f"{pl_body}\n\n"
+            formatted_body = format_body_for_slack(pl_body, pl_epics)
+            announcement_text += f"{formatted_body}\n\n"
 
     # Split into chunks for Slack's 3000 char limit per block
     announcement_blocks = []
