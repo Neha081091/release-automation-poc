@@ -27,6 +27,54 @@ load_dotenv()
 import anthropic
 
 
+# Product Line order - grouped by category: Media -> Audiences -> DSP Core -> Developer Experience -> Data Ingress -> Helix -> Data Governance
+PRODUCT_LINE_ORDER = [
+    # Media PLs
+    "Media PL1",
+    "Media PL2",
+    "Media",
+    # Audiences PLs
+    "Audiences PL1",
+    "Audiences PL2",
+    "Audiences",
+    # DSP Core PLs
+    "DSP Core PL1",
+    "DSP Core PL2",
+    "DSP Core PL3",
+    "DSP Core PL5",
+    "DSP PL1",
+    "DSP PL2",
+    "DSP PL3",
+    "DSP",
+    # Developer Experience
+    "Developer Experience",
+    "Developer Experience 2026",
+    # Data Ingress
+    "Data Ingress",
+    "Data Ingress 2026",
+    # Helix PLs
+    "Helix PL3",
+    "Helix",
+    # Data Governance
+    "Data Governance",
+    "Other"
+]
+
+
+def get_ordered_pls(pl_list: list) -> list:
+    """Sort product lines according to PRODUCT_LINE_ORDER."""
+    ordered = []
+    # First add PLs that are in the preferred order
+    for pl in PRODUCT_LINE_ORDER:
+        if pl in pl_list:
+            ordered.append(pl)
+    # Then add any PLs not in the preferred order (at the end)
+    for pl in pl_list:
+        if pl not in ordered:
+            ordered.append(pl)
+    return ordered
+
+
 def consolidate_with_claude(client, product: str, summaries: list) -> str:
     """Consolidate summaries into polished TL;DR prose using Claude."""
     summaries_text = "\n".join([f"- {s}" for s in summaries])
@@ -72,6 +120,9 @@ Output ONLY the 1-2 sentence summary:"""
         result = result[1:-1]
     if result.lower().startswith(product.lower()):
         result = result[len(product):].lstrip(" -:")
+    # Capitalize the first letter of the summary
+    if result:
+        result = result[0].upper() + result[1:]
     return result
 
 
@@ -327,12 +378,15 @@ def process_tickets_with_claude():
                 body_by_pl[pl] = body_text
 
     # Export processed notes
+    # Sort product lines according to PRODUCT_LINE_ORDER
+    sorted_pls = get_ordered_pls(list(grouped.keys()))
+
     output_data = {
         "processed_at": datetime.now().isoformat(),
         "source_file": input_file,
         "release_summary": export_data.get("release_summary"),
         "ticket_count": len(tickets),
-        "product_lines": list(grouped.keys()),
+        "product_lines": sorted_pls,
         "release_versions": release_versions,
         "fix_version_urls": fix_version_urls,
         "epic_urls_by_pl": epic_urls_by_pl,

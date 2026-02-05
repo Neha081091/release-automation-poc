@@ -33,6 +33,54 @@ from slack_sdk import WebClient
 
 load_dotenv()
 
+# Product Line order - grouped by category for consistent display
+PRODUCT_LINE_ORDER = [
+    # Media PLs
+    "Media PL1",
+    "Media PL2",
+    "Media",
+    # Audiences PLs
+    "Audiences PL1",
+    "Audiences PL2",
+    "Audiences",
+    # DSP Core PLs
+    "DSP Core PL1",
+    "DSP Core PL2",
+    "DSP Core PL3",
+    "DSP Core PL5",
+    "DSP PL1",
+    "DSP PL2",
+    "DSP PL3",
+    "DSP",
+    # Developer Experience
+    "Developer Experience",
+    "Developer Experience 2026",
+    # Data Ingress
+    "Data Ingress",
+    "Data Ingress 2026",
+    # Helix PLs
+    "Helix PL3",
+    "Helix",
+    # Data Governance
+    "Data Governance",
+    "Other"
+]
+
+
+def get_ordered_pls(pl_list: list) -> list:
+    """Sort product lines according to PRODUCT_LINE_ORDER."""
+    ordered = []
+    # First add PLs that are in the preferred order
+    for pl in PRODUCT_LINE_ORDER:
+        if pl in pl_list:
+            ordered.append(pl)
+    # Then add any PLs not in the preferred order (at the end)
+    for pl in pl_list:
+        if pl not in ordered:
+            ordered.append(pl)
+    return ordered
+
+
 # Initialize the Bolt app with bot token
 app = App(token=os.getenv("SLACK_BOT_TOKEN"))
 
@@ -515,6 +563,9 @@ def handle_good_to_announce(ack, body):
             rejected_pls.append(pl)
         elif state['status'] == 'tomorrow':
             tomorrow_pls.append(pl)
+
+    # Sort PLs according to PRODUCT_LINE_ORDER for consistent display
+    approved_pls = get_ordered_pls(approved_pls)
 
     # Build announcement message
     announce_channel = os.getenv('SLACK_ANNOUNCE_CHANNEL', channel)
