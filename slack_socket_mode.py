@@ -586,6 +586,28 @@ def handle_good_to_announce(ack, body):
     fix_version_urls = processed_data.get('fix_version_urls', {})
     epic_urls_by_pl = processed_data.get('epic_urls_by_pl', {})
 
+    # Merge in deferred/carried-forward PLs from yesterday
+    today = datetime.now().strftime('%Y-%m-%d')
+    deferred_data = load_deferred_pls()
+    if today in deferred_data:
+        print(f"[Socket Mode] Found {len(deferred_data[today])} deferred PLs for today")
+        for deferred in deferred_data[today]:
+            pl_name = deferred.get('pl', '')
+            if pl_name:
+                # Add deferred PL data to the dictionaries
+                if deferred.get('tldr') and pl_name not in tldr_by_pl:
+                    tldr_by_pl[pl_name] = deferred['tldr']
+                    print(f"[Socket Mode] Added deferred TLDR for {pl_name}")
+                if deferred.get('body') and pl_name not in body_by_pl:
+                    body_by_pl[pl_name] = deferred['body']
+                    print(f"[Socket Mode] Added deferred body for {pl_name}")
+                if deferred.get('release_version') and pl_name not in release_versions:
+                    release_versions[pl_name] = deferred['release_version']
+                if deferred.get('fix_version_url') and pl_name not in fix_version_urls:
+                    fix_version_urls[pl_name] = deferred['fix_version_url']
+                if deferred.get('epic_urls') and pl_name not in epic_urls_by_pl:
+                    epic_urls_by_pl[pl_name] = deferred['epic_urls']
+
     def format_body_for_slack(pl_body: str, epic_urls: dict) -> str:
         """Format body content with proper Slack markdown."""
         if not pl_body:
