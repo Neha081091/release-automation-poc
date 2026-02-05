@@ -222,14 +222,21 @@ class GoogleDocsFormatter:
 
         # Track context - are we after a "Value Add:" or "Bug Fixes:" header?
         in_value_section = False
+        last_was_blank = False  # Track consecutive blanks
 
         for line in filtered_lines:
             stripped = line.strip()
 
             if not stripped:
+                # Skip consecutive blank lines - only allow one blank between sections
+                if last_was_blank:
+                    continue
                 elements.append({"type": "blank", "text": "\n"})
                 in_value_section = False
+                last_was_blank = True
                 continue
+
+            last_was_blank = False
 
             # Check for Value Add header
             if stripped.lower().startswith('value add'):

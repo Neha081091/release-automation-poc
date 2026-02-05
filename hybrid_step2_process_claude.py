@@ -106,7 +106,8 @@ STRICT FORMAT RULES:
 7. Consolidate all items under an epic into ONE descriptive sentence
 8. The sentence should explain WHAT was done and WHERE (name specific components/repos)
 9. End each epic section with status tag on its own line: General Availability OR Feature Flag
-10. One blank line between epic sections
+10. ONE blank line ONLY between epic sections (not within a section)
+11. NO blank lines between Epic Name, Value Add:, prose, and status tag - keep them tight together
 
 TRANSFORMATION EXAMPLE:
 Raw Input:
@@ -122,20 +123,20 @@ Value Add:
 ● Integrating saarthi into common-graphql repo
 General Availability
 
-CORRECT OUTPUT (prose format - DO THIS):
+CORRECT OUTPUT (prose format - DO THIS - notice NO blank lines within section):
 Saarthi Code Reviewer integration across major repositories
 Value Add:
 Saarthi AI code reviewer is now integrated into di-agentic-service and common-graphql repositories, enabling automated code review across more codebases.
 General Availability
 
-MORE EXAMPLES OF CORRECT PROSE FORMAT:
+MORE EXAMPLES OF CORRECT PROSE FORMAT (tight spacing within each section):
 
-Epic: Migration of data pipelines from spring batch to airflow
+Migration of data pipelines from spring batch to airflow
 Value Add:
 REST API changes have been evaluated and prepared for Airflow upgrade across planner-service, patient-planner-service, event-consumer-service, di-match-service, and account-manager-service.
 General Availability
 
-Epic: Inventory Priority Tiers - Reporting
+Inventory Priority Tiers - Reporting
 Value Add:
 InventoryTier dimension is now available in Reporting for seats that have enabled priority tiers, providing visibility into inventory tier performance.
 General Availability
