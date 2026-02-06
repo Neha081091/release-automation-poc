@@ -1106,8 +1106,8 @@ def handle_edit_announcement(ack, command, respond):
                 "private_metadata": json.dumps({
                     'channel': last.get('channel'),
                     'message_ts': last.get('message_ts'),
-                    'full_text': full_text,  # Store full text for preservation
-                    'was_truncated': is_truncated
+                    'was_truncated': is_truncated,
+                    'original_length': len(full_text) if is_truncated else 0
                 }),
                 "blocks": blocks
             }
@@ -1127,28 +1127,38 @@ def handle_edit_modal_submission(ack, body, view):
     # Get the new text from the modal
     edited_text = view['state']['values']['announcement_text']['text_input']['value']
 
-    # Get channel, message_ts, and full_text from private_metadata
+    # Get channel, message_ts from private_metadata
     metadata = json.loads(view.get('private_metadata', '{}'))
     channel = metadata.get('channel')
     message_ts = metadata.get('message_ts')
-    original_full_text = metadata.get('full_text', '')
     was_truncated = metadata.get('was_truncated', False)
+    original_length = metadata.get('original_length', 0)
 
     if not channel or not message_ts:
         print("[Socket Mode] Missing channel or message_ts in edit modal")
         return
 
-    # If original was truncated, we need to preserve the remaining content
-    if was_truncated and len(original_full_text) > 3000:
-        # Get the portion that wasn't shown in the modal
-        remaining_text = original_full_text[3000:]
-
-        # Check if user edited the visible portion or just the beginning
-        # If they didn't touch the end of the visible portion, append remaining
-        new_text = edited_text + remaining_text
-        print(f"[Socket Mode] Preserved {len(remaining_text)} chars of truncated content")
-    else:
-        new_text = edited_text
+    # If original was truncated, fetch the original message to preserve remaining content
+    new_text = edited_text
+    if was_truncated and original_length > 3000:
+        try:
+            # Fetch the original message from Slack
+            result = app.client.conversations_history(
+                channel=channel,
+                latest=message_ts,
+                inclusive=True,
+                limit=1
+            )
+            if result['ok'] and result['messages']:
+                original_full_text = result['messages'][0].get('text', '')
+                if len(original_full_text) > 3000:
+                    # Get the portion that wasn't shown in the modal
+                    remaining_text = original_full_text[3000:]
+                    new_text = edited_text + remaining_text
+                    print(f"[Socket Mode] Preserved {len(remaining_text)} chars of truncated content")
+        except Exception as e:
+            print(f"[Socket Mode] Could not fetch original message: {e}")
+            # Continue with just the edited text
 
     # Load processed notes for URLs
     try:
