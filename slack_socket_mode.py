@@ -1095,9 +1095,21 @@ def handle_edit_announcement(ack, command, respond):
 
     full_text = last.get('text', '')
     text_length = len(full_text)
-    is_truncated = text_length > 3000
 
-    # Build warning block if content is truncated
+    # Split content into chunks of 2900 chars (safely under Slack's 3000 limit per field)
+    CHUNK_SIZE = 2900
+    text_chunks = []
+    for i in range(0, len(full_text), CHUNK_SIZE):
+        text_chunks.append(full_text[i:i + CHUNK_SIZE])
+
+    # Ensure at least one chunk
+    if not text_chunks:
+        text_chunks = ['']
+
+    num_parts = len(text_chunks)
+    is_multipart = num_parts > 1
+
+    # Build modal blocks
     blocks = [
         {
             "type": "section",
@@ -1108,27 +1120,32 @@ def handle_edit_announcement(ack, command, respond):
         }
     ]
 
-    if is_truncated:
+    if is_multipart:
         blocks.append({
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"⚠️ *Warning:* Content is {text_length} chars (limit: 3000). Showing first 3000 chars only. Remaining content will be preserved when you update."
+                "text": f"*Note:* Content is {text_length} chars. Split into {num_parts} parts for editing (Slack limits each field to 3000 chars)."
             }
         })
 
     blocks.append({"type": "divider"})
-    blocks.append({
-        "type": "input",
-        "block_id": "announcement_text",
-        "element": {
-            "type": "plain_text_input",
-            "action_id": "text_input",
-            "multiline": True,
-            "initial_value": full_text[:3000]  # Slack modal limit
-        },
-        "label": {"type": "plain_text", "text": "Announcement Text (use Slack markdown)"}
-    })
+
+    # Add a text input for each chunk
+    for idx, chunk in enumerate(text_chunks):
+        part_num = idx + 1
+        label = "Announcement Text (use Slack markdown)" if num_parts == 1 else f"Part {part_num} of {num_parts}"
+        blocks.append({
+            "type": "input",
+            "block_id": f"announcement_text_{part_num}",
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "text_input",
+                "multiline": True,
+                "initial_value": chunk
+            },
+            "label": {"type": "plain_text", "text": label}
+        })
 
     # Open modal for editing
     try:
@@ -1143,8 +1160,7 @@ def handle_edit_announcement(ack, command, respond):
                 "private_metadata": json.dumps({
                     'channel': last.get('channel'),
                     'message_ts': last.get('message_ts'),
-                    'was_truncated': is_truncated,
-                    'original_length': len(full_text) if is_truncated else 0
+                    'num_parts': num_parts
                 }),
                 "blocks": blocks
             }
@@ -1161,60 +1177,27 @@ def handle_edit_modal_submission(ack, body, view):
 
     user = body['user']['username']
 
-    # Get the new text from the modal
-    edited_text = view['state']['values']['announcement_text']['text_input']['value']
-
-    # Get channel, message_ts from private_metadata
+    # Get channel, message_ts, and num_parts from private_metadata
     metadata = json.loads(view.get('private_metadata', '{}'))
     channel = metadata.get('channel')
     message_ts = metadata.get('message_ts')
-    was_truncated = metadata.get('was_truncated', False)
-    original_length = metadata.get('original_length', 0)
+    num_parts = metadata.get('num_parts', 1)
 
     if not channel or not message_ts:
         print("[Socket Mode] Missing channel or message_ts in edit modal")
         return
 
-    # If original was truncated, get the full content from our saved file
-    # (We can't rely on Slack's text field since it only contains a short fallback)
-    new_text = edited_text
-    if was_truncated and original_length > 3000:
-        try:
-            # Load the full text from our saved announcement file
-            saved_announcement = load_last_announcement()
-            original_full_text = saved_announcement.get('text', '')
-            if len(original_full_text) > 3000:
-                # Get the portion that wasn't shown in the modal
-                remaining_text = original_full_text[3000:]
-                new_text = edited_text + remaining_text
-                print(f"[Socket Mode] Preserved {len(remaining_text)} chars of truncated content from saved file")
-        except Exception as e:
-            print(f"[Socket Mode] Could not load saved announcement: {e}")
-            # As fallback, try to extract text from Slack message blocks
-            try:
-                result = app.client.conversations_history(
-                    channel=channel,
-                    latest=message_ts,
-                    inclusive=True,
-                    limit=1
-                )
-                if result['ok'] and result['messages']:
-                    msg = result['messages'][0]
-                    # Extract text from blocks instead of the fallback text field
-                    blocks = msg.get('blocks', [])
-                    block_texts = []
-                    for block in blocks:
-                        if block.get('type') == 'section':
-                            text_obj = block.get('text', {})
-                            if text_obj.get('type') == 'mrkdwn':
-                                block_texts.append(text_obj.get('text', ''))
-                    original_full_text = '\n'.join(block_texts)
-                    if len(original_full_text) > 3000:
-                        remaining_text = original_full_text[3000:]
-                        new_text = edited_text + remaining_text
-                        print(f"[Socket Mode] Preserved {len(remaining_text)} chars from Slack blocks")
-            except Exception as e2:
-                print(f"[Socket Mode] Could not fetch from Slack either: {e2}")
+    # Reconstruct the full text from all parts
+    text_parts = []
+    values = view['state']['values']
+    for part_num in range(1, num_parts + 1):
+        block_id = f"announcement_text_{part_num}"
+        if block_id in values:
+            part_text = values[block_id]['text_input']['value'] or ''
+            text_parts.append(part_text)
+
+    new_text = ''.join(text_parts)
+    print(f"[Socket Mode] Reconstructed {len(new_text)} chars from {num_parts} part(s)")
 
     # Load processed notes for URLs
     try:
