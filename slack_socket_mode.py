@@ -1147,6 +1147,22 @@ def handle_edit_announcement(ack, command, respond):
             "label": {"type": "plain_text", "text": label}
         })
 
+    # Add an extra editable part for overflow content (e.g., "Part 3 of 2")
+    extra_part_num = num_parts + 1
+    extra_label = f"Part {extra_part_num} of {num_parts}" if num_parts > 1 else "Additional Content"
+    blocks.append({
+        "type": "input",
+        "block_id": f"announcement_text_{extra_part_num}",
+        "optional": True,
+        "element": {
+            "type": "plain_text_input",
+            "action_id": "text_input",
+            "multiline": True,
+            "placeholder": {"type": "plain_text", "text": f"Add more content here ({CHUNK_SIZE} chars max)"}
+        },
+        "label": {"type": "plain_text", "text": extra_label},
+        "hint": {"type": "plain_text", "text": f"Optional: Add overflow content (up to {CHUNK_SIZE} remaining chars)"}})
+
     # Open modal for editing
     try:
         client.views_open(
@@ -1160,7 +1176,8 @@ def handle_edit_announcement(ack, command, respond):
                 "private_metadata": json.dumps({
                     'channel': last.get('channel'),
                     'message_ts': last.get('message_ts'),
-                    'num_parts': num_parts
+                    'num_parts': num_parts,
+                    'has_extra_part': True
                 }),
                 "blocks": blocks
             }
@@ -1182,22 +1199,26 @@ def handle_edit_modal_submission(ack, body, view):
     channel = metadata.get('channel')
     message_ts = metadata.get('message_ts')
     num_parts = metadata.get('num_parts', 1)
+    has_extra_part = metadata.get('has_extra_part', False)
 
     if not channel or not message_ts:
         print("[Socket Mode] Missing channel or message_ts in edit modal")
         return
 
-    # Reconstruct the full text from all parts
+    # Reconstruct the full text from all parts (including optional extra part)
     text_parts = []
     values = view['state']['values']
-    for part_num in range(1, num_parts + 1):
+    total_parts_to_check = num_parts + 1 if has_extra_part else num_parts
+    for part_num in range(1, total_parts_to_check + 1):
         block_id = f"announcement_text_{part_num}"
         if block_id in values:
             part_text = values[block_id]['text_input']['value'] or ''
-            text_parts.append(part_text)
+            if part_text:  # Only add non-empty parts
+                text_parts.append(part_text)
 
     new_text = ''.join(text_parts)
-    print(f"[Socket Mode] Reconstructed {len(new_text)} chars from {num_parts} part(s)")
+    parts_used = len([p for p in text_parts if p])
+    print(f"[Socket Mode] Reconstructed {len(new_text)} chars from {parts_used} part(s) (checked {total_parts_to_check} parts)")
 
     # Load processed notes for URLs
     try:
