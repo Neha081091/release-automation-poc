@@ -586,6 +586,11 @@ def handle_good_to_announce(ack, body):
     fix_version_urls = processed_data.get('fix_version_urls', {})
     epic_urls_by_pl = processed_data.get('epic_urls_by_pl', {})
 
+    # Debug logging for URL data
+    print(f"[Socket Mode] Data loaded - PLs with release versions: {list(release_versions.keys())}")
+    print(f"[Socket Mode] Data loaded - PLs with fix version URLs: {list(fix_version_urls.keys())}")
+    print(f"[Socket Mode] Data loaded - PLs with epic URLs: {list(epic_urls_by_pl.keys())}")
+
     # Merge in deferred/carried-forward PLs from yesterday
     today = datetime.now().strftime('%Y-%m-%d')
     deferred_data = load_deferred_pls()
@@ -608,26 +613,41 @@ def handle_good_to_announce(ack, body):
                 if deferred.get('epic_urls') and pl_name not in epic_urls_by_pl:
                     epic_urls_by_pl[pl_name] = deferred['epic_urls']
 
+    # Flatten all epic URLs for better matching across PLs
+    all_epic_urls = {}
+    for pl, epics in epic_urls_by_pl.items():
+        if epics:
+            for epic_name, epic_url in epics.items():
+                all_epic_urls[epic_name] = epic_url
+
+    if all_epic_urls:
+        print(f"[Socket Mode] Loaded {len(all_epic_urls)} epic URLs for formatting")
+    else:
+        print("[Socket Mode] Warning: No epic URLs found for hyperlinking")
+
     def format_body_for_slack(pl_body: str, epic_urls: dict) -> str:
         """Format body content with proper Slack markdown."""
         if not pl_body:
             return ""
 
-        def find_epic_url_flexible(text: str, epic_urls: dict) -> tuple:
+        # Use both PL-specific and all epic URLs for matching
+        combined_epic_urls = {**all_epic_urls, **epic_urls}
+
+        def find_epic_url_flexible(text: str, epic_urls_dict: dict) -> tuple:
             """Find matching epic URL using flexible matching. Returns (url, matched)."""
             text_lower = text.lower().strip()
 
             # Direct match first
-            if text in epic_urls:
-                return epic_urls[text], True
+            if text in epic_urls_dict:
+                return epic_urls_dict[text], True
 
             # Case-insensitive match
-            for epic_name, url in epic_urls.items():
+            for epic_name, url in epic_urls_dict.items():
                 if epic_name.lower() == text_lower:
                     return url, True
 
             # Partial match - check if most words match (70% threshold)
-            for epic_name, url in epic_urls.items():
+            for epic_name, url in epic_urls_dict.items():
                 epic_lower = epic_name.lower()
                 text_words = set(text_lower.split())
                 epic_words = set(epic_lower.split())
@@ -639,7 +659,7 @@ def handle_good_to_announce(ack, body):
                         return url, True
 
             # Check if text contains epic name or vice versa
-            for epic_name, url in epic_urls.items():
+            for epic_name, url in epic_urls_dict.items():
                 if epic_name.lower() in text_lower or text_lower in epic_name.lower():
                     return url, True
 
@@ -689,8 +709,8 @@ def handle_good_to_announce(ack, body):
 
             # Check if this might be an epic name (non-header, non-bullet line)
             if not stripped.startswith(('●', '•', '*', '-')):
-                # Try to find matching epic URL
-                epic_url, matched = find_epic_url_flexible(stripped, epic_urls)
+                # Try to find matching epic URL using combined URLs
+                epic_url, matched = find_epic_url_flexible(stripped, combined_epic_urls)
 
                 if matched and epic_url:
                     # Bold and hyperlink the epic name
@@ -749,6 +769,7 @@ def handle_good_to_announce(ack, body):
         return None, None
 
     # Detailed sections for each approved PL
+    print(f"[Socket Mode] Building announcement for approved PLs: {approved_pls}")
     for pl in approved_pls:
         pl_body = None
         pl_version = None
@@ -762,15 +783,18 @@ def handle_good_to_announce(ack, body):
             orig_pl_name = body_key
 
         # Find release version (might be under different key)
-        pl_version, _ = find_pl_data(pl, release_versions)
+        pl_version, version_key = find_pl_data(pl, release_versions)
 
         # Find fix version URL (might be under different key)
-        pl_fix_url, _ = find_pl_data(pl, fix_version_urls)
+        pl_fix_url, url_key = find_pl_data(pl, fix_version_urls)
 
         # Find epic URLs (might be under different key)
-        pl_epics, _ = find_pl_data(pl, epic_urls_by_pl)
+        pl_epics, epics_key = find_pl_data(pl, epic_urls_by_pl)
         if pl_epics is None:
             pl_epics = {}
+
+        # Debug: Log what we found for this PL
+        print(f"[Socket Mode] PL '{pl}': version={pl_version} (key={version_key}), fix_url={'Yes' if pl_fix_url else 'No'} (key={url_key}), epics={len(pl_epics) if pl_epics else 0} (key={epics_key})")
 
         # PL Section Header with dashes
         announcement_text += f"------------------{pl}------------------\n"
@@ -1138,27 +1162,46 @@ def handle_edit_modal_submission(ack, body, view):
         print("[Socket Mode] Missing channel or message_ts in edit modal")
         return
 
-    # If original was truncated, fetch the original message to preserve remaining content
+    # If original was truncated, get the full content from our saved file
+    # (We can't rely on Slack's text field since it only contains a short fallback)
     new_text = edited_text
     if was_truncated and original_length > 3000:
         try:
-            # Fetch the original message from Slack
-            result = app.client.conversations_history(
-                channel=channel,
-                latest=message_ts,
-                inclusive=True,
-                limit=1
-            )
-            if result['ok'] and result['messages']:
-                original_full_text = result['messages'][0].get('text', '')
-                if len(original_full_text) > 3000:
-                    # Get the portion that wasn't shown in the modal
-                    remaining_text = original_full_text[3000:]
-                    new_text = edited_text + remaining_text
-                    print(f"[Socket Mode] Preserved {len(remaining_text)} chars of truncated content")
+            # Load the full text from our saved announcement file
+            saved_announcement = load_last_announcement()
+            original_full_text = saved_announcement.get('text', '')
+            if len(original_full_text) > 3000:
+                # Get the portion that wasn't shown in the modal
+                remaining_text = original_full_text[3000:]
+                new_text = edited_text + remaining_text
+                print(f"[Socket Mode] Preserved {len(remaining_text)} chars of truncated content from saved file")
         except Exception as e:
-            print(f"[Socket Mode] Could not fetch original message: {e}")
-            # Continue with just the edited text
+            print(f"[Socket Mode] Could not load saved announcement: {e}")
+            # As fallback, try to extract text from Slack message blocks
+            try:
+                result = app.client.conversations_history(
+                    channel=channel,
+                    latest=message_ts,
+                    inclusive=True,
+                    limit=1
+                )
+                if result['ok'] and result['messages']:
+                    msg = result['messages'][0]
+                    # Extract text from blocks instead of the fallback text field
+                    blocks = msg.get('blocks', [])
+                    block_texts = []
+                    for block in blocks:
+                        if block.get('type') == 'section':
+                            text_obj = block.get('text', {})
+                            if text_obj.get('type') == 'mrkdwn':
+                                block_texts.append(text_obj.get('text', ''))
+                    original_full_text = '\n'.join(block_texts)
+                    if len(original_full_text) > 3000:
+                        remaining_text = original_full_text[3000:]
+                        new_text = edited_text + remaining_text
+                        print(f"[Socket Mode] Preserved {len(remaining_text)} chars from Slack blocks")
+            except Exception as e2:
+                print(f"[Socket Mode] Could not fetch from Slack either: {e2}")
 
     # Load processed notes for URLs
     try:
