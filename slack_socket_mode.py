@@ -1226,6 +1226,22 @@ def handle_edit_modal_submission(ack, body, view):
     fix_version_urls = processed_data.get('fix_version_urls', {})
     epic_urls_by_pl = processed_data.get('epic_urls_by_pl', {})
 
+    # Merge in deferred/carried-forward PLs from yesterday (same as Good to Announce)
+    today = datetime.now().strftime('%Y-%m-%d')
+    deferred_data = load_deferred_pls()
+    if today in deferred_data:
+        print(f"[Socket Mode Edit] Found {len(deferred_data[today])} deferred PLs for today")
+        for deferred in deferred_data[today]:
+            pl_name = deferred.get('pl', '')
+            if pl_name:
+                # Add deferred PL data to the dictionaries for URL matching
+                if deferred.get('fix_version_url') and pl_name not in fix_version_urls:
+                    fix_version_urls[pl_name] = deferred['fix_version_url']
+                    print(f"[Socket Mode Edit] Added deferred fix_version_url for {pl_name}")
+                if deferred.get('epic_urls') and pl_name not in epic_urls_by_pl:
+                    epic_urls_by_pl[pl_name] = deferred['epic_urls']
+                    print(f"[Socket Mode Edit] Added {len(deferred['epic_urls'])} deferred epic URLs for {pl_name}")
+
     # Flatten epic URLs for easier lookup
     all_epic_urls = {}
     for pl, epics in epic_urls_by_pl.items():
