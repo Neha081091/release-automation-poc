@@ -313,6 +313,137 @@ class GoogleDocsHandler:
             print(f"[Google Docs] Connection test failed: {e}")
             return False
 
+    def find_release_section_range(self, release_date: str) -> Optional[Tuple[int, int]]:
+        """
+        Find the start and end indices of an entire daily release section.
+
+        Looks for "Daily Deployment Summary: {release_date}" and finds the section
+        until the next release header or separator.
+
+        Args:
+            release_date: Date string to find (e.g., "6th February 2026")
+
+        Returns:
+            Tuple of (start_index, end_index) or None if not found
+        """
+        try:
+            doc = self.service.documents().get(documentId=self.document_id).execute()
+            content = doc.get('body', {}).get('content', [])
+
+            import re
+
+            # Build text with document index tracking
+            text_segments = []
+            full_text = ""
+
+            for element in content:
+                if 'paragraph' in element:
+                    for text_run in element['paragraph'].get('elements', []):
+                        if 'textRun' in text_run:
+                            text_content = text_run['textRun'].get('content', '')
+                            run_start = text_run.get('startIndex', 0)
+                            run_end = text_run.get('endIndex', run_start + len(text_content))
+                            text_segments.append((text_content, run_start, run_end))
+                            full_text += text_content
+
+            # Find the release header
+            header_pattern = rf'Daily Deployment Summary:\s*{re.escape(release_date)}'
+            match = re.search(header_pattern, full_text, re.IGNORECASE)
+
+            if not match:
+                print(f"[Google Docs] Could not find release section for date: {release_date}")
+                return None
+
+            print(f"[Google Docs] Found release header: {match.group()}")
+
+            # Convert text position to document index
+            def text_pos_to_doc_index(text_pos: int) -> int:
+                current_pos = 0
+                for text, doc_start, doc_end in text_segments:
+                    if current_pos + len(text) > text_pos:
+                        offset = text_pos - current_pos
+                        return doc_start + offset
+                    current_pos += len(text)
+                return text_segments[-1][2] if text_segments else 1
+
+            # Section starts at the header
+            section_text_start = match.start()
+
+            # Look for end of section - next release header or document end
+            rest_text = full_text[match.end():]
+            next_patterns = [
+                r'\nDaily Deployment Summary:',  # Next day's release
+                r'\n═{20,}\n+Daily Deployment Summary:',  # Separator then next release
+            ]
+
+            section_text_end = None
+            for pattern in next_patterns:
+                next_match = re.search(pattern, rest_text)
+                if next_match:
+                    if section_text_end is None or next_match.start() < section_text_end - match.end():
+                        section_text_end = match.end() + next_match.start()
+
+            # If found separator line before next release, include it
+            if section_text_end is None:
+                # Check for just the separator at the end
+                separator_match = re.search(r'\n═{20,}\n*$', rest_text)
+                if separator_match:
+                    section_text_end = match.end() + separator_match.end()
+                else:
+                    # This is the only release in the document
+                    section_text_end = len(full_text)
+
+            # Convert to document indices
+            doc_start = text_pos_to_doc_index(section_text_start)
+            doc_end = text_pos_to_doc_index(section_text_end)
+
+            print(f"[Google Docs] Release section range: text={section_text_start}-{section_text_end}, doc={doc_start}-{doc_end}")
+            return (doc_start, doc_end)
+
+        except HttpError as e:
+            print(f"[Google Docs] Error finding release section: {e}")
+            return None
+
+    def remove_release_section(self, release_date: str) -> bool:
+        """
+        Remove an entire daily release section from the document.
+
+        Args:
+            release_date: Date string of the release to remove
+
+        Returns:
+            True if successful, False otherwise
+        """
+        print(f"[Google Docs] Removing release section for date: {release_date}")
+
+        section_range = self.find_release_section_range(release_date)
+        if not section_range:
+            print(f"[Google Docs] Could not find release section to remove")
+            return False
+
+        try:
+            start_idx, end_idx = section_range
+            requests = [{
+                'deleteContentRange': {
+                    'range': {
+                        'startIndex': start_idx,
+                        'endIndex': end_idx
+                    }
+                }
+            }]
+
+            self.service.documents().batchUpdate(
+                documentId=self.document_id,
+                body={'requests': requests}
+            ).execute()
+
+            print(f"[Google Docs] Successfully removed release section for: {release_date}")
+            return True
+
+        except HttpError as e:
+            print(f"[Google Docs] Error removing release section: {e}")
+            return False
+
     def find_pl_section_range(self, pl_name: str) -> Optional[Tuple[int, int]]:
         """
         Find the start and end indices of a PL section in the document.
@@ -401,7 +532,8 @@ class GoogleDocsHandler:
             next_patterns = [
                 r'\n[A-Za-z][\w\s]+:\s*Release\s+\d+\.\d+',  # Next PL
                 r'\n------------------[^-]+------------------',  # Category header
-                r'\n═{20,}'  # Release separator
+                r'\n═{20,}',  # Release separator
+                r'\nDaily Deployment Summary:',  # Next day's release header
             ]
 
             boundaries = []
@@ -413,7 +545,26 @@ class GoogleDocsHandler:
             if boundaries:
                 section_text_end = match.end() + min(boundaries)
             else:
-                section_text_end = len(full_text)
+                # SAFETY: If no boundary found, only delete up to next double newline
+                # or a maximum of 2000 characters to prevent deleting too much
+                next_blank = rest_text.find('\n\n\n')  # Triple newline often separates sections
+                if next_blank != -1 and next_blank < 2000:
+                    section_text_end = match.end() + next_blank
+                else:
+                    # Find double newline as fallback
+                    double_newline = rest_text.find('\n\n')
+                    if double_newline != -1:
+                        # Look for next paragraph after this blank
+                        after_blank = rest_text[double_newline+2:]
+                        next_content = after_blank.find('\n')
+                        if next_content != -1:
+                            section_text_end = match.end() + double_newline + 2 + next_content
+                        else:
+                            section_text_end = match.end() + double_newline + 2
+                    else:
+                        # Last resort: limit to 2000 chars to prevent disaster
+                        section_text_end = min(match.end() + len(rest_text), match.end() + 2000)
+                print(f"[Google Docs] Warning: No clear section boundary found, using safe fallback")
 
             # Convert to document indices
             doc_start = text_pos_to_doc_index(section_text_start)

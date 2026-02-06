@@ -613,6 +613,48 @@ def handle_good_to_announce(ack, body):
         if not pl_body:
             return ""
 
+        def find_epic_url_flexible(text: str, epic_urls: dict) -> tuple:
+            """Find matching epic URL using flexible matching. Returns (url, matched)."""
+            text_lower = text.lower().strip()
+
+            # Direct match first
+            if text in epic_urls:
+                return epic_urls[text], True
+
+            # Case-insensitive match
+            for epic_name, url in epic_urls.items():
+                if epic_name.lower() == text_lower:
+                    return url, True
+
+            # Partial match - check if most words match (70% threshold)
+            for epic_name, url in epic_urls.items():
+                epic_lower = epic_name.lower()
+                text_words = set(text_lower.split())
+                epic_words = set(epic_lower.split())
+                common_words = text_words & epic_words
+
+                if len(epic_words) > 0:
+                    match_ratio = len(common_words) / len(epic_words)
+                    if match_ratio >= 0.7:
+                        return url, True
+
+            # Check if text contains epic name or vice versa
+            for epic_name, url in epic_urls.items():
+                if epic_name.lower() in text_lower or text_lower in epic_name.lower():
+                    return url, True
+
+            return "", False
+
+        def is_likely_epic_name(text: str) -> bool:
+            """Check if text looks like an epic name (not a prose sentence)."""
+            return (
+                len(text) < 150 and
+                not text.endswith('.') and
+                not text.endswith(':') and
+                not text.startswith('http') and
+                not text.lower().startswith(('value add', 'bug fix', 'general availability', 'feature flag'))
+            )
+
         lines = pl_body.split('\n')
         formatted_lines = []
         seen_headers = set()  # Track headers to avoid duplicates
@@ -626,14 +668,14 @@ def handle_good_to_announce(ack, body):
                 continue
 
             # Check for duplicate headers (Bug Fixes, Value Add)
-            if stripped in ('Bug Fixes', 'Bug Fixes:'):
+            if stripped.lower() in ('bug fixes', 'bug fixes:'):
                 if 'bug_fixes' in seen_headers:
                     continue  # Skip duplicate
                 seen_headers.add('bug_fixes')
                 formatted_lines.append('*Bug Fixes:*')
                 continue
 
-            if stripped in ('Value Add', 'Value Add:'):
+            if stripped.lower() in ('value add', 'value add:'):
                 if 'value_add' in seen_headers:
                     continue  # Skip duplicate
                 seen_headers.add('value_add')
@@ -645,19 +687,20 @@ def handle_good_to_announce(ack, body):
                 formatted_lines.append(f'`{stripped}`')
                 continue
 
-            # Reset seen_headers when we hit a new epic (non-header, non-bullet line)
+            # Check if this might be an epic name (non-header, non-bullet line)
             if not stripped.startswith(('●', '•', '*', '-')):
-                # This might be an epic name - check if it matches
-                epic_matched = False
-                for epic_name, epic_url in epic_urls.items():
-                    if epic_name in stripped or stripped in epic_name:
-                        # Bold and hyperlink the epic name
-                        formatted_lines.append(f"<{epic_url}|*{stripped}*>")
-                        epic_matched = True
-                        seen_headers = set()  # Reset for new epic section
-                        break
+                # Try to find matching epic URL
+                epic_url, matched = find_epic_url_flexible(stripped, epic_urls)
 
-                if not epic_matched:
+                if matched and epic_url:
+                    # Bold and hyperlink the epic name
+                    formatted_lines.append(f"<{epic_url}|*{stripped}*>")
+                    seen_headers = set()  # Reset for new epic section
+                elif is_likely_epic_name(stripped):
+                    # Bold the epic name even without URL
+                    formatted_lines.append(f"*{stripped}*")
+                    seen_headers = set()  # Reset for new epic section
+                else:
                     formatted_lines.append(stripped)
             else:
                 formatted_lines.append(stripped)
@@ -681,6 +724,30 @@ def handle_good_to_announce(ack, body):
 
     announcement_text += "\n"
 
+    def find_pl_data(pl_name: str, data_dict: dict) -> tuple:
+        """Find data for a PL using flexible matching. Returns (value, matched_key)."""
+        # Clean PL name for matching
+        pl_clean = re.sub(r'\s+20\d{2}$', '', pl_name)
+        pl_lower = pl_clean.lower()
+
+        # Try exact match first
+        if pl_name in data_dict:
+            return data_dict[pl_name], pl_name
+
+        # Try cleaned name
+        if pl_clean in data_dict:
+            return data_dict[pl_clean], pl_clean
+
+        # Try case-insensitive and partial matching
+        for key in data_dict.keys():
+            key_clean = re.sub(r'\s+20\d{2}$', '', key)
+            key_lower = key_clean.lower()
+
+            if key_lower == pl_lower or pl_lower in key_lower or key_lower in pl_lower:
+                return data_dict[key], key
+
+        return None, None
+
     # Detailed sections for each approved PL
     for pl in approved_pls:
         pl_body = None
@@ -689,14 +756,21 @@ def handle_good_to_announce(ack, body):
         pl_epics = {}
         orig_pl_name = pl
 
-        for orig_pl in body_by_pl.keys():
-            if pl in orig_pl or orig_pl in pl or orig_pl.replace(' 2026', '').replace(' 2025', '') == pl:
-                pl_body = body_by_pl.get(orig_pl, '')
-                pl_version = release_versions.get(orig_pl, '')
-                pl_fix_url = fix_version_urls.get(orig_pl, '')
-                pl_epics = epic_urls_by_pl.get(orig_pl, {})
-                orig_pl_name = orig_pl
-                break
+        # Find body content
+        pl_body, body_key = find_pl_data(pl, body_by_pl)
+        if body_key:
+            orig_pl_name = body_key
+
+        # Find release version (might be under different key)
+        pl_version, _ = find_pl_data(pl, release_versions)
+
+        # Find fix version URL (might be under different key)
+        pl_fix_url, _ = find_pl_data(pl, fix_version_urls)
+
+        # Find epic URLs (might be under different key)
+        pl_epics, _ = find_pl_data(pl, epic_urls_by_pl)
+        if pl_epics is None:
+            pl_epics = {}
 
         # PL Section Header with dashes
         announcement_text += f"------------------{pl}------------------\n"
@@ -982,6 +1056,43 @@ def handle_edit_announcement(ack, command, respond):
         respond("No announcement found to edit. Post an announcement first using 'Good to Announce'.")
         return
 
+    full_text = last.get('text', '')
+    text_length = len(full_text)
+    is_truncated = text_length > 3000
+
+    # Build warning block if content is truncated
+    blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*Formatting Tips:*\n• Bold: `*text*`\n• Link: `<url|text>`\n• Code: surround with backticks\n• Keep existing formatting syntax!"
+            }
+        }
+    ]
+
+    if is_truncated:
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"⚠️ *Warning:* Content is {text_length} chars (limit: 3000). Showing first 3000 chars only. Remaining content will be preserved when you update."
+            }
+        })
+
+    blocks.append({"type": "divider"})
+    blocks.append({
+        "type": "input",
+        "block_id": "announcement_text",
+        "element": {
+            "type": "plain_text_input",
+            "action_id": "text_input",
+            "multiline": True,
+            "initial_value": full_text[:3000]  # Slack modal limit
+        },
+        "label": {"type": "plain_text", "text": "Announcement Text (use Slack markdown)"}
+    })
+
     # Open modal for editing
     try:
         client.views_open(
@@ -994,31 +1105,11 @@ def handle_edit_announcement(ack, command, respond):
                 "close": {"type": "plain_text", "text": "Cancel"},
                 "private_metadata": json.dumps({
                     'channel': last.get('channel'),
-                    'message_ts': last.get('message_ts')
+                    'message_ts': last.get('message_ts'),
+                    'full_text': full_text,  # Store full text for preservation
+                    'was_truncated': is_truncated
                 }),
-                "blocks": [
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": "*Formatting Tips:*\n• Bold: `*text*`\n• Link: `<url|text>`\n• Code: surround with backticks\n• Keep existing formatting syntax!"
-                        }
-                    },
-                    {
-                        "type": "divider"
-                    },
-                    {
-                        "type": "input",
-                        "block_id": "announcement_text",
-                        "element": {
-                            "type": "plain_text_input",
-                            "action_id": "text_input",
-                            "multiline": True,
-                            "initial_value": last.get('text', '')[:3000]  # Slack limit
-                        },
-                        "label": {"type": "plain_text", "text": "Announcement Text (use Slack markdown)"}
-                    }
-                ]
+                "blocks": blocks
             }
         )
     except Exception as e:
@@ -1033,17 +1124,31 @@ def handle_edit_modal_submission(ack, body, view):
 
     user = body['user']['username']
 
-    # Get the new text
-    new_text = view['state']['values']['announcement_text']['text_input']['value']
+    # Get the new text from the modal
+    edited_text = view['state']['values']['announcement_text']['text_input']['value']
 
-    # Get channel and message_ts from private_metadata
+    # Get channel, message_ts, and full_text from private_metadata
     metadata = json.loads(view.get('private_metadata', '{}'))
     channel = metadata.get('channel')
     message_ts = metadata.get('message_ts')
+    original_full_text = metadata.get('full_text', '')
+    was_truncated = metadata.get('was_truncated', False)
 
     if not channel or not message_ts:
         print("[Socket Mode] Missing channel or message_ts in edit modal")
         return
+
+    # If original was truncated, we need to preserve the remaining content
+    if was_truncated and len(original_full_text) > 3000:
+        # Get the portion that wasn't shown in the modal
+        remaining_text = original_full_text[3000:]
+
+        # Check if user edited the visible portion or just the beginning
+        # If they didn't touch the end of the visible portion, append remaining
+        new_text = edited_text + remaining_text
+        print(f"[Socket Mode] Preserved {len(remaining_text)} chars of truncated content")
+    else:
+        new_text = edited_text
 
     # Load processed notes for URLs
     try:

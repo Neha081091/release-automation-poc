@@ -287,20 +287,38 @@ class GoogleDocsFormatter:
 
             # Check for Value Add header
             if stripped.lower().startswith('value add'):
+                # Calculate the actual bold range based on the text
+                # Find where the header part ends (at colon or end of "Value Add")
+                header_text = stripped
+                if ':' in stripped:
+                    bold_end = stripped.index(':') + 1  # Include the colon
+                else:
+                    bold_end = len("Value Add")  # Just "Value Add" without colon
                 elements.append({
                     "type": "value_add_header",
-                    "text": stripped + "\n",
-                    "bold_range": (0, len("Value Add:"))
+                    "text": header_text + "\n",
+                    "bold_range": (0, bold_end)
                 })
                 in_value_section = True
                 continue
 
             # Check for Bug Fixes header
             if stripped.lower().startswith('bug fix'):
+                # Calculate the actual bold range based on the text
+                # Find where the header part ends (at colon or end of header)
+                header_text = stripped
+                if ':' in stripped:
+                    bold_end = stripped.index(':') + 1  # Include the colon
+                else:
+                    # Handle "Bug Fix" or "Bug Fixes" without colon
+                    if stripped.lower().startswith('bug fixes'):
+                        bold_end = len("Bug Fixes")
+                    else:
+                        bold_end = len("Bug Fix")
                 elements.append({
                     "type": "bug_fixes_header",
-                    "text": stripped + "\n",
-                    "bold_range": (0, len("Bug Fixes:"))
+                    "text": header_text + "\n",
+                    "bold_range": (0, bold_end)
                 })
                 in_value_section = True
                 continue
@@ -561,31 +579,52 @@ class GoogleDocsFormatter:
                 }
             })
 
-        # Bold formatting
+        # Create a set of link ranges for quick lookup
+        link_ranges = {(start, end): url for start, end, url in self.formatting_positions["links"] if end > start and url}
+
+        # Bold formatting - handle separately based on whether range also has a link
         for start, end in self.formatting_positions["bold"]:
             if end > start:
-                self.format_requests.append({
-                    "updateTextStyle": {
-                        "range": {"startIndex": start, "endIndex": end},
-                        "textStyle": {"bold": True},
-                        "fields": "bold"
-                    }
-                })
+                if (start, end) in link_ranges:
+                    # This range has both bold and link - apply together to ensure both work
+                    url = link_ranges[(start, end)]
+                    self.format_requests.append({
+                        "updateTextStyle": {
+                            "range": {"startIndex": start, "endIndex": end},
+                            "textStyle": {
+                                "bold": True,
+                                "link": {"url": url},
+                                "foregroundColor": {"color": {"rgbColor": BLUE_COLOR}},
+                                "underline": False
+                            },
+                            "fields": "bold,link,foregroundColor,underline"
+                        }
+                    })
+                    # Remove from link_ranges so we don't apply it again
+                    del link_ranges[(start, end)]
+                else:
+                    # Bold only (no link)
+                    self.format_requests.append({
+                        "updateTextStyle": {
+                            "range": {"startIndex": start, "endIndex": end},
+                            "textStyle": {"bold": True},
+                            "fields": "bold"
+                        }
+                    })
 
-        # Link formatting (blue with no underline)
-        for start, end, url in self.formatting_positions["links"]:
-            if end > start and url:
-                self.format_requests.append({
-                    "updateTextStyle": {
-                        "range": {"startIndex": start, "endIndex": end},
-                        "textStyle": {
-                            "link": {"url": url},
-                            "foregroundColor": {"color": {"rgbColor": BLUE_COLOR}},
-                            "underline": False
-                        },
-                        "fields": "link,foregroundColor,underline"
-                    }
-                })
+        # Link formatting for remaining links (those without bold)
+        for (start, end), url in link_ranges.items():
+            self.format_requests.append({
+                "updateTextStyle": {
+                    "range": {"startIndex": start, "endIndex": end},
+                    "textStyle": {
+                        "link": {"url": url},
+                        "foregroundColor": {"color": {"rgbColor": BLUE_COLOR}},
+                        "underline": False
+                    },
+                    "fields": "link,foregroundColor,underline"
+                }
+            })
 
         # Green text (status tags)
         for start, end in self.formatting_positions["green"]:
