@@ -634,7 +634,13 @@ def handle_good_to_announce(ack, body):
         combined_epic_urls = {**all_epic_urls, **epic_urls}
 
         def find_epic_url_flexible(text: str, epic_urls_dict: dict) -> tuple:
-            """Find matching epic URL using flexible matching. Returns (url, matched)."""
+            """Find matching epic URL using flexible matching. Returns (url, matched).
+
+            Uses bidirectional matching to detect epic names even when:
+            - Body text has a shortened version of the epic name
+            - Epic name has extra words compared to body text
+            - Case differences exist
+            """
             text_lower = text.lower().strip()
 
             # Direct match first
@@ -646,22 +652,29 @@ def handle_good_to_announce(ack, body):
                 if epic_name.lower() == text_lower:
                     return url, True
 
-            # Partial match - check if most words match (70% threshold)
+            # Check if text contains epic name or vice versa (substring matching)
+            for epic_name, url in epic_urls_dict.items():
+                if epic_name.lower() in text_lower or text_lower in epic_name.lower():
+                    return url, True
+
+            # Bidirectional partial word match - check if most words match in EITHER direction
+            # This catches cases where body text is a shortened version of the epic name
             for epic_name, url in epic_urls_dict.items():
                 epic_lower = epic_name.lower()
                 text_words = set(text_lower.split())
                 epic_words = set(epic_lower.split())
                 common_words = text_words & epic_words
 
-                if len(epic_words) > 0:
-                    match_ratio = len(common_words) / len(epic_words)
-                    if match_ratio >= 0.7:
-                        return url, True
+                if len(epic_words) > 0 and len(text_words) > 0:
+                    # Forward match: what % of epic words appear in text
+                    forward_ratio = len(common_words) / len(epic_words)
+                    # Reverse match: what % of text words appear in epic
+                    reverse_ratio = len(common_words) / len(text_words)
 
-            # Check if text contains epic name or vice versa
-            for epic_name, url in epic_urls_dict.items():
-                if epic_name.lower() in text_lower or text_lower in epic_name.lower():
-                    return url, True
+                    # Match if either direction passes 70% threshold
+                    # This handles shortened epic names in body text
+                    if forward_ratio >= 0.7 or reverse_ratio >= 0.7:
+                        return url, True
 
             return "", False
 
@@ -1262,14 +1275,38 @@ def handle_edit_modal_submission(ack, body, view):
                     formatted_lines.append(f"{pl_name}: <{url}|{release_ver}>")
                     continue
 
-            # Check for epic names and add hyperlink + bold
+            # Check for epic names and add hyperlink + bold using flexible bidirectional matching
             found_epic = False
+            stripped_lower = stripped.lower()
+            stripped_words = set(stripped_lower.split())
+
             for epic_lower, (epic_name, epic_url) in all_epic_urls.items():
-                if stripped.lower() == epic_lower or epic_name.lower() in stripped.lower():
+                # Exact match
+                if stripped_lower == epic_lower:
                     if '<' not in stripped:  # Not already linked
                         formatted_lines.append(f"<{epic_url}|*{stripped}*>")
                         found_epic = True
                         break
+
+                # Substring match
+                if epic_lower in stripped_lower or stripped_lower in epic_lower:
+                    if '<' not in stripped:  # Not already linked
+                        formatted_lines.append(f"<{epic_url}|*{stripped}*>")
+                        found_epic = True
+                        break
+
+                # Bidirectional partial word match (70% threshold in either direction)
+                epic_words = set(epic_lower.split())
+                common_words = stripped_words & epic_words
+                if len(epic_words) > 0 and len(stripped_words) > 0:
+                    forward_ratio = len(common_words) / len(epic_words)
+                    reverse_ratio = len(common_words) / len(stripped_words)
+                    if forward_ratio >= 0.7 or reverse_ratio >= 0.7:
+                        if '<' not in stripped:  # Not already linked
+                            formatted_lines.append(f"<{epic_url}|*{stripped}*>")
+                            found_epic = True
+                            break
+
             if found_epic:
                 continue
 

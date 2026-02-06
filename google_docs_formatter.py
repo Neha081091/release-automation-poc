@@ -191,6 +191,11 @@ class GoogleDocsFormatter:
         """
         Find matching epic URL using flexible matching.
 
+        Uses bidirectional matching to auto-detect epic names even when:
+        - Body text has a shortened version of the epic name
+        - Epic name has extra words compared to body text
+        - Case differences exist
+
         Args:
             line_text: Text to match
             epic_urls: Dictionary of epic names to URLs
@@ -209,16 +214,28 @@ class GoogleDocsFormatter:
             if epic_name.lower() == line_lower:
                 return url
 
-        # Partial match - check if most words match
+        # Check if text contains epic name or vice versa (substring matching)
+        for epic_name, url in epic_urls.items():
+            if epic_name.lower() in line_lower or line_lower in epic_name.lower():
+                return url
+
+        # Bidirectional partial word match - check if most words match in EITHER direction
+        # This catches cases where body text is a shortened version of the epic name
         for epic_name, url in epic_urls.items():
             epic_lower = epic_name.lower()
             line_words = set(line_lower.split())
             epic_words = set(epic_lower.split())
             common_words = line_words & epic_words
 
-            if len(epic_words) > 0:
-                match_ratio = len(common_words) / len(epic_words)
-                if match_ratio >= 0.7:
+            if len(epic_words) > 0 and len(line_words) > 0:
+                # Forward match: what % of epic words appear in text
+                forward_ratio = len(common_words) / len(epic_words)
+                # Reverse match: what % of text words appear in epic
+                reverse_ratio = len(common_words) / len(line_words)
+
+                # Match if either direction passes 70% threshold
+                # This handles shortened epic names in body text
+                if forward_ratio >= 0.7 or reverse_ratio >= 0.7:
                     return url
 
         return ""
