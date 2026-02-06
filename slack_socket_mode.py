@@ -1229,14 +1229,35 @@ def handle_edit_modal_submission(ack, body, view):
     # Flatten epic URLs for easier lookup
     all_epic_urls = {}
     for pl, epics in epic_urls_by_pl.items():
-        for epic_name, epic_url in epics.items():
-            all_epic_urls[epic_name.lower()] = (epic_name, epic_url)
+        if epics:
+            for epic_name, epic_url in epics.items():
+                all_epic_urls[epic_name.lower()] = (epic_name, epic_url)
+
+    # Debug logging
+    print(f"[Socket Mode Edit] Loaded {len(fix_version_urls)} fix version URLs")
+    print(f"[Socket Mode Edit] Loaded {len(all_epic_urls)} epic URLs for matching")
+    if all_epic_urls:
+        print(f"[Socket Mode Edit] Epic names available: {list(all_epic_urls.keys())[:5]}...")
 
     # Auto-format the text (detect and apply Slack markdown)
     def auto_format_text(text: str) -> str:
         """Auto-detect and apply Slack formatting to plain text."""
         lines = text.split('\n')
         formatted_lines = []
+
+        def strip_formatting(s: str) -> str:
+            """Remove Slack formatting markers for matching purposes."""
+            # Remove bold markers
+            s = s.strip('*')
+            # Remove link formatting <url|text> -> text
+            link_match = re.match(r'^<[^|]+\|(.+)>$', s)
+            if link_match:
+                s = link_match.group(1).strip('*')
+            return s.strip()
+
+        def is_already_formatted(s: str) -> bool:
+            """Check if line already has Slack formatting."""
+            return s.startswith('<') and '|' in s and s.endswith('>')
 
         for line in lines:
             stripped = line.strip()
@@ -1246,29 +1267,47 @@ def handle_edit_modal_submission(ack, body, view):
                 formatted_lines.append('')
                 continue
 
+            # Skip already fully formatted lines (linked)
+            if is_already_formatted(stripped):
+                formatted_lines.append(stripped)
+                continue
+
+            # Get clean text for matching (without formatting markers)
+            clean_text = strip_formatting(stripped)
+            clean_lower = clean_text.lower()
+
             # Auto-format "Value Add:" and "Bug Fixes:" as bold (if not already)
-            if stripped in ('Value Add:', 'Value Add') and not stripped.startswith('*'):
+            if clean_lower in ('value add:', 'value add') and not stripped.startswith('*'):
                 formatted_lines.append('*Value Add:*')
                 continue
-            if stripped in ('Bug Fixes:', 'Bug Fixes') and not stripped.startswith('*'):
+            if clean_lower in ('bug fixes:', 'bug fixes') and not stripped.startswith('*'):
                 formatted_lines.append('*Bug Fixes:*')
                 continue
 
             # Auto-format release type indicators as code (if not already)
-            if stripped in ('General Availability', 'Feature Flag', 'Beta') and not stripped.startswith('`'):
-                formatted_lines.append(f'`{stripped}`')
+            if clean_text in ('General Availability', 'Feature Flag', 'Beta') and not stripped.startswith('`'):
+                formatted_lines.append(f'`{clean_text}`')
                 continue
 
             # Check for PL: Release pattern and add hyperlink
             # Pattern: "PL Name: Release X.X" or "PL Name 2026: Release X.X"
-            release_match = re.match(r'^(.+?):\s*(Release\s+\d+\.\d+)$', stripped)
+            # Also handle already-bold PL names like "*PL Name*: Release X.X"
+            release_match = re.match(r'^\*?([^*:]+)\*?:\s*(Release\s+\d+\.\d+)$', stripped)
             if release_match and '<' not in stripped:  # Not already linked
                 pl_name = release_match.group(1).strip()
                 release_ver = release_match.group(2)
-                # Find matching fix version URL
+                # Find matching fix version URL using flexible matching
                 url = None
+                pl_name_lower = pl_name.lower()
                 for stored_pl, stored_url in fix_version_urls.items():
-                    if pl_name in stored_pl or stored_pl in pl_name:
+                    stored_pl_lower = stored_pl.lower()
+                    # Check exact, substring, or year-stripped match
+                    stored_pl_clean = re.sub(r'\s+20\d{2}$', '', stored_pl_lower)
+                    pl_name_clean = re.sub(r'\s+20\d{2}$', '', pl_name_lower)
+                    if (pl_name_lower == stored_pl_lower or
+                        pl_name_clean == stored_pl_clean or
+                        pl_name_lower in stored_pl_lower or
+                        stored_pl_lower in pl_name_lower):
                         url = stored_url
                         break
                 if url:
@@ -1277,41 +1316,42 @@ def handle_edit_modal_submission(ack, body, view):
 
             # Check for epic names and add hyperlink + bold using flexible bidirectional matching
             found_epic = False
-            stripped_lower = stripped.lower()
-            stripped_words = set(stripped_lower.split())
+            clean_words = set(clean_lower.split())
+
+            # Skip if already linked or if it's a bullet point / prose
+            if '<' in stripped or stripped.startswith(('●', '•', '-', '*', '`')):
+                formatted_lines.append(stripped)
+                continue
 
             for epic_lower, (epic_name, epic_url) in all_epic_urls.items():
-                # Exact match
-                if stripped_lower == epic_lower:
-                    if '<' not in stripped:  # Not already linked
-                        formatted_lines.append(f"<{epic_url}|*{stripped}*>")
-                        found_epic = True
-                        break
+                # Exact match (case-insensitive)
+                if clean_lower == epic_lower:
+                    formatted_lines.append(f"<{epic_url}|*{clean_text}*>")
+                    found_epic = True
+                    break
 
-                # Substring match
-                if epic_lower in stripped_lower or stripped_lower in epic_lower:
-                    if '<' not in stripped:  # Not already linked
-                        formatted_lines.append(f"<{epic_url}|*{stripped}*>")
-                        found_epic = True
-                        break
+                # Substring match (either direction)
+                if epic_lower in clean_lower or clean_lower in epic_lower:
+                    formatted_lines.append(f"<{epic_url}|*{clean_text}*>")
+                    found_epic = True
+                    break
 
                 # Bidirectional partial word match (70% threshold in either direction)
                 epic_words = set(epic_lower.split())
-                common_words = stripped_words & epic_words
-                if len(epic_words) > 0 and len(stripped_words) > 0:
+                common_words = clean_words & epic_words
+                if len(epic_words) > 0 and len(clean_words) > 0:
                     forward_ratio = len(common_words) / len(epic_words)
-                    reverse_ratio = len(common_words) / len(stripped_words)
+                    reverse_ratio = len(common_words) / len(clean_words)
                     if forward_ratio >= 0.7 or reverse_ratio >= 0.7:
-                        if '<' not in stripped:  # Not already linked
-                            formatted_lines.append(f"<{epic_url}|*{stripped}*>")
-                            found_epic = True
-                            break
+                        formatted_lines.append(f"<{epic_url}|*{clean_text}*>")
+                        found_epic = True
+                        break
 
             if found_epic:
                 continue
 
             # Keep line as-is (preserves existing formatting)
-            formatted_lines.append(line)
+            formatted_lines.append(stripped)
 
         return '\n'.join(formatted_lines)
 
