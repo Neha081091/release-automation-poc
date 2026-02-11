@@ -259,20 +259,34 @@ Value Add:
 Feature Flag
 
 KEY PRINCIPLES:
-- Write COMPLETE, READABLE SENTENCES that explain value to users
-- Start bullets with action verbs: Updated, Added, Improved, Included, Removed, Fixed, Enhanced
-- Each bullet should answer: What changed? Why does it matter?
-- Use natural language that reads smoothly when spoken aloud
-- Focus on user impact and benefits, not just technical changes
+- Be CONCISE and DIRECT - no verbose marketing language or filler words
+- KEEP TECHNICAL TERMS - preserve specific names like "ainvoke", "Redis checkpointer", "thread_id"
+- State the ACTUAL PROBLEM SOLVED, not vague improvements (e.g., "sync client unavailable errors in async environments" NOT "eliminates errors")
+- COMBINE related functionality into single bullets instead of splitting into multiple
 - Use asterisks (*) for bullet points
-- CONSOLIDATE REPETITIVE ITEMS: If multiple items describe the same feature from different angles (e.g., "widget displays X" and "flows show X"), combine them into ONE comprehensive bullet that captures all aspects
+- Start with action verbs but keep them simple: Added, Fixed, Converted, Updated
+- AVOID padding phrases: "enhanced performance", "improved experience", "organized", "integrated"
 
-CONSOLIDATION EXAMPLE:
+STYLE COMPARISON - BAD vs GOOD:
+
+BAD (too verbose, marketing fluff):
+* Users can now retrieve their complete conversation history through improved Redis checkpointer integration for each thread_id
+* Chat interface operates with enhanced performance through asynchronous LLM processing that eliminates sync client errors
+* Session management displays all user sessions in an organized sidebar with backend integration
+* Search functionality allows users to quickly locate specific conversations by searching session titles
+
+GOOD (concise, technical, direct):
+* Users can now retrieve full conversation history from Redis checkpointer for any thread
+* LLM invoke calls converted to async (ainvoke) to resolve sync client unavailable errors in async environments
+* Session list now fetched from backend and displayed in sidebar with search functionality
+* Users can search sessions by title to quickly find and return to relevant conversations
+
+CONSOLIDATION - Combine related items:
 Raw items about same feature:
-- Conversions widget displays ACBA-related conversions selected at campaign group level with appropriate disabled states when ACBA goal is configured with CPA goal
+- Conversions widget displays ACBA-related conversions selected at campaign group level
 - Ad group creation and editing flows now show mandatory conversion selections that align with campaign group level ACBA configurations
 
-CORRECT OUTPUT (consolidated into one):
+CORRECT OUTPUT (consolidated):
 * ACBA-related conversions selected at Campaign Group level now display in the Ad Group builder conversions widget with appropriate enabled/disabled states for clearer visibility
 
 Transform sections for {product}:"""

@@ -326,19 +326,29 @@ Bug Fixes:
 General Availability
 
 KEY PRINCIPLES:
-- Write COMPLETE, READABLE SENTENCES that explain value to users
-- Start bullets with action verbs: Updated, Added, Improved, Included, Removed, Fixed, Enhanced
-- Each bullet should answer: What changed? Why does it matter?
-- Focus on user impact and benefits, not just technical changes
-- CONSOLIDATE REPETITIVE ITEMS: If multiple items describe the same feature from different angles, combine them into ONE comprehensive bullet
+- Be CONCISE and DIRECT - no verbose marketing language or filler words
+- KEEP TECHNICAL TERMS - preserve specific names like "ainvoke", "Redis checkpointer", "thread_id"
+- State the ACTUAL PROBLEM SOLVED, not vague improvements
+- COMBINE related functionality into single bullets instead of splitting into multiple
+- AVOID padding phrases: "enhanced performance", "improved experience", "organized", "integrated"
 
-CONSOLIDATION EXAMPLE:
+STYLE COMPARISON - BAD vs GOOD:
+
+BAD (verbose):
+* Users can now retrieve their complete conversation history through improved Redis checkpointer integration
+* Chat interface operates with enhanced performance through asynchronous LLM processing
+
+GOOD (concise, technical):
+* Users can now retrieve full conversation history from Redis checkpointer for any thread
+* LLM invoke calls converted to async (ainvoke) to resolve sync client unavailable errors in async environments
+
+CONSOLIDATION - Combine related items into one bullet:
 Raw items:
 - Conversions widget displays ACBA-related conversions selected at campaign group level
-- Ad group creation and editing flows now show mandatory conversion selections that align with campaign group level ACBA configurations
+- Ad group creation and editing flows now show mandatory conversion selections
 
-CORRECT OUTPUT (one consolidated bullet):
-* ACBA-related conversions selected at Campaign Group level now display in the Ad Group builder conversions widget with appropriate enabled/disabled states for clearer visibility
+CORRECT OUTPUT:
+* ACBA-related conversions selected at Campaign Group level now display in the Ad Group builder conversions widget with appropriate enabled/disabled states
 
 Now consolidate for {product}:"""
             }]
