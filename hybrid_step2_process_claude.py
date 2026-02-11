@@ -89,7 +89,7 @@ def get_ordered_pls(pl_list: list) -> list:
 
 
 def consolidate_with_claude(client, product: str, summaries: list, statuses: list = None) -> str:
-    """Consolidate summaries into technical TL;DR bullet point using Claude."""
+    """Consolidate summaries into flowing prose TL;DR summary using Claude."""
     summaries_text = "\n".join([f"- {s}" for s in summaries])
 
     # Check if any items are feature flagged
@@ -102,39 +102,37 @@ def consolidate_with_claude(client, product: str, summaries: list, statuses: lis
         max_tokens=500,
         messages=[{
             "role": "user",
-            "content": f"""Write a TECHNICAL TL;DR bullet point for this deployment.
+            "content": f"""Write a flowing prose TL;DR summary for this deployment.
 
 Product: {product}
 Raw Jira Items:
 {summaries_text}
 
 CRITICAL FORMAT RULES - Follow this EXACT style:
-1. Write ONE technical bullet point (NOT prose sentences)
-2. Use SPECIFIC technical terms: technology names, job names, service names, API names
-3. List specific items in parentheses: (job1, job2, job3)
-4. Mention FROM/TO when migrating: "from X to Y"
-5. Include version numbers when relevant: "v2.11.0 to v3.1.6"
-6. Use commas to separate distinct changes within the bullet
-7. Keep technical details like specific values in quotes: "N/A", "Unknown"
-8. Mention bug fixes directly: "bug fix for X, ensuring Y"
-9. Use present tense for capabilities: "displays", "supports", "enables"
-10. NO marketing fluff like "improved", "enhanced", "better"
-11. Be CONCISE but SPECIFIC - include technical names and details
-{"12. Add (Feature Flag) at the END of the bullet if items are feature flagged" if has_feature_flag else ""}
+1. Write ONE flowing prose sentence (NOT bullet points or technical jargon dumps)
+2. Group related items conceptually by feature area
+3. Use natural connectors: "with", "including", "featuring", "along with"
+4. Use semicolons to separate major feature areas within the sentence
+5. Should read smoothly when spoken aloud - like a natural summary
+6. Keep technical names but explain them in context (e.g., "migrated data pipelines to Airflow" not just "Airflow migration")
+7. Mention specific values or configurations when relevant for clarity
+8. For bug fixes, integrate naturally: "resolved an issue with X" or "fixed X to ensure Y"
+9. Use active voice and present tense: "enables", "supports", "provides"
+10. Be descriptive but concise - convey the user value and impact
+{"11. Mention that features are available via feature flag at the end of the summary" if has_feature_flag else ""}
 
-BAD EXAMPLES (too generic/marketing-speak - DO NOT DO THIS):
-- "Migrated data pipelines from legacy systems for improved workflow management"
-- "Updated the UI to display conversions with appropriate states"
-- "Implemented session management with improved search functionality"
+BAD EXAMPLES (too terse/technical - DO NOT DO THIS):
+- "Data pipeline migration (job1, job2, job3) from Spring Batch to Airflow, tier display N/A vs Unknown, package deal targeting fix"
+- "Redis checkpointer, async ainvoke, session list, title search"
+- "Tab navigation, ticker migration, bulk user action, role tag"
 
-GOOD EXAMPLES (technical and specific - DO THIS):
-- "Data pipeline migration from Java Spring Batch to Python Airflow for 5 deduplication jobs (bidder_engagement, bidder_impression, bidder_conversion, bidder_click, bq_schema_generation), inventory tier reporting displaying "N/A" instead of "Unknown", bug fix for package deal targeting ensuring deals target as packages"
-- "Ad Group builder revamp with ACBA-related conversions widget displaying Campaign Group level selections with appropriate enabled/disabled states (Feature Flag)"
-- "Redis checkpointer conversation history retrieval, async LLM invoke calls (ainvoke) to resolve sync client errors, backend session list integration with sidebar display, session title search for quick conversation discovery"
-- "Account Manager revamp with tab navigation on organization details page, ticker migration to new UI, bulk action to add users to multiple advertisers, current user role tag display"
-- "Apache Airflow upgrade from v2.11.0 to v3.1.6, Airflow code centralized in common-graphql across 9 services, Lambda environment variable updates for DATA_AIRFLOW_AUTH_HEADER, REST API compatibility changes across 6 repositories"
+GOOD EXAMPLES (flowing prose - DO THIS):
+- "Data pipelines migrated from Java Spring Batch to Python Airflow for improved management across deduplication jobs; inventory tier reporting now displays clearer values; resolved package deal targeting to ensure deals are grouped correctly"
+- "Chat interface enhanced with conversation history retrieval via Redis checkpointer; LLM calls converted to async to resolve client errors; sidebar now displays session list with search functionality for quick conversation discovery"
+- "Account Manager experience improved with tab-based navigation on organization pages, modernized ticker components, bulk user assignment across advertisers, and current user role visibility"
+- "Order listing usability improvements with multi-select status filtering, persistent filter preferences across sessions, automatic selection clearing on archive; forecasting enhancements with Deal/Exchange-derived filter logic"
 
-Output ONLY the technical bullet point (no prefix, no product name):"""
+Output ONLY the flowing prose summary (no prefix, no product name):"""
         }]
     )
 
@@ -153,7 +151,7 @@ Output ONLY the technical bullet point (no prefix, no product name):"""
 
 
 def consolidate_body_with_claude(client, product: str, sections: list, release_version: str) -> str:
-    """Consolidate body sections into technical bullet-point release notes using Claude."""
+    """Consolidate body sections into flowing prose release notes using Claude."""
     sections_text = ""
     for section in sections:
         items_list = "\n".join([f"- {item}" for item in section.get("items", [])])
@@ -165,7 +163,7 @@ def consolidate_body_with_claude(client, product: str, sections: list, release_v
         max_tokens=2000,
         messages=[{
             "role": "user",
-            "content": f"""Transform these raw Jira sections into TECHNICAL BULLET-POINT release notes.
+            "content": f"""Transform these raw Jira sections into polished, flowing prose release notes.
 
 Product: {product}
 Release Version: {release_version}
@@ -178,16 +176,16 @@ CRITICAL FORMAT RULES - Follow this EXACT style:
 2. Use PLAIN TEXT only
 3. Epic names as headers on their own line
 4. For regular epics: include "Value Add:" header followed by BULLET POINTS using asterisks (*)
-5. Each bullet point should be a SPECIFIC, TECHNICAL description
-6. Include SPECIFIC names: job names, service names, repo names, field names
-7. Use quotes for specific values: "N/A", "Unknown", "Authentic Brand Suitability"
-8. Preserve technical details from the Jira items - don't generalize
+5. Each bullet point should be a COMPLETE, READABLE SENTENCE that explains user value
+6. Write in flowing prose - each bullet should read naturally when spoken aloud
+7. Explain WHAT the change does and WHY it matters to users
+8. Keep technical context but make it accessible (e.g., "migrated to Airflow for better job management")
 9. End each epic section with status tag on its own line: General Availability OR Feature Flag
 10. ONE blank line between epic sections
 
 FOR BUG FIXES:
 - Use "Bug Fix:" (singular, with colon) as inline prefix
-- Write as: "Bug Fix: Fixed [specific issue], ensuring [specific outcome]."
+- Write as a complete sentence: "Bug Fix: Resolved [issue description], ensuring [user benefit]."
 - Put the status tag on the next line
 
 TRANSFORMATION EXAMPLES:
@@ -205,7 +203,7 @@ Items:
 CORRECT OUTPUT:
 Migration of data pipelines from spring batch to airflow - Media PLs
 Value Add:
-* Data pipeline jobs (dedup_bidder_engagement, dedup_bidder_impression, dedup_bidder_conversion, dedup_bidder_click, bq_schema_generation) migrated from Java Spring Batch to Python Airflow for improved management and execution efficiency.
+* Data pipeline jobs have been migrated from Java Spring Batch to Python Airflow, enabling better job scheduling, monitoring, and execution management across the deduplication workflow.
 General Availability
 
 Raw Input:
@@ -218,7 +216,7 @@ Items:
 CORRECT OUTPUT:
 Inventory Priority Tiers - Reporting
 Value Add:
-* Improved data accuracy in reports by displaying "N/A" instead of "Unknown" for inventory tier dimension and treating tier 1,2,3 as tier 1,2,3 respectively.
+* Reporting now displays clearer inventory tier information, showing "N/A" instead of "Unknown" for better data clarity and consistent tier handling.
 General Availability
 
 Raw Input:
@@ -228,7 +226,7 @@ Items:
 - Fix package deal targeting where deals were targeted individually instead of as unified packages
 
 CORRECT OUTPUT:
-Bug Fix: Fixed package deal targeting issue, ensuring deals are targeted as part of the package rather than individually when new packages are created.
+Bug Fix: Resolved an issue with package deal targeting where deals were being targeted individually instead of as unified packages, ensuring proper package-level targeting for new deals.
 General Availability
 
 Raw Input:
@@ -243,10 +241,10 @@ Items:
 CORRECT OUTPUT:
 Core Chat UI Shell (Cora Tab Only)
 Value Add:
-* Users can now retrieve the full conversation history from the Redis checkpointer for any thread.
-* LLM invoke calls converted to async (ainvoke) to resolve sync client unavailable errors in async environments.
-* Session list now fetched from the backend and displayed in the sidebar with search functionality.
-* Users can search sessions by title to quickly find and return to relevant conversations.
+* Users can now retrieve their full conversation history, with messages persisted via Redis checkpointer for reliable access across sessions.
+* Chat performance improved by converting LLM calls to async operations, resolving sync client errors in async environments.
+* The sidebar now displays a session list fetched from the backend, making it easy to navigate between conversations.
+* Added session search by title, allowing users to quickly find and return to relevant conversations.
 Feature Flag
 
 Raw Input:
@@ -258,16 +256,16 @@ Items:
 CORRECT OUTPUT:
 DSP PL5 - General Enhancements 1Q26
 Value Add:
-* DoubleVerify's product renamed from "Authentic Brand Safety" to "Authentic Brand Suitability" for correct terminology
+* Updated DoubleVerify product naming from "Authentic Brand Safety" to "Authentic Brand Suitability" to reflect the correct industry terminology.
 General Availability
 
 KEY PRINCIPLES:
-- PRESERVE specific technical names, values, and details from Jira
-- Use asterisks (*) for bullet points, NOT prose paragraphs
-- Each bullet should describe ONE specific change/capability
-- Include service names, job names, field names when mentioned in Jira
-- Use quotes for specific UI text or values
-- Be TECHNICAL, not marketing/generic
+- Write COMPLETE, READABLE SENTENCES that explain value to users
+- Each bullet should answer: What changed? Why does it matter?
+- Use natural language that reads smoothly when spoken aloud
+- Keep technical context but explain it accessibly
+- Focus on user impact and benefits, not just technical changes
+- Use asterisks (*) for bullet points
 
 Transform sections for {product}:"""
         }]
