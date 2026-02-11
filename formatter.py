@@ -787,7 +787,7 @@ class ReleaseNotesFormatter:
             pl_name = deployment["pl"]
             summary = deployment.get("summary", "")
 
-            deploy_line = f"* {pl_name} - {summary}\n"
+            deploy_line = f"• {pl_name} - {summary}\n"
 
             requests.append({
                 "insertText": {
@@ -1048,7 +1048,7 @@ class ReleaseNotesFormatter:
         for deployment in tldr.get("key_deployments", []):
             pl_name = deployment["pl"]
             summary = deployment.get("summary", "")
-            lines.append(f"* {pl_name} - {summary}")
+            lines.append(f"• {pl_name} - {summary}")
 
         lines.append("")
 
@@ -1108,7 +1108,7 @@ class ReleaseNotesFormatter:
         for deployment in tldr.get("key_deployments", []):
             pl_name = deployment["pl"]
             summary = deployment.get("summary", "")
-            lines.append(f"* {pl_name} - {summary}")
+            lines.append(f"• {pl_name} - {summary}")
 
         return "\n".join(lines)
 

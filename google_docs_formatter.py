@@ -478,7 +478,7 @@ class GoogleDocsFormatter:
                 summary = summary[0].upper() + summary[1:] if len(summary) > 1 else summary.upper()
 
             # Insert bullet point
-            self._insert_text("* ")
+            self._insert_text("• ")
 
             # Insert PL name (bold, NO hyperlink - black text)
             pl_start = self.current_index
