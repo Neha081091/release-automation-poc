@@ -110,27 +110,27 @@ Raw Jira Items:
 
 CRITICAL FORMAT RULES - Follow this EXACT style:
 1. Write ONE flowing prose sentence (NOT bullet points or technical jargon dumps)
-2. Group related items conceptually by feature area
-3. Use natural connectors: "with", "including", "featuring", "along with"
-4. Use semicolons to separate major feature areas within the sentence
+2. Start with the main feature/improvement name, then use "with" to connect specific details
+3. Use natural connectors: "with", "including", "enabling", "along with"
+4. Use commas to list related items, semicolons only for truly separate feature areas
 5. Should read smoothly when spoken aloud - like a natural summary
-6. Keep technical names but explain them in context (e.g., "migrated data pipelines to Airflow" not just "Airflow migration")
-7. Mention specific values or configurations when relevant for clarity
-8. For bug fixes, integrate naturally: "resolved an issue with X" or "fixed X to ensure Y"
-9. Use active voice and present tense: "enables", "supports", "provides"
-10. Be descriptive but concise - convey the user value and impact
+6. Keep technical names but explain them in context
+7. Be SPECIFIC with details (file sizes, button names, field names, etc.)
+8. Explain the PURPOSE/BENEFIT after changes using "enabling...", "for better...", "to ensure..."
+9. For bug fixes, start with "Critical bug fixes including" then list all fixes with their benefits
+10. Use active voice and present tense: "enables", "supports", "provides"
 {"11. Mention that features are available via feature flag at the end of the summary" if has_feature_flag else ""}
 
 BAD EXAMPLES (too terse/technical - DO NOT DO THIS):
 - "Data pipeline migration (job1, job2, job3) from Spring Batch to Airflow, tier display N/A vs Unknown, package deal targeting fix"
 - "Redis checkpointer, async ainvoke, session list, title search"
-- "Tab navigation, ticker migration, bulk user action, role tag"
+- "Restart button, placeholder update, welcome message"
 
 GOOD EXAMPLES (flowing prose - DO THIS):
-- "Data pipelines migrated from Java Spring Batch to Python Airflow for improved management across deduplication jobs; inventory tier reporting now displays clearer values; resolved package deal targeting to ensure deals are grouped correctly"
-- "Chat interface enhanced with conversation history retrieval via Redis checkpointer; LLM calls converted to async to resolve client errors; sidebar now displays session list with search functionality for quick conversation discovery"
+- "Sales Planning Copilot UX improvements with restart chat button, updated placeholders ("How can I help?"), and enhanced welcome messaging for better user guidance on uploading HCP or DTC RFP briefs"
+- "Removed prebaked query requirement for HCP + DTC audience exports, enabling custom query-based audience creation with automatic type detection, validation, and permission-based export controls"
+- "Critical bug fixes including HCP Planner target list upload support for files >3.5 MB, corrected patient age calculation removing hardcoded year values, fixed audience token mapping for multiple token types, and enhanced data ingestion pipeline reliability for IQVIA and SYMPHONY"
 - "Account Manager experience improved with tab-based navigation on organization pages, modernized ticker components, bulk user assignment across advertisers, and current user role visibility"
-- "Order listing usability improvements with multi-select status filtering, persistent filter preferences across sessions, automatic selection clearing on archive; forecasting enhancements with Deal/Exchange-derived filter logic"
 
 Output ONLY the flowing prose summary (no prefix, no product name):"""
         }]

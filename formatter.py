@@ -183,25 +183,32 @@ Raw Summaries:
 {summaries_text}
 
 Rules:
-1. Group related items conceptually (by feature area, not by change type)
-2. Use flowing narrative with semicolons separating major sections
-3. NO category labels like "usability improvements with", "data capabilities with"
-4. NO bullet points or lists
-5. Use natural connectors: "with", "including", "featuring", "spanning"
-6. Should read smoothly when spoken aloud
-7. Focus on feature areas and user impact
-8. Keep to ONE sentence (no paragraph breaks)
-9. Output ONLY the consolidated prose (no product name prefix)
+1. Write ONE flowing prose sentence (NOT bullet points or technical jargon dumps)
+2. Start with the main feature/improvement name, then use "with" to connect specific details
+3. Use natural connectors: "with", "including", "enabling", "along with"
+4. Use commas to list related items, semicolons only for truly separate feature areas
+5. Should read smoothly when spoken aloud - like a natural summary
+6. Keep technical names but explain them in context
+7. Be SPECIFIC with details (file sizes, button names, field names, etc.)
+8. Explain the PURPOSE/BENEFIT after changes using "enabling...", "for better...", "to ensure..."
+9. For bug fixes, start with "Critical bug fixes including" then list all fixes with their benefits
+10. Output ONLY the consolidated prose (no product name prefix)
 
 Example input:
-- Open Orders page with the last applied Status column filter
-- Deselect Order Selections when user Archives Order
-- Allow Multi-select Option for Status Column Filter on Order Listing
-- Add Channel, Device, Inventory Filter Extraction Logic
-- Fix di-creative-service critical vulnerability
+- Add restart chat button to Sales Planning Copilot
+- Update placeholder text to "How can I help?"
+- Enhanced welcome message for uploading briefs
 
 Example output:
-Order listing usability improvements with multi-select status filtering, persistent filter preferences across sessions, automatic selection clearing on archive; forecasting enhancements with Deal/Exchange-derived filter logic and validation; critical security vulnerability patched in di-creative-service
+Sales Planning Copilot UX improvements with restart chat button, updated placeholders ("How can I help?"), and enhanced welcome messaging for better user guidance on uploading HCP or DTC RFP briefs
+
+Example input (bug fixes):
+- Fix HCP Planner target list upload for files >3.5 MB
+- Fix patient age calculation hardcoded year
+- Fix audience token mapping for multiple token types
+
+Example output:
+Critical bug fixes including HCP Planner target list upload support for files >3.5 MB, corrected patient age calculation removing hardcoded year values, and fixed audience token mapping for multiple token types
 
 Now consolidate for {product}:"""
                 }]
