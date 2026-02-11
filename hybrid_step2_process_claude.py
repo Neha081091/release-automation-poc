@@ -185,8 +185,9 @@ CRITICAL FORMAT RULES - Follow this EXACT style:
 
 FOR BUG FIXES:
 - Group all bug fixes under "Bug Fixes:" header (plural)
-- List each bug fix as a bullet starting with "Fixed issue..." or "Fixed..."
-- Each fix should explain the problem and the benefit of fixing it
+- EVERY bug fix bullet MUST start with "Fixed" (e.g., "Fixed package deal targeting issue ensuring...")
+- Format: "Fixed [what was broken] issue [explanation of fix and benefit]"
+- Use "ensuring", "enabling", "allowing" to explain the benefit of the fix
 - Put the status tag after all bug fixes
 
 TRANSFORMATION EXAMPLES:
@@ -234,14 +235,14 @@ Items:
 - Fix Add frequency button disappears when directly deleting existing frequency on ad-group quickview
 - Fix null date display in tooltip when hovering on graph datapoints in Goal Widget
 - Fix issue preventing users from changing ad group status from preview on campaign dashboard
-- Fix UI bug where No Records Found icon moves while typing in list creation pages
+- Package deals now target correctly as unified packages
 
 CORRECT OUTPUT:
 Bug Fixes:
-* Fixed issue where Add frequency button disappears when directly deleting existing frequency on ad-group quickview
-* Fixed null date display in tooltip when hovering on graph datapoints in Goal Widget
-* Fixed issue preventing users from changing ad group status from preview on campaign dashboard
-* Fixed UI bug where No Records Found icon moves while typing in list creation pages
+* Fixed Add frequency button issue ensuring the button remains visible when directly deleting existing frequency on ad-group quickview
+* Fixed null date display issue ensuring correct date formatting when hovering on graph datapoints in Goal Widget
+* Fixed ad group status change issue enabling users to change status from preview on campaign dashboard
+* Fixed package deal targeting issue ensuring deals are targeted as part of the package rather than individually when new packages are created
 General Availability
 
 Raw Input:

@@ -191,7 +191,7 @@ Rules:
 6. Keep technical names but explain them in context
 7. Be SPECIFIC with details (file sizes, button names, field names, etc.)
 8. Explain the PURPOSE/BENEFIT after changes using "enabling...", "for better...", "to ensure..."
-9. For bug fixes, start with "Critical bug fixes including" then list all fixes with their benefits
+9. For bug fixes, each fix MUST start with "Fixed" - e.g., "Fixed [issue] ensuring [benefit]"
 10. Output ONLY the consolidated prose (no product name prefix)
 11. ELIMINATE REPETITIVE items - if multiple summaries describe the same feature (same component + same context like "ACBA goals" or "campaign group level"), mention it ONCE only
 
@@ -209,7 +209,7 @@ Example input (bug fixes):
 - Fix audience token mapping for multiple token types
 
 Example output:
-Critical bug fixes including HCP Planner target list upload support for files >3.5 MB, corrected patient age calculation removing hardcoded year values, and fixed audience token mapping for multiple token types
+Fixed HCP Planner target list upload issue enabling support for files >3.5 MB; fixed patient age calculation issue removing hardcoded year values for accurate age computation; fixed audience token mapping ensuring correct handling of multiple token types
 
 Now consolidate for {product}:"""
                 }]
@@ -300,8 +300,9 @@ CRITICAL FORMAT RULES:
 
 FOR BUG FIXES:
 - Group all bug fixes under "Bug Fixes:" header (plural)
-- List each bug fix as a bullet starting with "Fixed issue..." or "Fixed..."
-- Each fix should explain the problem and the benefit of fixing it
+- EVERY bug fix bullet MUST start with "Fixed" (e.g., "Fixed package deal targeting issue ensuring...")
+- Format: "Fixed [what was broken] issue [explanation of fix and benefit]"
+- Use "ensuring", "enabling", "allowing" to explain the benefit of the fix
 
 Example input:
 __Campaigns List Page V3__ (General Availability)
@@ -319,11 +320,13 @@ Example input (bug fixes):
 __Bug Fixes__ (General Availability)
 - Fix Add frequency button disappears when directly deleting existing frequency
 - Fix null date display in tooltip when hovering on graph datapoints
+- Package deals now target correctly as unified packages
 
 Example output:
 Bug Fixes:
-* Fixed issue where Add frequency button disappears when directly deleting existing frequency on ad-group quickview
-* Fixed null date display in tooltip when hovering on graph datapoints in Goal Widget
+* Fixed Add frequency button issue ensuring the button remains visible when directly deleting existing frequency on ad-group quickview
+* Fixed null date display issue in tooltip ensuring correct date formatting when hovering on graph datapoints in Goal Widget
+* Fixed package deal targeting issue ensuring deals are targeted as part of the package rather than individually when new packages are created
 General Availability
 
 KEY PRINCIPLES:
