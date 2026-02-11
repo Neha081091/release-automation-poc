@@ -325,6 +325,21 @@ Bug Fixes:
 * Fixed null date display in tooltip when hovering on graph datapoints in Goal Widget
 General Availability
 
+KEY PRINCIPLES:
+- Write COMPLETE, READABLE SENTENCES that explain value to users
+- Start bullets with action verbs: Updated, Added, Improved, Included, Removed, Fixed, Enhanced
+- Each bullet should answer: What changed? Why does it matter?
+- Focus on user impact and benefits, not just technical changes
+- CONSOLIDATE REPETITIVE ITEMS: If multiple items describe the same feature from different angles, combine them into ONE comprehensive bullet
+
+CONSOLIDATION EXAMPLE:
+Raw items:
+- Conversions widget displays ACBA-related conversions selected at campaign group level
+- Ad group creation and editing flows now show mandatory conversion selections that align with campaign group level ACBA configurations
+
+CORRECT OUTPUT (one consolidated bullet):
+* ACBA-related conversions selected at Campaign Group level now display in the Ad Group builder conversions widget with appropriate enabled/disabled states for clearer visibility
+
 Now consolidate for {product}:"""
             }]
         )

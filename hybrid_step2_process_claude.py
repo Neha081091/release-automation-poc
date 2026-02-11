@@ -265,6 +265,15 @@ KEY PRINCIPLES:
 - Use natural language that reads smoothly when spoken aloud
 - Focus on user impact and benefits, not just technical changes
 - Use asterisks (*) for bullet points
+- CONSOLIDATE REPETITIVE ITEMS: If multiple items describe the same feature from different angles (e.g., "widget displays X" and "flows show X"), combine them into ONE comprehensive bullet that captures all aspects
+
+CONSOLIDATION EXAMPLE:
+Raw items about same feature:
+- Conversions widget displays ACBA-related conversions selected at campaign group level with appropriate disabled states when ACBA goal is configured with CPA goal
+- Ad group creation and editing flows now show mandatory conversion selections that align with campaign group level ACBA configurations
+
+CORRECT OUTPUT (consolidated into one):
+* ACBA-related conversions selected at Campaign Group level now display in the Ad Group builder conversions widget with appropriate enabled/disabled states for clearer visibility
 
 Transform sections for {product}:"""
         }]
