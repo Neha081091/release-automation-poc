@@ -163,7 +163,7 @@ def consolidate_body_with_claude(client, product: str, sections: list, release_v
         max_tokens=2000,
         messages=[{
             "role": "user",
-            "content": f"""Transform these raw Jira sections into polished, flowing prose release notes.
+            "content": f"""Transform these raw Jira sections into polished deployment value-add summaries.
 
 Product: {product}
 Release Version: {release_version}
@@ -175,95 +175,94 @@ CRITICAL FORMAT RULES - Follow this EXACT style:
 1. NO markdown formatting (no **, no __, no backticks)
 2. Use PLAIN TEXT only
 3. Epic names as headers on their own line
-4. For regular epics: include "Value Add:" header followed by BULLET POINTS using asterisks (*)
-5. Each bullet point should be a COMPLETE, READABLE SENTENCE that explains user value
-6. Write in flowing prose - each bullet should read naturally when spoken aloud
-7. Explain WHAT the change does and WHY it matters to users
-8. Keep technical context but make it accessible (e.g., "migrated to Airflow for better job management")
+4. Include "Value Add:" header followed by the description
+5. For SINGLE item: Write inline after "Value Add:" as one sentence
+6. For MULTIPLE items: Use bullet points with asterisks (*) on separate lines
+7. Each bullet should start with action verb (Updated, Added, Improved, Included, Removed, Fixed, Enhanced)
+8. Explain WHAT the change does and WHY it matters (e.g., "enabling...", "to ensure...", "for better...")
 9. End each epic section with status tag on its own line: General Availability OR Feature Flag
 10. ONE blank line between epic sections
 
 FOR BUG FIXES:
-- Use "Bug Fix:" (singular, with colon) as inline prefix
-- Write as a complete sentence: "Bug Fix: Resolved [issue description], ensuring [user benefit]."
-- Put the status tag on the next line
+- Group all bug fixes under "Bug Fixes:" header (plural)
+- List each bug fix as a bullet starting with "Fixed issue..." or "Fixed..."
+- Each fix should explain the problem and the benefit of fixing it
+- Put the status tag after all bug fixes
 
 TRANSFORMATION EXAMPLES:
 
 Raw Input:
-Epic: Migration of data pipelines from spring batch to airflow - Media PLs
+Epic: Home Dashboard V2
 Status: General Availability
 Items:
-- Migrate dedup_bidder_engagement job from spring batch to airflow
-- Migrate dedup_bidder_impression job from spring batch to airflow
-- Migrate dedup_bidder_conversion job from spring batch to airflow
-- Migrate dedup_bidder_click job from spring batch to airflow
-- Migrate bq_schema_generation job from spring batch to airflow
+- Update copy for Goals Widget grammar
 
 CORRECT OUTPUT:
-Migration of data pipelines from spring batch to airflow - Media PLs
-Value Add:
-* Data pipeline jobs have been migrated from Java Spring Batch to Python Airflow, enabling better job scheduling, monitoring, and execution management across the deduplication workflow.
+Home Dashboard V2
+Value Add: Updated copy for Goals Widget to ensure correct grammar and improved user experience.
 General Availability
 
 Raw Input:
-Epic: Inventory Priority Tiers - Reporting
+Epic: DSP PL3 - General Enhancements
 Status: General Availability
 Items:
-- Display Unknown values as N/A in InventoryTier dimension
-- Treat tier 0 as tier 1 in reporting
+- Add click interactions for top bar metrics customization
 
 CORRECT OUTPUT:
-Inventory Priority Tiers - Reporting
+DSP PL3 - General Enhancements
+Value Add: Added click interactions for top bar metrics customization, enabling easier metric selection alongside drag-drop functionality.
+General Availability
+
+Raw Input:
+Epic: Campaigns List Page V3
+Status: General Availability
+Items:
+- Allow top bar metrics selection independently from listing columns
+- Enhanced audit log for PG Ad Groups by removing inapplicable bid fields
+
+CORRECT OUTPUT:
+Campaigns List Page V3
 Value Add:
-* Reporting now displays clearer inventory tier information, showing "N/A" instead of "Unknown" for better data clarity and consistent tier handling.
+* Improved campaign listing by allowing top bar metrics selection independently from listing columns
+* Enhanced audit log for PG Ad Groups by removing inapplicable bid fields for improved clarity
 General Availability
 
 Raw Input:
 Epic: Bug Fixes
 Status: General Availability
 Items:
-- Fix package deal targeting where deals were targeted individually instead of as unified packages
+- Fix Add frequency button disappears when directly deleting existing frequency on ad-group quickview
+- Fix null date display in tooltip when hovering on graph datapoints in Goal Widget
+- Fix issue preventing users from changing ad group status from preview on campaign dashboard
+- Fix UI bug where No Records Found icon moves while typing in list creation pages
 
 CORRECT OUTPUT:
-Bug Fix: Resolved an issue with package deal targeting where deals were being targeted individually instead of as unified packages, ensuring proper package-level targeting for new deals.
+Bug Fixes:
+* Fixed issue where Add frequency button disappears when directly deleting existing frequency on ad-group quickview
+* Fixed null date display in tooltip when hovering on graph datapoints in Goal Widget
+* Fixed issue preventing users from changing ad group status from preview on campaign dashboard
+* Fixed UI bug where No Records Found icon moves while typing in list creation pages
 General Availability
 
 Raw Input:
-Epic: Core Chat UI Shell (Cora Tab Only)
+Epic: 2FA and Passwordless support for Platform
 Status: Feature Flag
 Items:
-- Implement Redis checkpointer for conversation history retrieval
-- Convert LLM invoke to async ainvoke
-- Add session list fetched from backend to sidebar
-- Add session search by title functionality
+- Rename TOTP to Authenticator on Account Manager MFA slider
+- Add ability to choose between EOTP and Authenticator Code on SSO UI
 
 CORRECT OUTPUT:
-Core Chat UI Shell (Cora Tab Only)
+2FA and Passwordless support for Platform
 Value Add:
-* Users can now retrieve their full conversation history, with messages persisted via Redis checkpointer for reliable access across sessions.
-* Chat performance improved by converting LLM calls to async operations, resolving sync client errors in async environments.
-* The sidebar now displays a session list fetched from the backend, making it easy to navigate between conversations.
-* Added session search by title, allowing users to quickly find and return to relevant conversations.
+* Renamed TOTP to "Authenticator" on Account Manager MFA slider for improved clarity and user understanding
+* Added ability to choose between EOTP and Authenticator Code on SSO UI to provide flexibility in authentication methods
 Feature Flag
-
-Raw Input:
-Epic: DSP PL5 - General Enhancements 1Q26
-Status: General Availability
-Items:
-- Rename DoubleVerify product from Authentic Brand Safety to Authentic Brand Suitability
-
-CORRECT OUTPUT:
-DSP PL5 - General Enhancements 1Q26
-Value Add:
-* Updated DoubleVerify product naming from "Authentic Brand Safety" to "Authentic Brand Suitability" to reflect the correct industry terminology.
-General Availability
 
 KEY PRINCIPLES:
 - Write COMPLETE, READABLE SENTENCES that explain value to users
+- Start bullets with action verbs: Updated, Added, Improved, Included, Removed, Fixed, Enhanced
 - Each bullet should answer: What changed? Why does it matter?
 - Use natural language that reads smoothly when spoken aloud
-- Keep technical context but explain it accessibly
 - Focus on user impact and benefits, not just technical changes
 - Use asterisks (*) for bullet points
 

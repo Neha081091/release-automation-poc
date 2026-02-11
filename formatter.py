@@ -277,7 +277,7 @@ def consolidate_body_sections_with_claude(product: str, release: str, sections: 
             max_tokens=2000,
             messages=[{
                 "role": "user",
-                "content": f"""Consolidate these raw feature sections into polished, flowing prose bullet points.
+                "content": f"""Transform these raw Jira sections into polished deployment value-add summaries.
 
 Product: {product}
 Release: {release}
@@ -285,42 +285,45 @@ Release: {release}
 Raw Sections:
 {sections_text}
 
-Rules for consolidation:
-1. Keep the original section structure (one section per heading)
-2. Convert raw Jira summaries into flowing, descriptive prose bullets
-3. Each bullet should be a complete, well-written sentence
-4. Use natural language that reads smoothly and explains user value
-5. Do NOT group sections together - keep them separate with their original titles
-6. Include the status flag at the end of each section (General Availability, Feature Flag, etc.)
-7. Format output as:
-   __Section Title__
+CRITICAL FORMAT RULES:
+1. NO markdown formatting (no **, no __, no backticks)
+2. Use PLAIN TEXT only
+3. Epic names as headers on their own line
+4. Include "Value Add:" header followed by the description
+5. For SINGLE item: Write inline after "Value Add:" as one sentence
+6. For MULTIPLE items: Use bullet points with asterisks (*) on separate lines
+7. Each bullet should start with action verb (Updated, Added, Improved, Included, Removed, Fixed, Enhanced)
+8. Explain WHAT the change does and WHY it matters (e.g., "enabling...", "to ensure...", "for better...")
+9. End each epic section with status tag on its own line: General Availability OR Feature Flag
+10. ONE blank line between epic sections
 
-   Value Add:
-
-   * Polished prose bullet point 1 explaining the feature and its impact
-   * Polished prose bullet point 2 with more context and details
-   * Polished prose bullet point 3 connecting to user value
-
-   Status Flag (if applicable)
-
-8. Do NOT abbreviate or use technical jargon - explain clearly for stakeholders
-9. Each bullet should be 1-2 complete sentences
+FOR BUG FIXES:
+- Group all bug fixes under "Bug Fixes:" header (plural)
+- List each bug fix as a bullet starting with "Fixed issue..." or "Fixed..."
+- Each fix should explain the problem and the benefit of fixing it
 
 Example input:
-__Forecasting in Ad Groups__
-- Add Channel , Device , Inventory , Creative Unit Length Filter Extraction & Validation Logic based on Deals / Exchanges
-- One time Pixel Audience Data in DCR Clickhouse
+__Campaigns List Page V3__ (General Availability)
+- Allow top bar metrics selection independently from listing columns
+- Enhanced audit log for PG Ad Groups by removing inapplicable bid fields
 
 Example output:
-__Forecasting in Ad Groups__
-
+Campaigns List Page V3
 Value Add:
+* Improved campaign listing by allowing top bar metrics selection independently from listing columns
+* Enhanced audit log for PG Ad Groups by removing inapplicable bid fields for improved clarity
+General Availability
 
-* Enhanced forecasting filter logic now accurately derives Channel, Device, Inventory Type, and Creative Unit Length from attached Deals and Exchanges.
-* Validation errors now alert users when targeting configurations conflict (e.g., CTV deals attached to Banner ad groups or audio ad groups).
-* Pixel audience data is now available in DCR Clickhouse to support complex audience size calculations spanning HCP and patient campaigns.
+Example input (bug fixes):
+__Bug Fixes__ (General Availability)
+- Fix Add frequency button disappears when directly deleting existing frequency
+- Fix null date display in tooltip when hovering on graph datapoints
 
-Feature Flag
+Example output:
+Bug Fixes:
+* Fixed issue where Add frequency button disappears when directly deleting existing frequency on ad-group quickview
+* Fixed null date display in tooltip when hovering on graph datapoints in Goal Widget
+General Availability
 
 Now consolidate for {product}:"""
             }]
