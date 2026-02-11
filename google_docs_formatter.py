@@ -460,7 +460,7 @@ class GoogleDocsFormatter:
         key_deploy_start = self._insert_text(key_deploy_header)
         self._mark_bold(key_deploy_start, key_deploy_start + len("Key Deployments:"))
 
-        # TL;DR items per PL (prose format, no bullets)
+        # TL;DR items per PL (bullet point format)
         # Skip "Other" category as it's a catch-all for unclassified tickets
         # Sort PLs according to PRODUCT_LINE_ORDER for consistent display
         sorted_product_lines = get_ordered_pls(product_lines)
@@ -477,13 +477,14 @@ class GoogleDocsFormatter:
             if summary:
                 summary = summary[0].upper() + summary[1:] if len(summary) > 1 else summary.upper()
 
-            # Insert PL name (bold, NO hyperlink - black text) - NO bullet
+            # Insert bullet point
+            self._insert_text("* ")
+
+            # Insert PL name (bold, NO hyperlink - black text)
             pl_start = self.current_index
             self._insert_text(pl_clean)
             pl_end = self.current_index
             self._mark_bold(pl_start, pl_end)
-
-            # NOTE: Removed hyperlink from PL name in TLDR - should be plain black bold text
 
             # Insert separator and summary
             rest_of_line = f" - {summary}\n"

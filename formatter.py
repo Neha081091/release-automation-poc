@@ -782,16 +782,12 @@ class ReleaseNotesFormatter:
         })
         current_index += len(key_deploy_header)
 
-        # TL;DR content - Key Deployments per PL
+        # TL;DR content - Key Deployments per PL (bullet point format)
         for deployment in tldr.get("key_deployments", []):
             pl_name = deployment["pl"]
-            version = deployment.get("version", "")
             summary = deployment.get("summary", "")
 
-            if version:
-                deploy_line = f"   * {pl_name} ({version}): {summary}\n"
-            else:
-                deploy_line = f"   * {pl_name}: {summary}\n"
+            deploy_line = f"* {pl_name} - {summary}\n"
 
             requests.append({
                 "insertText": {
@@ -1051,12 +1047,8 @@ class ReleaseNotesFormatter:
 
         for deployment in tldr.get("key_deployments", []):
             pl_name = deployment["pl"]
-            version = deployment.get("version", "")
             summary = deployment.get("summary", "")
-            if version:
-                lines.append(f"   • {pl_name} ({version}): {summary}")
-            else:
-                lines.append(f"   • {pl_name}: {summary}")
+            lines.append(f"* {pl_name} - {summary}")
 
         lines.append("")
 
@@ -1115,12 +1107,8 @@ class ReleaseNotesFormatter:
         lines = ["*Key Deployments:*"]
         for deployment in tldr.get("key_deployments", []):
             pl_name = deployment["pl"]
-            version = deployment.get("version", "")
             summary = deployment.get("summary", "")
-            if version:
-                lines.append(f"   • {pl_name} ({version}): {summary}")
-            else:
-                lines.append(f"   • {pl_name}: {summary}")
+            lines.append(f"* {pl_name} - {summary}")
 
         return "\n".join(lines)
 
