@@ -326,11 +326,14 @@ Bug Fixes:
 General Availability
 
 KEY PRINCIPLES:
-- Be CONCISE and DIRECT - no verbose marketing language or filler words
+- Be CONCISE and DIRECT - short sentences, no verbose marketing language
 - KEEP TECHNICAL TERMS - preserve specific names like "ainvoke", "Redis checkpointer", "thread_id"
 - State the ACTUAL PROBLEM SOLVED, not vague improvements
-- COMBINE related functionality into single bullets instead of splitting into multiple
-- AVOID padding phrases: "enhanced performance", "improved experience", "organized", "integrated"
+- COMBINE related functionality - fewer bullets is better
+- DROP low-value items that don't add meaningful information
+- AVOID redundant words: "simultaneously", "directly", "immediately", "dedicated", "individual"
+- AVOID padding phrases: "enhanced performance", "streamlined navigation", "information access"
+- Use simple phrases: "migrated to", "added to", "via bulk action"
 
 STYLE COMPARISON - BAD vs GOOD:
 
@@ -341,6 +344,14 @@ BAD (verbose):
 GOOD (concise, technical):
 * Users can now retrieve full conversation history from Redis checkpointer for any thread
 * LLM invoke calls converted to async (ainvoke) to resolve sync client unavailable errors in async environments
+
+BAD (too wordy):
+* Organization details page includes a dedicated tab component for streamlined navigation and information access
+* Existing ticker functionality from the previous Account Manager version now appears in the revamped interface
+
+GOOD (simple, direct):
+* New tab navigation component added to organization details page for improved user experience
+* Existing ticker migrated to the revamped Account Manager UI for consistency
 
 CONSOLIDATION - Combine related items into one bullet:
 Raw items:

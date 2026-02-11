@@ -259,13 +259,16 @@ Value Add:
 Feature Flag
 
 KEY PRINCIPLES:
-- Be CONCISE and DIRECT - no verbose marketing language or filler words
+- Be CONCISE and DIRECT - short sentences, no verbose marketing language
 - KEEP TECHNICAL TERMS - preserve specific names like "ainvoke", "Redis checkpointer", "thread_id"
-- State the ACTUAL PROBLEM SOLVED, not vague improvements (e.g., "sync client unavailable errors in async environments" NOT "eliminates errors")
-- COMBINE related functionality into single bullets instead of splitting into multiple
+- State the ACTUAL PROBLEM SOLVED, not vague improvements
+- COMBINE related functionality into single bullets - fewer bullets is better
+- DROP low-value items that don't add meaningful information
 - Use asterisks (*) for bullet points
-- Start with action verbs but keep them simple: Added, Fixed, Converted, Updated
-- AVOID padding phrases: "enhanced performance", "improved experience", "organized", "integrated"
+- Start with simple verbs: Added, Fixed, Migrated, Converted, Updated
+- AVOID redundant words: "simultaneously", "directly", "immediately", "dedicated", "individual"
+- AVOID padding phrases: "enhanced performance", "improved experience", "streamlined navigation", "information access"
+- Use simple phrases: "migrated to", "added to", "via bulk action" NOT "now appears in the revamped interface"
 
 STYLE COMPARISON - BAD vs GOOD:
 
@@ -280,6 +283,17 @@ GOOD (concise, technical, direct):
 * LLM invoke calls converted to async (ainvoke) to resolve sync client unavailable errors in async environments
 * Session list now fetched from backend and displayed in sidebar with search functionality
 * Users can search sessions by title to quickly find and return to relevant conversations
+
+BAD (too wordy, redundant):
+* Users can now add individual users to multiple advertisers simultaneously through bulk actions in the revamped Account Manager
+* Account Manager displays current user role tags directly on the organization details page for immediate role identification
+* Organization details page includes a dedicated tab component for streamlined navigation and information access
+* Existing ticker functionality from the previous Account Manager version now appears in the revamped interface
+
+GOOD (simple, direct, fewer bullets):
+* New tab navigation component added to organization details page for improved user experience
+* Existing ticker migrated to the revamped Account Manager UI for consistency
+* Users can now add a user to multiple advertisers via bulk action for streamlined user management
 
 CONSOLIDATION - Combine related items:
 Raw items about same feature:
