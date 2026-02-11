@@ -193,6 +193,7 @@ Rules:
 8. Explain the PURPOSE/BENEFIT after changes using "enabling...", "for better...", "to ensure..."
 9. For bug fixes, start with "Critical bug fixes including" then list all fixes with their benefits
 10. Output ONLY the consolidated prose (no product name prefix)
+11. ELIMINATE REPETITIVE items - if multiple summaries describe the same feature (same component + same context like "ACBA goals" or "campaign group level"), mention it ONCE only
 
 Example input:
 - Add restart chat button to Sales Planning Copilot
@@ -360,6 +361,20 @@ Raw items:
 
 CORRECT OUTPUT:
 * ACBA-related conversions selected at Campaign Group level now display in the Ad Group builder conversions widget with appropriate enabled/disabled states
+
+DETECTING REPETITIVE ITEMS - Items that describe the SAME feature from different angles MUST be merged:
+Raw items (REPETITIVE - same feature, different wording):
+- Ad Group Builder displays conversions selected at campaign group level with ACBA goals, showing mandatory CPA goal conversions in a disabled state during create and edit flows
+- Conversions widget provides clear visibility into campaign group level conversion requirements when ACBA goals are active
+
+CORRECT OUTPUT (merged into ONE bullet):
+* Ad Group Builder displays campaign group level ACBA conversions with mandatory CPA goal conversions shown in a disabled state during create and edit flows
+
+Signs of repetitive items to merge:
+- Same feature name mentioned (e.g., "conversions widget", "Ad Group Builder")
+- Same context (e.g., "ACBA goals", "campaign group level")
+- One describes WHAT it does, another describes the BENEFIT - combine them
+- Items that would make a reader say "didn't you already say that?"
 
 Now consolidate for {product}:"""
             }]
