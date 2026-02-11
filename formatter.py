@@ -90,10 +90,10 @@ PRODUCT_LINE_ORDER = [
 
 def parse_pl_from_fix_version(fix_version: str) -> str:
     """
-    Extract product line name from fix version string.
+    Extract product line name from fix version string, preserving year if present.
 
     Examples:
-        "DSP Core PL3 2026: Release 4.0" -> "DSP Core PL3"
+        "DSP Core PL3 2026: Release 4.0" -> "DSP Core PL3 2026"
         "DSP Core PL1: Release 3.0" -> "DSP Core PL1"
         "Developer Experience: Release 6.0" -> "Developer Experience"
         "Audiences PL2: Release 4.0" -> "Audiences PL2"
@@ -102,13 +102,14 @@ def parse_pl_from_fix_version(fix_version: str) -> str:
         fix_version: Fix version string from Jira
 
     Returns:
-        Product line name
+        Product line name (with year if present)
     """
     if not fix_version:
         return "Other"
 
     # Try to match pattern with year: "DSP Core PL3 2026: Release 4.0"
-    match = re.match(r'^(.+?)\s*\d{4}:\s*Release', fix_version)
+    # Preserve the year in the PL name
+    match = re.match(r'^(.+?\s*\d{4}):\s*Release', fix_version)
     if match:
         return match.group(1).strip()
 

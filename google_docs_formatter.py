@@ -73,13 +73,26 @@ PRODUCT_LINE_ORDER = [
 
 
 def get_ordered_pls(pl_list: list) -> list:
-    """Sort product lines according to PRODUCT_LINE_ORDER."""
+    """Sort product lines according to PRODUCT_LINE_ORDER.
+
+    Handles year variants by matching base PL name (e.g., "Media PL1 2026" matches "Media PL1").
+    """
     ordered = []
-    # First add PLs that are in the preferred order
-    for pl in PRODUCT_LINE_ORDER:
-        if pl in pl_list:
-            ordered.append(pl)
-    # Then add any PLs not in the preferred order (at the end)
+
+    def get_base_pl_name(pl_name: str) -> str:
+        """Remove year suffix from PL name for matching."""
+        return re.sub(r'\s+20\d{2}$', '', pl_name)
+
+    # First add PLs that match the preferred order (considering year variants)
+    for preferred_pl in PRODUCT_LINE_ORDER:
+        for pl in pl_list:
+            if pl in ordered:
+                continue
+            # Match exact or base name (without year)
+            if pl == preferred_pl or get_base_pl_name(pl) == preferred_pl:
+                ordered.append(pl)
+
+    # Then add any PLs not matched (at the end)
     for pl in pl_list:
         if pl not in ordered:
             ordered.append(pl)
@@ -509,10 +522,12 @@ class GoogleDocsFormatter:
 
             # Process each PL in this category
             for pl in sorted_category_pls:
-                pl_clean = self._clean_pl_name(pl)
+                # For body section headers, preserve the year (e.g., "Media PL1 2026")
+                # Only clean for display in TL;DR
+                pl_display = pl  # Keep the full PL name with year for body sections
 
                 # PL name and release version line
-                pl_name_text = f"{pl_clean}: "
+                pl_name_text = f"{pl_display}: "
                 self._insert_text(pl_name_text)
 
                 # Release version (with link)

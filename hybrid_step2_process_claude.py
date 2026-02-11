@@ -62,55 +62,79 @@ PRODUCT_LINE_ORDER = [
 
 
 def get_ordered_pls(pl_list: list) -> list:
-    """Sort product lines according to PRODUCT_LINE_ORDER."""
+    """Sort product lines according to PRODUCT_LINE_ORDER.
+
+    Handles year variants by matching base PL name (e.g., "Media PL1 2026" matches "Media PL1").
+    """
     ordered = []
-    # First add PLs that are in the preferred order
-    for pl in PRODUCT_LINE_ORDER:
-        if pl in pl_list:
-            ordered.append(pl)
-    # Then add any PLs not in the preferred order (at the end)
+
+    def get_base_pl_name(pl_name: str) -> str:
+        """Remove year suffix from PL name for matching."""
+        return re.sub(r'\s+20\d{2}$', '', pl_name)
+
+    # First add PLs that match the preferred order (considering year variants)
+    for preferred_pl in PRODUCT_LINE_ORDER:
+        for pl in pl_list:
+            if pl in ordered:
+                continue
+            # Match exact or base name (without year)
+            if pl == preferred_pl or get_base_pl_name(pl) == preferred_pl:
+                ordered.append(pl)
+
+    # Then add any PLs not matched (at the end)
     for pl in pl_list:
         if pl not in ordered:
             ordered.append(pl)
     return ordered
 
 
-def consolidate_with_claude(client, product: str, summaries: list) -> str:
-    """Consolidate summaries into polished TL;DR prose using Claude."""
+def consolidate_with_claude(client, product: str, summaries: list, statuses: list = None) -> str:
+    """Consolidate summaries into technical TL;DR bullet point using Claude."""
     summaries_text = "\n".join([f"- {s}" for s in summaries])
+
+    # Check if any items are feature flagged
+    has_feature_flag = False
+    if statuses:
+        has_feature_flag = any("feature flag" in str(s).lower() for s in statuses if s)
 
     message = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=500,
         messages=[{
             "role": "user",
-            "content": f"""Write a 1-2 sentence TL;DR summary for executive review.
+            "content": f"""Write a TECHNICAL TL;DR bullet point for this deployment.
 
 Product: {product}
-Raw Items:
+Raw Jira Items:
 {summaries_text}
 
-STRICT FORMAT RULES:
-1. Write 1-2 flowing SENTENCES (not a list of items separated by semicolons)
-2. Describe the IMPORTANT deployments and their PURPOSE/BENEFIT
-3. Use past tense verbs: "updated", "added", "implemented", "integrated", "fixed"
-4. Name SPECIFIC components, services, or features that were changed
-5. NO bullet points, NO semicolons as separators
-6. If multiple items, weave them into cohesive sentences
-7. Keep it concise but descriptive - max 50 words
-8. NEVER just list ticket titles - transform them into meaningful descriptions
+CRITICAL FORMAT RULES - Follow this EXACT style:
+1. Write ONE technical bullet point (NOT prose sentences)
+2. Use SPECIFIC technical terms: technology names, job names, service names, API names
+3. List specific items in parentheses: (job1, job2, job3)
+4. Mention FROM/TO when migrating: "from X to Y"
+5. Include version numbers when relevant: "v2.11.0 to v3.1.6"
+6. Use commas to separate distinct changes within the bullet
+7. Keep technical details like specific values in quotes: "N/A", "Unknown"
+8. Mention bug fixes directly: "bug fix for X, ensuring Y"
+9. Use present tense for capabilities: "displays", "supports", "enables"
+10. NO marketing fluff like "improved", "enhanced", "better"
+11. Be CONCISE but SPECIFIC - include technical names and details
+{"12. Add (Feature Flag) at the END of the bullet if items are feature flagged" if has_feature_flag else ""}
 
-BAD EXAMPLES (semicolon-separated list - DO NOT DO THIS):
-- "InventoryTier dimension in Reporting; OA Enablement Flag for Deal IDs; Add Negotiated Bid Floor Value"
-- "Integrating saarthi into di-agentic-service repo; Integrating saarthi into common-graphql repo"
+BAD EXAMPLES (too generic/marketing-speak - DO NOT DO THIS):
+- "Migrated data pipelines from legacy systems for improved workflow management"
+- "Updated the UI to display conversions with appropriate states"
+- "Implemented session management with improved search functionality"
 
-GOOD EXAMPLES (prose sentences - DO THIS):
-- "InventoryTier dimension now visible in Reporting for seats with enabled priority tiers; Open Auction enablement flag added for Deal IDs with new Negotiated Bid Floor field for internal auction dynamics"
-- "Saarthi AI code reviewer integrated into di-agentic-service and common-graphql repos; Airflow upgrade compatibility with logical_date parameter support across 5 services"
-- "Channel chart scale updated to use 4MM HCP Universe for better visualization of reach differences between EHR and other channels; improved scale readability when filters are applied"
-- "Household frequency and recency capping support at Seat, Order, Campaign, and AdGroup levels with updated scheduling chart visualization; GraphQL schema and API updates for householding"
+GOOD EXAMPLES (technical and specific - DO THIS):
+- "Data pipeline migration from Java Spring Batch to Python Airflow for 5 deduplication jobs (bidder_engagement, bidder_impression, bidder_conversion, bidder_click, bq_schema_generation), inventory tier reporting displaying "N/A" instead of "Unknown", bug fix for package deal targeting ensuring deals target as packages"
+- "Ad Group builder revamp with ACBA-related conversions widget displaying Campaign Group level selections with appropriate enabled/disabled states (Feature Flag)"
+- "Redis checkpointer conversation history retrieval, async LLM invoke calls (ainvoke) to resolve sync client errors, backend session list integration with sidebar display, session title search for quick conversation discovery"
+- "Account Manager revamp with tab navigation on organization details page, ticker migration to new UI, bulk action to add users to multiple advertisers, current user role tag display"
+- "Apache Airflow upgrade from v2.11.0 to v3.1.6, Airflow code centralized in common-graphql across 9 services, Lambda environment variable updates for DATA_AIRFLOW_AUTH_HEADER, REST API compatibility changes across 6 repositories"
 
-Output ONLY the 1-2 sentence summary:"""
+Output ONLY the technical bullet point (no prefix, no product name):"""
         }]
     )
 
@@ -120,6 +144,8 @@ Output ONLY the 1-2 sentence summary:"""
         result = result[1:-1]
     if result.lower().startswith(product.lower()):
         result = result[len(product):].lstrip(" -:")
+    # Remove leading bullet characters if present
+    result = result.lstrip('*•-● ')
     # Capitalize the first letter of the summary
     if result:
         result = result[0].upper() + result[1:]
@@ -127,7 +153,7 @@ Output ONLY the 1-2 sentence summary:"""
 
 
 def consolidate_body_with_claude(client, product: str, sections: list, release_version: str) -> str:
-    """Consolidate body sections into executive-style prose release notes using Claude."""
+    """Consolidate body sections into technical bullet-point release notes using Claude."""
     sections_text = ""
     for section in sections:
         items_list = "\n".join([f"- {item}" for item in section.get("items", [])])
@@ -139,7 +165,7 @@ def consolidate_body_with_claude(client, product: str, sections: list, release_v
         max_tokens=2000,
         messages=[{
             "role": "user",
-            "content": f"""Transform these raw Jira sections into PROSE-STYLE executive release notes.
+            "content": f"""Transform these raw Jira sections into TECHNICAL BULLET-POINT release notes.
 
 Product: {product}
 Release Version: {release_version}
@@ -147,65 +173,101 @@ Release Version: {release_version}
 Raw Sections:
 {sections_text}
 
-STRICT FORMAT RULES:
+CRITICAL FORMAT RULES - Follow this EXACT style:
 1. NO markdown formatting (no **, no __, no backticks)
 2. Use PLAIN TEXT only
-3. Epic names as simple headers on their own line
-4. For regular epics: include "Value Add:" header followed by a SINGLE PROSE SENTENCE
-5. For "Bug Fixes" sections: use "Bug Fixes:" header followed by prose description
-6. NO bullet points - write flowing prose sentences instead
-7. Consolidate all items under an epic into ONE descriptive sentence
-8. The sentence should explain WHAT was done and WHERE (name specific components/repos)
+3. Epic names as headers on their own line
+4. For regular epics: include "Value Add:" header followed by BULLET POINTS using asterisks (*)
+5. Each bullet point should be a SPECIFIC, TECHNICAL description
+6. Include SPECIFIC names: job names, service names, repo names, field names
+7. Use quotes for specific values: "N/A", "Unknown", "Authentic Brand Suitability"
+8. Preserve technical details from the Jira items - don't generalize
 9. End each epic section with status tag on its own line: General Availability OR Feature Flag
-10. ONE blank line ONLY between epic sections (not within a section)
-11. NO blank lines between Epic Name, Value Add:, prose, and status tag - keep them tight together
+10. ONE blank line between epic sections
 
-TRANSFORMATION EXAMPLE:
+FOR BUG FIXES:
+- Use "Bug Fix:" (singular, with colon) as inline prefix
+- Write as: "Bug Fix: Fixed [specific issue], ensuring [specific outcome]."
+- Put the status tag on the next line
+
+TRANSFORMATION EXAMPLES:
+
 Raw Input:
-Epic: Saarthi Code Reviewer integration across major repositories
+Epic: Migration of data pipelines from spring batch to airflow - Media PLs
+Status: General Availability
 Items:
-- Integrating saarthi into di-agentic-service repo
-- Integrating saarthi into common-graphql repo
+- Migrate dedup_bidder_engagement job from spring batch to airflow
+- Migrate dedup_bidder_impression job from spring batch to airflow
+- Migrate dedup_bidder_conversion job from spring batch to airflow
+- Migrate dedup_bidder_click job from spring batch to airflow
+- Migrate bq_schema_generation job from spring batch to airflow
 
-WRONG OUTPUT (bullet format - DO NOT DO THIS):
-Saarthi Code Reviewer integration across major repositories
+CORRECT OUTPUT:
+Migration of data pipelines from spring batch to airflow - Media PLs
 Value Add:
-● Integrating saarthi into di-agentic-service repo
-● Integrating saarthi into common-graphql repo
+* Data pipeline jobs (dedup_bidder_engagement, dedup_bidder_impression, dedup_bidder_conversion, dedup_bidder_click, bq_schema_generation) migrated from Java Spring Batch to Python Airflow for improved management and execution efficiency.
 General Availability
 
-CORRECT OUTPUT (prose format - DO THIS - notice NO blank lines within section):
-Saarthi Code Reviewer integration across major repositories
-Value Add:
-Saarthi AI code reviewer is now integrated into di-agentic-service and common-graphql repositories, enabling automated code review across more codebases.
-General Availability
+Raw Input:
+Epic: Inventory Priority Tiers - Reporting
+Status: General Availability
+Items:
+- Display Unknown values as N/A in InventoryTier dimension
+- Treat tier 0 as tier 1 in reporting
 
-MORE EXAMPLES OF CORRECT PROSE FORMAT (tight spacing within each section):
-
-Migration of data pipelines from spring batch to airflow
-Value Add:
-REST API changes have been evaluated and prepared for Airflow upgrade across planner-service, patient-planner-service, event-consumer-service, di-match-service, and account-manager-service.
-General Availability
-
+CORRECT OUTPUT:
 Inventory Priority Tiers - Reporting
 Value Add:
-InventoryTier dimension is now available in Reporting for seats that have enabled priority tiers, providing visibility into inventory tier performance.
+* Improved data accuracy in reports by displaying "N/A" instead of "Unknown" for inventory tier dimension and treating tier 1,2,3 as tier 1,2,3 respectively.
 General Availability
 
-IMPORTANT FOR BUG FIXES SECTIONS:
-- When the epic name is "Bug Fixes", do NOT repeat "Bug Fixes" as a header
-- Just use "Bug Fixes:" directly (no epic name above it)
-
+Raw Input:
 Epic: Bug Fixes
-WRONG OUTPUT (duplicated header - DO NOT DO THIS):
-Bug Fixes
-Bug Fixes:
-Fixed alignment issues...
+Status: General Availability
+Items:
+- Fix package deal targeting where deals were targeted individually instead of as unified packages
 
-CORRECT OUTPUT (no duplication):
-Bug Fixes:
-Fixed alignment issues with save draft button in HCP planner and resolved query returning empty results when This Month date range was selected.
+CORRECT OUTPUT:
+Bug Fix: Fixed package deal targeting issue, ensuring deals are targeted as part of the package rather than individually when new packages are created.
 General Availability
+
+Raw Input:
+Epic: Core Chat UI Shell (Cora Tab Only)
+Status: Feature Flag
+Items:
+- Implement Redis checkpointer for conversation history retrieval
+- Convert LLM invoke to async ainvoke
+- Add session list fetched from backend to sidebar
+- Add session search by title functionality
+
+CORRECT OUTPUT:
+Core Chat UI Shell (Cora Tab Only)
+Value Add:
+* Users can now retrieve the full conversation history from the Redis checkpointer for any thread.
+* LLM invoke calls converted to async (ainvoke) to resolve sync client unavailable errors in async environments.
+* Session list now fetched from the backend and displayed in the sidebar with search functionality.
+* Users can search sessions by title to quickly find and return to relevant conversations.
+Feature Flag
+
+Raw Input:
+Epic: DSP PL5 - General Enhancements 1Q26
+Status: General Availability
+Items:
+- Rename DoubleVerify product from Authentic Brand Safety to Authentic Brand Suitability
+
+CORRECT OUTPUT:
+DSP PL5 - General Enhancements 1Q26
+Value Add:
+* DoubleVerify's product renamed from "Authentic Brand Safety" to "Authentic Brand Suitability" for correct terminology
+General Availability
+
+KEY PRINCIPLES:
+- PRESERVE specific technical names, values, and details from Jira
+- Use asterisks (*) for bullet points, NOT prose paragraphs
+- Each bullet should describe ONE specific change/capability
+- Include service names, job names, field names when mentioned in Jira
+- Use quotes for specific UI text or values
+- Be TECHNICAL, not marketing/generic
 
 Transform sections for {product}:"""
         }]
@@ -213,20 +275,20 @@ Transform sections for {product}:"""
 
     result = message.content[0].text.strip()
 
-    # Post-process: Remove any bullet characters that Claude might have added
+    # Post-process: Normalize bullet characters to asterisks
     lines = result.split('\n')
     processed_lines = []
     for line in lines:
         stripped = line.lstrip()
-        # Remove bullet characters at start of line (convert to prose)
+        # Convert various bullet characters to asterisk format
         if stripped.startswith('● '):
-            line = line.replace('● ', '', 1)
+            line = line.replace('● ', '* ', 1)
         elif stripped.startswith('• '):
-            line = line.replace('• ', '', 1)
-        elif stripped.startswith('* '):
-            line = line.replace('* ', '', 1)
-        elif stripped.startswith('- '):
-            line = line.replace('- ', '', 1)
+            line = line.replace('• ', '* ', 1)
+        elif stripped.startswith('- ') and not stripped.lower().startswith('- media') and not stripped.lower().startswith('- dsp'):
+            # Convert dash bullets to asterisks (but not if it's part of a PL name)
+            if len(stripped) > 2 and stripped[2].isupper():
+                line = line.replace('- ', '* ', 1)
         processed_lines.append(line)
 
     return '\n'.join(processed_lines)
@@ -266,11 +328,12 @@ def process_tickets_with_claude():
 
     for ticket in tickets:
         fix_version = ticket.get("fix_version", "")
-        # Parse PL from fix version
-        match = re.match(r'^(.+?)\s*\d{4}:\s*Release', fix_version)
+        # Parse PL from fix version - preserve year if present (e.g., "Media PL1 2026")
+        match = re.match(r'^(.+?\s*\d{4}):\s*Release', fix_version)
         if match:
             pl = match.group(1).strip()
         else:
+            # Try without year
             match = re.match(r'^(.+?):\s*Release', fix_version)
             pl = match.group(1).strip() if match else "Other"
 
@@ -293,15 +356,18 @@ def process_tickets_with_claude():
     tldr_by_pl = {}
     for pl, epics in grouped.items():
         summaries = []
+        statuses = []
         for epic_name, epic_tickets in epics.items():
             for t in epic_tickets:
                 if t.get("summary"):
                     summaries.append(t["summary"])
+                if t.get("release_type"):
+                    statuses.append(t["release_type"])
 
         if summaries:
             print(f"  Processing {pl}...")
             try:
-                tldr_by_pl[pl] = consolidate_with_claude(client, pl, summaries)
+                tldr_by_pl[pl] = consolidate_with_claude(client, pl, summaries, statuses)
                 print(f"  ✅ {pl} - consolidated")
             except Exception as e:
                 print(f"  ❌ {pl} - error: {e}")
