@@ -2,11 +2,17 @@
 """
 HYBRID STEP 2: Process with Claude API (Run on Server)
 
-This script reads the exported Jira tickets JSON and processes them
-with Claude API to create polished release notes.
+This is the PRIMARY release notes processor. It uses Claude as an extensive
+AI writer by feeding it full ticket context (summaries, descriptions, issue types,
+priorities, components, labels, assignees) — the same level of detail you'd paste
+into a direct Claude AI conversation.
 
-Uses the same model, system prompt, and quality settings as formatter.py
-to ensure consistent output matching direct Claude AI conversation quality.
+Processing pipeline:
+  1. Load & group tickets by Product Line / Epic
+  2. Per-PL TL;DR generation (full ticket context)
+  3. Per-PL body section generation (full ticket context)
+  4. Release-wide executive overview generation
+  5. Final quality review pass
 
 Usage:
     python hybrid_step2_process_claude.py
@@ -20,7 +26,9 @@ Output:
 
 import json
 import os
+import re
 from datetime import datetime
+from collections import defaultdict
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -29,9 +37,107 @@ import anthropic
 from formatter import CLAUDE_MODEL, CLAUDE_TEMPERATURE, RELEASE_NOTES_SYSTEM_PROMPT
 
 
-def consolidate_with_claude(client, product: str, summaries: list) -> str:
-    """Consolidate summaries into polished prose using Claude."""
-    summaries_text = "\n".join([f"- {s}" for s in summaries])
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _build_full_ticket_context(tickets: list) -> str:
+    """
+    Build a rich, human-readable context block from full ticket data.
+
+    This is the key difference from the old approach — instead of only passing
+    bare summaries, we give Claude the same depth of information a human would
+    paste into a Claude AI chat window.
+    """
+    lines = []
+    for t in tickets:
+        key = t.get("key", "")
+        summary = t.get("summary", "")
+        description = (t.get("description") or "").strip()
+        issue_type = t.get("issue_type", "")
+        priority = t.get("priority", "")
+        status = t.get("status", "")
+        release_type = t.get("release_type") or ""
+        assignee = t.get("assignee") or "Unassigned"
+        components = ", ".join(t.get("components", [])) or "—"
+        labels = ", ".join(t.get("labels", [])) or "—"
+        story_points = t.get("story_points") or "—"
+
+        lines.append(f"[{key}] {summary}")
+        lines.append(f"  Type: {issue_type} | Priority: {priority} | Status: {status}")
+        lines.append(f"  Components: {components} | Labels: {labels} | Points: {story_points}")
+        lines.append(f"  Assignee: {assignee}")
+        if release_type:
+            lines.append(f"  Release Type: {release_type}")
+        if description and description.lower() != summary.lower():
+            # Truncate very long descriptions but keep enough for context
+            desc_clean = " ".join(description.split())
+            if len(desc_clean) > 600:
+                desc_clean = desc_clean[:600] + "..."
+            lines.append(f"  Description: {desc_clean}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def _build_epic_sections_context(epics: dict) -> str:
+    """
+    Build structured context grouped by Epic, with full ticket details.
+    """
+    sections = []
+    for epic_name, epic_tickets in epics.items():
+        sections.append(f"=== Epic: {epic_name} ===")
+
+        # Determine release status for this epic
+        statuses = set()
+        for t in epic_tickets:
+            rt = t.get("release_type")
+            if rt:
+                statuses.add(rt)
+        if statuses:
+            sections.append(f"Release Status: {', '.join(statuses)}")
+
+        sections.append(f"Ticket Count: {len(epic_tickets)}")
+        sections.append("")
+
+        for t in epic_tickets:
+            key = t.get("key", "")
+            summary = t.get("summary", "")
+            description = (t.get("description") or "").strip()
+            issue_type = t.get("issue_type", "")
+
+            sections.append(f"  [{key}] ({issue_type}) {summary}")
+            if description and description.lower() != summary.lower():
+                desc_clean = " ".join(description.split())
+                if len(desc_clean) > 500:
+                    desc_clean = desc_clean[:500] + "..."
+                sections.append(f"    Context: {desc_clean}")
+
+        sections.append("")
+
+    return "\n".join(sections)
+
+
+# ---------------------------------------------------------------------------
+# Claude API calls
+# ---------------------------------------------------------------------------
+
+def generate_tldr_with_claude(client, product: str, fix_version: str,
+                              epics: dict) -> str:
+    """
+    Generate a polished TL;DR for one Product Line using full ticket context.
+
+    Unlike the old approach that only passed summaries, this sends descriptions,
+    issue types, priorities, and labels — giving Claude the same information
+    you'd paste into a direct conversation.
+    """
+    # Flatten all tickets for this PL
+    all_tickets = []
+    for epic_tickets in epics.values():
+        all_tickets.extend(epic_tickets)
+
+    ticket_context = _build_full_ticket_context(all_tickets)
+    epic_list = ", ".join(epics.keys())
 
     message = client.messages.create(
         model=CLAUDE_MODEL,
@@ -40,46 +146,56 @@ def consolidate_with_claude(client, product: str, summaries: list) -> str:
         system=RELEASE_NOTES_SYSTEM_PROMPT,
         messages=[{
             "role": "user",
-            "content": f"""I need you to write a TL;DR summary for the "{product}" product line in our Daily Deployment Summary.
+            "content": f"""I need you to write a TL;DR summary for the "{product}" product line \
+({fix_version}) in our Daily Deployment Summary.
 
-Here are the raw Jira ticket summaries that shipped in this release:
+This product line has {len(all_tickets)} tickets across these epics: {epic_list}
 
-{summaries_text}
+Here is the FULL ticket data — read the descriptions carefully to understand what \
+actually shipped, not just the Jira summary titles:
 
-Write ONE polished prose sentence that captures all of the above. This sentence will appear in a \
-"Key Deployments" section that PMOs read to get a quick overview of what's shipping.
+{ticket_context}
+
+Now write ONE polished prose sentence that captures the essence of this deployment. \
+This sentence will appear in a "Key Deployments" section that PMOs and leadership read \
+for a quick overview.
 
 Guidelines:
-- Consolidate related tickets into coherent themes (e.g., if 10 tickets all say "Integrating X into Y repo", \
-summarize as "X integration expanded across N repositories")
+- Read the descriptions to understand the real user impact — don't just rephrase the titles
+- Consolidate related tickets into coherent themes (e.g., 10 "Integrating X into Y repo" \
+tickets become "X integration expanded across N repositories")
 - Separate distinct themes with semicolons
-- Use natural connectors like "with", "including", "alongside", "spanning"
-- Focus on what users/stakeholders gain, not what developers did
+- Use natural connectors: "with", "including", "alongside", "spanning"
+- Focus on what users and stakeholders gain, not what developers built
 - NO bullet points, NO category labels, NO product name prefix
+- If there are security or vulnerability fixes, call them out explicitly
 - Should read like a polished executive summary when spoken aloud
-- If there are security/vulnerability fixes, mention them clearly
 
-Now write the TL;DR for {product}:"""
+Output ONLY the single summary sentence — nothing else."""
         }]
     )
 
     result = message.content[0].text.strip()
+    # Clean up common LLM artifacts
     if result.lower().startswith(product.lower()):
         result = result[len(product):].lstrip(" -:")
-    # Remove wrapping quotes if present
     if result.startswith('"') and result.endswith('"'):
         result = result[1:-1]
     return result
 
 
-def consolidate_body_with_claude(client, product: str, sections: list) -> str:
-    """Consolidate body sections into polished prose using Claude."""
-    sections_text = ""
-    for section in sections:
-        items_list = "\n".join([f"- {item}" for item in section.get("items", [])])
-        status = section.get("status", "")
-        status_text = f" [Release Status: {status}]" if status else ""
-        sections_text += f"\n__{section['title']}__{status_text}\n{items_list}\n"
+def generate_body_with_claude(client, product: str, fix_version: str,
+                              epics: dict) -> str:
+    """
+    Generate the detailed body section for one Product Line using full ticket context.
+
+    Sends complete ticket data including descriptions so Claude can write
+    stakeholder-quality prose — the same output you'd get in a direct Claude AI chat.
+    """
+    epic_context = _build_epic_sections_context(epics)
+
+    # Count total tickets
+    total = sum(len(tix) for tix in epics.values())
 
     message = client.messages.create(
         model=CLAUDE_MODEL,
@@ -88,48 +204,162 @@ def consolidate_body_with_claude(client, product: str, sections: list) -> str:
         system=RELEASE_NOTES_SYSTEM_PROMPT,
         messages=[{
             "role": "user",
-            "content": f"""I need you to write the detailed body section for the "{product}" product line \
-in our Daily Deployment Summary document.
+            "content": f"""I need you to write the detailed body section for "{product}" \
+({fix_version}) in our Daily Deployment Summary. There are {total} tickets across \
+{len(epics)} epics.
 
-Below are the raw Jira ticket summaries grouped by Epic. Transform them into polished, stakeholder-ready \
-release notes.
+Here is the FULL ticket data grouped by Epic. Read the descriptions carefully — they \
+contain the user stories, acceptance criteria, and business rationale that you should \
+reflect in the release notes:
 
-Raw feature sections:
-{sections_text}
+{epic_context}
 
-Instructions:
-- Keep each Epic as a separate section with its original title (use __Title__ format)
-- Under each section, add a "Value Add:" header
-- Write 1-3 polished bullet points (using * prefix) per section that explain the user/business value
-- Each bullet should be a complete, well-written sentence (1-2 sentences max)
-- If multiple tickets describe repetitive work (e.g., "Integrating X into repo-A", "Integrating X into repo-B", etc.), \
-consolidate them into ONE meaningful bullet that captures the scope
-- Translate developer-speak into stakeholder-friendly language
-- After the bullets, include the release status on its own line if provided
-- Do NOT invent features — only describe what the tickets actually cover
-- Do NOT add extra sections or group epics together
+Write polished, stakeholder-ready release notes following this exact structure for EACH epic:
 
-Format each section exactly like this:
 __Epic Name__
 
 Value Add:
 
-* Clear, stakeholder-friendly description of what shipped and why it matters.
-* Another bullet if the epic has multiple distinct deliverables.
+* A clear, stakeholder-friendly sentence explaining what shipped and why it matters. \
+Draw from the ticket descriptions to explain the real user value — not just the Jira title.
+* Another bullet if the epic has multiple distinct deliverables. Each bullet should be \
+1-2 complete sentences.
 
-General Availability
+Release Status (on its own line, e.g., "General Availability" or "Feature Flag")
 
-Now write the body sections for {product}:"""
+Critical rules:
+- Keep each Epic as a SEPARATE section — do NOT merge epics together
+- Use the original Epic name as the section title in __Title__ format
+- If multiple tickets in an epic describe the same integration across different \
+repositories, consolidate them into ONE bullet that names the key repos and explains \
+the overall purpose
+- Draw from the ticket descriptions to explain WHY the change matters, not just WHAT changed
+- Translate developer jargon into language a PMO or executive would understand
+- Only include the Release Status line if one was specified (General Availability, Feature Flag)
+- Do NOT invent features or benefits that aren't supported by the ticket data
+- Do NOT add an introduction or conclusion — jump straight into the first epic section
+
+Output the formatted sections now:"""
         }]
     )
 
     return message.content[0].text.strip()
 
 
+def generate_release_overview_with_claude(client, release_summary: str,
+                                          all_pls: dict,
+                                          tldr_by_pl: dict) -> str:
+    """
+    Generate a release-wide executive overview by reviewing all PL summaries.
+
+    This is a final synthesis pass — Claude reads all the per-PL TLDRs and
+    produces a 2-3 sentence executive overview of the entire release. This
+    mirrors what you'd get in a Claude AI conversation if you asked
+    "Now give me a high-level overview of this whole release."
+    """
+    # Build context: PL names, ticket counts, and TLDRs
+    pl_context_lines = []
+    for pl, epics in all_pls.items():
+        count = sum(len(tix) for tix in epics.values())
+        tldr = tldr_by_pl.get(pl, "")
+        pl_context_lines.append(f"- {pl} ({count} tickets): {tldr}")
+    pl_context = "\n".join(pl_context_lines)
+
+    total_tickets = sum(
+        sum(len(tix) for tix in epics.values())
+        for epics in all_pls.values()
+    )
+
+    message = client.messages.create(
+        model=CLAUDE_MODEL,
+        max_tokens=1024,
+        temperature=CLAUDE_TEMPERATURE,
+        system=RELEASE_NOTES_SYSTEM_PROMPT,
+        messages=[{
+            "role": "user",
+            "content": f"""I need a brief executive overview for our Daily Deployment Summary.
+
+Release: {release_summary}
+Total: {total_tickets} tickets across {len(all_pls)} product lines
+
+Per-PL summaries:
+{pl_context}
+
+Write a 2-3 sentence executive overview that captures the most impactful themes across \
+the ENTIRE release. This sits at the very top of the document before the TL;DR section. \
+It should give a CTO or VP-level reader an instant understanding of what's shipping today.
+
+Guidelines:
+- Highlight the 2-3 most significant themes across all PLs
+- If there's a common thread (e.g., multiple PLs doing security work), call it out
+- Mention the breadth: "{len(all_pls)} product lines, {total_tickets} total changes"
+- Keep it to 2-3 sentences maximum
+- Professional, confident tone
+
+Output ONLY the overview paragraph — nothing else."""
+        }]
+    )
+
+    result = message.content[0].text.strip()
+    if result.startswith('"') and result.endswith('"'):
+        result = result[1:-1]
+    return result
+
+
+def review_and_polish_with_claude(client, product: str, body_text: str) -> str:
+    """
+    Final quality review pass — Claude reviews its own body output for consistency,
+    readability, and formatting correctness.
+
+    This mirrors the iterative refinement you'd do in a direct Claude AI conversation:
+    "Can you review this and fix any issues?"
+    """
+    message = client.messages.create(
+        model=CLAUDE_MODEL,
+        max_tokens=4096,
+        temperature=CLAUDE_TEMPERATURE,
+        system=RELEASE_NOTES_SYSTEM_PROMPT,
+        messages=[
+            {
+                "role": "user",
+                "content": f"""Here are the draft release notes I wrote for {product}:
+
+{body_text}
+
+Review and fix ONLY if there are actual issues:
+1. Formatting: Every epic must follow __Title__, then blank line, then "Value Add:", \
+then blank line, then "* " bullets, then release status if present
+2. Clarity: Each bullet should be a complete sentence a PMO can understand
+3. Accuracy: Bullets should not claim features or benefits not supported by the titles
+4. Consolidation: Repetitive items (e.g., same integration across repos) should be one bullet
+5. No extra sections, introductions, or conclusions
+
+If the draft is already good, return it unchanged. Output ONLY the final release notes."""
+            }
+        ]
+    )
+
+    return message.content[0].text.strip()
+
+
+# ---------------------------------------------------------------------------
+# Main processing pipeline
+# ---------------------------------------------------------------------------
+
 def process_tickets_with_claude():
-    """Process exported tickets with Claude API."""
+    """
+    Primary Claude-powered release notes processor.
+
+    Pipeline:
+      1. Load & group tickets by PL / Epic
+      2. Generate TL;DR per PL (with full ticket context)
+      3. Generate body sections per PL (with full ticket context)
+      4. Review & polish each body section
+      5. Generate release-wide executive overview
+      6. Export everything to processed_notes.json
+    """
     print("=" * 60)
-    print("  HYBRID STEP 2: Process with Claude API")
+    print("  HYBRID STEP 2: Process with Claude API (Primary Processor)")
     print("=" * 60)
 
     # Check API key
@@ -149,20 +379,24 @@ def process_tickets_with_claude():
         export_data = json.load(f)
 
     tickets = export_data.get("tickets", [])
+    release_summary = export_data.get("release_summary", "")
     print(f"[Step 2] Loaded {len(tickets)} tickets from {input_file}")
+    print(f"[Step 2] Release: {release_summary}")
+    print(f"[Step 2] Model: {CLAUDE_MODEL} | Temperature: {CLAUDE_TEMPERATURE}")
 
     # Initialize Claude client
     client = anthropic.Anthropic(api_key=api_key)
     print("[Step 2] Claude API client initialized")
 
-    # Group tickets by product line
-    from collections import defaultdict
+    # -----------------------------------------------------------------------
+    # Step 1: Group tickets by Product Line → Epic
+    # -----------------------------------------------------------------------
     grouped = defaultdict(lambda: defaultdict(list))
+    fix_versions = {}
 
     for ticket in tickets:
         fix_version = ticket.get("fix_version", "")
         # Parse PL from fix version
-        import re
         match = re.match(r'^(.+?)\s*\d{4}:\s*Release', fix_version)
         if match:
             pl = match.group(1).strip()
@@ -173,73 +407,110 @@ def process_tickets_with_claude():
         epic_name = ticket.get("epic_name") or "Uncategorized"
         grouped[pl][epic_name].append(ticket)
 
-    print(f"[Step 2] Grouped into {len(grouped)} product lines")
+        if pl not in fix_versions:
+            fix_versions[pl] = fix_version
 
-    # Process TL;DR for each PL
-    print("\n[Step 2] Processing TL;DR summaries...")
+    print(f"[Step 2] Grouped into {len(grouped)} product lines:")
+    for pl, epics in grouped.items():
+        ticket_count = sum(len(tix) for tix in epics.values())
+        print(f"  - {pl}: {len(epics)} epics, {ticket_count} tickets")
+
+    # -----------------------------------------------------------------------
+    # Step 2: Generate TL;DR for each PL (full ticket context)
+    # -----------------------------------------------------------------------
+    print("\n[Step 2] Generating TL;DR summaries (with full ticket context)...")
     tldr_by_pl = {}
     for pl, epics in grouped.items():
-        summaries = []
-        for epic_name, epic_tickets in epics.items():
-            for t in epic_tickets:
-                if t.get("summary"):
-                    summaries.append(t["summary"])
+        fv = fix_versions.get(pl, "")
+        print(f"  Processing {pl}...")
+        try:
+            tldr_by_pl[pl] = generate_tldr_with_claude(client, pl, fv, epics)
+            print(f"  -> {pl}: {tldr_by_pl[pl][:80]}...")
+        except Exception as e:
+            print(f"  ERROR {pl}: {e}")
+            # Fallback: join summaries
+            all_summaries = []
+            for epic_tickets in epics.values():
+                for t in epic_tickets:
+                    if t.get("summary"):
+                        all_summaries.append(t["summary"])
+            tldr_by_pl[pl] = "; ".join(all_summaries)
 
-        if summaries:
-            print(f"  Processing {pl}...")
-            try:
-                tldr_by_pl[pl] = consolidate_with_claude(client, pl, summaries)
-                print(f"  ✅ {pl} - consolidated")
-            except Exception as e:
-                print(f"  ❌ {pl} - error: {e}")
-                tldr_by_pl[pl] = "; ".join(summaries)
-
-    # Process body sections for each PL
-    print("\n[Step 2] Processing body sections...")
+    # -----------------------------------------------------------------------
+    # Step 3: Generate body sections for each PL (full ticket context)
+    # -----------------------------------------------------------------------
+    print("\n[Step 2] Generating body sections (with full ticket context)...")
     body_by_pl = {}
     for pl, epics in grouped.items():
-        sections = []
-        for epic_name, epic_tickets in epics.items():
-            items = [t["summary"] for t in epic_tickets if t.get("summary")]
-            status = ""
-            for t in epic_tickets:
-                if t.get("release_type"):
-                    status = t["release_type"]
-                    break
-            if items:
-                sections.append({
-                    "title": epic_name,
-                    "items": items,
-                    "status": status
-                })
+        fv = fix_versions.get(pl, "")
+        print(f"  Processing {pl}...")
+        try:
+            body_by_pl[pl] = generate_body_with_claude(client, pl, fv, epics)
+            print(f"  -> {pl}: generated ({len(body_by_pl[pl])} chars)")
+        except Exception as e:
+            print(f"  ERROR {pl}: {e}")
+            # Fallback to raw formatting
+            body_text = ""
+            for epic_name, epic_tickets in epics.items():
+                body_text += f"__{epic_name}__\n\nValue Add:\n"
+                for t in epic_tickets:
+                    if t.get("summary"):
+                        body_text += f"   * {t['summary']}\n"
+                # Check for release type
+                for t in epic_tickets:
+                    if t.get("release_type"):
+                        body_text += f"\n{t['release_type']}\n"
+                        break
+                body_text += "\n"
+            body_by_pl[pl] = body_text
 
-        if sections:
-            print(f"  Processing {pl}...")
-            try:
-                body_by_pl[pl] = consolidate_body_with_claude(client, pl, sections)
-                print(f"  ✅ {pl} - consolidated")
-            except Exception as e:
-                print(f"  ❌ {pl} - error: {e}")
-                # Fallback
-                body_text = ""
-                for s in sections:
-                    body_text += f"__{s['title']}__\n\nValue Add:\n"
-                    for item in s['items']:
-                        body_text += f"   * {item}\n"
-                    if s['status']:
-                        body_text += f"\n{s['status']}\n\n"
-                body_by_pl[pl] = body_text
+    # -----------------------------------------------------------------------
+    # Step 4: Review & polish each body section
+    # -----------------------------------------------------------------------
+    print("\n[Step 2] Running quality review pass...")
+    for pl in body_by_pl:
+        print(f"  Reviewing {pl}...")
+        try:
+            body_by_pl[pl] = review_and_polish_with_claude(client, pl, body_by_pl[pl])
+            print(f"  -> {pl}: reviewed ({len(body_by_pl[pl])} chars)")
+        except Exception as e:
+            print(f"  Review skipped for {pl}: {e}")
 
-    # Export processed notes
+    # -----------------------------------------------------------------------
+    # Step 5: Generate release-wide executive overview
+    # -----------------------------------------------------------------------
+    print("\n[Step 2] Generating release-wide executive overview...")
+    release_overview = ""
+    try:
+        release_overview = generate_release_overview_with_claude(
+            client, release_summary, grouped, tldr_by_pl
+        )
+        print(f"  -> Overview: {release_overview[:100]}...")
+    except Exception as e:
+        print(f"  Overview skipped: {e}")
+
+    # -----------------------------------------------------------------------
+    # Step 6: Export
+    # -----------------------------------------------------------------------
     output_data = {
         "processed_at": datetime.now().isoformat(),
         "source_file": input_file,
-        "release_summary": export_data.get("release_summary"),
+        "release_summary": release_summary,
+        "model": CLAUDE_MODEL,
+        "temperature": CLAUDE_TEMPERATURE,
         "ticket_count": len(tickets),
         "product_lines": list(grouped.keys()),
+        "release_overview": release_overview,
         "tldr_by_pl": tldr_by_pl,
         "body_by_pl": body_by_pl,
-        "grouped_data": {pl: {epic: [t["key"] for t in tickets] for epic, tickets in epics.items()} for pl, epics in grouped.items()}
+        "fix_versions": fix_versions,
+        "grouped_data": {
+            pl: {
+                epic: [t["key"] for t in tickets]
+                for epic, tickets in epics.items()
+            }
+            for pl, epics in grouped.items()
+        }
     }
 
     output_file = "processed_notes.json"
@@ -247,6 +518,11 @@ def process_tickets_with_claude():
         json.dump(output_data, f, indent=2)
 
     print(f"\n[Step 2] EXPORTED to: {output_file}")
+    print(f"[Step 2] Claude API calls made: {len(grouped) * 3 + 1}")
+    print(f"  - {len(grouped)} TL;DR calls")
+    print(f"  - {len(grouped)} body section calls")
+    print(f"  - {len(grouped)} review/polish calls")
+    print(f"  - 1 executive overview call")
     print("\n" + "=" * 60)
     print("  NEXT: Copy processed_notes.json to Mac and run:")
     print("  python hybrid_step3_update_docs.py")
