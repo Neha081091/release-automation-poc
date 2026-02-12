@@ -72,11 +72,6 @@ def update_google_docs(processed_data: dict) -> bool:
         product_lines = processed_data.get("product_lines", [])
         fix_versions = processed_data.get("fix_versions", {})
         fix_version_urls = processed_data.get("fix_version_urls", {})
-        release_overview = processed_data.get("release_overview", {})
-
-        # Handle both old string format and new dict format for release_overview
-        if isinstance(release_overview, str):
-            release_overview = {"deployments_by": "", "major_feature": "", "key_enhancement": "", "overview": release_overview}
 
         # Build requests for Google Docs API
         requests = []
@@ -102,45 +97,16 @@ def update_google_docs(processed_data: dict) -> bool:
         })
         current_index += len(tldr_header)
 
-        # Deployments by line
-        deployments_by = release_overview.get("deployments_by", "")
-        if not deployments_by:
-            deployments_by = ", ".join(product_lines)
-        deploy_by_line = f"* Deployments by: {deployments_by}\n"
-        requests.append({
-            "insertText": {
-                "location": {"index": current_index},
-                "text": deploy_by_line
-            }
-        })
-        current_index += len(deploy_by_line)
+        # Key Deployments header with PL list
+        deploying_pls = [pl for pl in product_lines if pl in tldr_by_pl]
+        if len(deploying_pls) == 1:
+            pl_list_str = deploying_pls[0]
+        elif len(deploying_pls) == 2:
+            pl_list_str = f"{deploying_pls[0]} and {deploying_pls[1]}"
+        else:
+            pl_list_str = ", ".join(deploying_pls[:-1]) + f", and {deploying_pls[-1]}"
 
-        # Major Feature line (Version 2 format)
-        major_feature = release_overview.get("major_feature", "")
-        if major_feature:
-            major_line = f"* Major Feature: {major_feature}\n"
-            requests.append({
-                "insertText": {
-                    "location": {"index": current_index},
-                    "text": major_line
-                }
-            })
-            current_index += len(major_line)
-
-        # Key Enhancement line (Version 2 format)
-        key_enhancement = release_overview.get("key_enhancement", "")
-        if key_enhancement:
-            enhance_line = f"* Key Enhancement: {key_enhancement}\n"
-            requests.append({
-                "insertText": {
-                    "location": {"index": current_index},
-                    "text": enhance_line
-                }
-            })
-            current_index += len(enhance_line)
-
-        # Key Deployments sub-bullets per PL
-        key_deploy_header = "* Key Deployments:\n"
+        key_deploy_header = f"* Key Deployments: {pl_list_str}\n"
         requests.append({
             "insertText": {
                 "location": {"index": current_index},
@@ -149,6 +115,7 @@ def update_google_docs(processed_data: dict) -> bool:
         })
         current_index += len(key_deploy_header)
 
+        # Key Deployments sub-bullets per PL
         for pl in product_lines:
             if pl in tldr_by_pl:
                 summary = tldr_by_pl[pl]
@@ -264,14 +231,7 @@ def update_google_docs(processed_data: dict) -> bool:
 
 
 def send_slack_notification(processed_data: dict) -> bool:
-    """Send Slack notification with processed notes.
-
-    Includes the enhanced TL;DR format:
-    - Deployments by
-    - Major Feature
-    - Key Enhancement
-    - Key Deployments per PL
-    """
+    """Send Slack notification with processed notes."""
     print("\n[Step 3b] Sending Slack notification...")
 
     try:
@@ -284,28 +244,17 @@ def send_slack_notification(processed_data: dict) -> bool:
         release_date = processed_data.get("release_summary", "").replace("Release ", "")
         tldr_by_pl = processed_data.get("tldr_by_pl", {})
         product_lines = processed_data.get("product_lines", [])
-        release_overview = processed_data.get("release_overview", {})
 
-        # Handle both old string format and new dict format
-        if isinstance(release_overview, str):
-            release_overview = {"deployments_by": "", "major_feature": "", "key_enhancement": "", "overview": release_overview}
+        # Build TL;DR summary — Version 1 format: Key Deployments with PL sub-bullets
+        deploying_pls = [pl for pl in product_lines if pl in tldr_by_pl]
+        if len(deploying_pls) == 1:
+            pl_list_str = deploying_pls[0]
+        elif len(deploying_pls) == 2:
+            pl_list_str = f"{deploying_pls[0]} and {deploying_pls[1]}"
+        else:
+            pl_list_str = ", ".join(deploying_pls[:-1]) + f", and {deploying_pls[-1]}"
 
-        # Build TL;DR summary with enhanced format
-        tldr_lines = []
-
-        deployments_by = release_overview.get("deployments_by", "")
-        if deployments_by:
-            tldr_lines.append(f"• *Deployments by:* {deployments_by}")
-
-        major_feature = release_overview.get("major_feature", "")
-        if major_feature:
-            tldr_lines.append(f"• *Major Feature:* {major_feature}")
-
-        key_enhancement = release_overview.get("key_enhancement", "")
-        if key_enhancement:
-            tldr_lines.append(f"• *Key Enhancement:* {key_enhancement}")
-
-        tldr_lines.append("• *Key Deployments:*")
+        tldr_lines = [f"*Key Deployments:* {pl_list_str}"]
         for pl in product_lines:
             if pl in tldr_by_pl:
                 tldr_lines.append(f"   • {pl} - {tldr_by_pl[pl]}")

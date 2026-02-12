@@ -320,15 +320,12 @@ Output the formatted sections now:"""
 
 def generate_release_overview_with_claude(client, release_summary: str,
                                           all_pls: dict,
-                                          tldr_by_pl: dict) -> dict:
+                                          tldr_by_pl: dict) -> str:
     """
     Generate a release-wide executive overview by reviewing all PL summaries.
 
-    Returns a dict with structured TL;DR components matching the manual prompt format:
-    - deployments_by: List of PL names (e.g., "DSP PL2 and DSP PL4")
-    - major_feature: 1-2 sentences about the biggest feature
-    - key_enhancement: 1-2 sentences about important improvements
-    - overview: 2-3 sentence executive overview paragraph
+    This is a final synthesis pass — Claude reads all the per-PL TLDRs and
+    produces a 2-3 sentence executive overview of the entire release.
     """
     # Build context: PL names, ticket counts, and TLDRs
     pl_context_lines = []
@@ -343,15 +340,6 @@ def generate_release_overview_with_claude(client, release_summary: str,
         for epics in all_pls.values()
     )
 
-    # Generate the deployments_by list
-    pl_names = list(all_pls.keys())
-    if len(pl_names) == 1:
-        deployments_by = pl_names[0]
-    elif len(pl_names) == 2:
-        deployments_by = f"{pl_names[0]} and {pl_names[1]}"
-    else:
-        deployments_by = ", ".join(pl_names[:-1]) + f", and {pl_names[-1]}"
-
     message = client.messages.create(
         model=CLAUDE_MODEL,
         max_tokens=1024,
@@ -359,7 +347,7 @@ def generate_release_overview_with_claude(client, release_summary: str,
         system=RELEASE_NOTES_SYSTEM_PROMPT,
         messages=[{
             "role": "user",
-            "content": f"""I need a structured TL;DR overview for our Daily Deployment Summary.
+            "content": f"""I need a brief executive overview for our Daily Deployment Summary.
 
 Release: {release_summary}
 Total: {total_tickets} tickets across {len(all_pls)} product lines
@@ -367,48 +355,25 @@ Total: {total_tickets} tickets across {len(all_pls)} product lines
 Per-PL summaries:
 {pl_context}
 
-Generate EXACTLY these three items, each on its own line with the exact prefix shown:
-
-Major Feature: [1-2 sentences about the single biggest/most impactful feature in this release]
-Key Enhancement: [1-2 sentences about the most important improvement or enhancement]
-Overview: [2-3 sentence executive overview capturing the most impactful themes across the ENTIRE release]
+Write a 2-3 sentence executive overview that captures the most impactful themes across \
+the ENTIRE release. This sits at the very top of the document before the TL;DR section. \
+It should give a CTO or VP-level reader an instant understanding of what's shipping today.
 
 Guidelines:
-- Major Feature should highlight the single most significant new capability
-- Key Enhancement should highlight the most impactful improvement to existing functionality
-- Overview should give a CTO or VP-level reader an instant understanding of what's shipping
-- If there's a common thread (e.g., multiple PLs doing security work), call it out in Overview
-- Mention breadth in Overview: "{len(all_pls)} product lines, {total_tickets} total changes"
-- Professional, confident tone throughout
+- Highlight the 2-3 most significant themes across all PLs
+- If there's a common thread (e.g., multiple PLs doing security work), call it out
+- Mention the breadth: "{len(all_pls)} product lines, {total_tickets} total changes"
+- Keep it to 2-3 sentences maximum
+- Professional, confident tone
 
-Output ONLY these three labeled lines — nothing else."""
+Output ONLY the overview paragraph — nothing else."""
         }]
     )
 
-    result_text = message.content[0].text.strip()
-
-    # Parse the structured response
-    overview_data = {
-        "deployments_by": deployments_by,
-        "major_feature": "",
-        "key_enhancement": "",
-        "overview": ""
-    }
-
-    for line in result_text.split("\n"):
-        line = line.strip()
-        if line.lower().startswith("major feature:"):
-            overview_data["major_feature"] = line.split(":", 1)[1].strip()
-        elif line.lower().startswith("key enhancement:"):
-            overview_data["key_enhancement"] = line.split(":", 1)[1].strip()
-        elif line.lower().startswith("overview:"):
-            overview_data["overview"] = line.split(":", 1)[1].strip()
-
-    # Fallback: if parsing didn't capture overview, use full text
-    if not overview_data["overview"]:
-        overview_data["overview"] = result_text
-
-    return overview_data
+    result = message.content[0].text.strip()
+    if result.startswith('"') and result.endswith('"'):
+        result = result[1:-1]
+    return result
 
 
 def review_and_polish_with_claude(client, product: str, body_text: str) -> str:
@@ -623,23 +588,14 @@ def process_tickets_with_claude():
     # Step 5: Generate release-wide executive overview
     # -----------------------------------------------------------------------
     print("\n[Step 2] Generating release-wide executive overview...")
-    release_overview = {"deployments_by": "", "major_feature": "", "key_enhancement": "", "overview": ""}
+    release_overview = ""
     try:
         release_overview = generate_release_overview_with_claude(
             client, release_summary, grouped, tldr_by_pl
         )
-        print(f"  -> Deployments by: {release_overview.get('deployments_by', '')}")
-        print(f"  -> Major Feature: {release_overview.get('major_feature', '')[:80]}...")
-        print(f"  -> Key Enhancement: {release_overview.get('key_enhancement', '')[:80]}...")
-        print(f"  -> Overview: {release_overview.get('overview', '')[:80]}...")
+        print(f"  -> Overview: {release_overview[:100]}...")
     except Exception as e:
         print(f"  Overview skipped: {e}")
-        # Build basic deployments_by as fallback
-        pl_names = list(grouped.keys())
-        if len(pl_names) <= 2:
-            release_overview["deployments_by"] = " and ".join(pl_names)
-        else:
-            release_overview["deployments_by"] = ", ".join(pl_names[:-1]) + f", and {pl_names[-1]}"
 
     # -----------------------------------------------------------------------
     # Step 6: Export
