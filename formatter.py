@@ -292,16 +292,18 @@ CRITICAL FORMAT RULES:
 3. Epic names as headers on their own line
 4. Include "Value Add:" header followed by the description
 5. For SINGLE item: Write inline after "Value Add:" as one sentence
-6. For MULTIPLE items: Use bullet points with asterisks (*) on separate lines
+6. For MULTIPLE items: Use bullet points with ● (filled circle) on separate lines
 7. Each bullet should start with action verb (Updated, Added, Improved, Included, Removed, Fixed, Enhanced)
 8. Explain WHAT the change does and WHY it matters (e.g., "enabling...", "to ensure...", "for better...")
 9. End each epic section with status tag on its own line: General Availability OR Feature Flag
 10. ONE blank line between epic sections
 
-FOR BUG FIXES:
+CRITICAL BUG FIX FORMAT - THIS IS MANDATORY:
 - Group all bug fixes under "Bug Fixes:" header (plural)
-- EVERY bug fix bullet MUST start with "Fixed" (e.g., "Fixed package deal targeting issue ensuring...")
-- Format: "Fixed [what was broken] issue [explanation of fix and benefit]"
+- EVERY bug fix bullet MUST start with the word "Fixed" - NO EXCEPTIONS
+- Format: "Fixed [what was broken] issue ensuring [explanation of benefit]"
+- WRONG: "● Package deals now target correctly as unified packages"
+- CORRECT: "● Fixed package deal targeting issue ensuring deals are targeted as part of the package rather than individually"
 - Use "ensuring", "enabling", "allowing" to explain the benefit of the fix
 
 Example input:
@@ -312,8 +314,8 @@ __Campaigns List Page V3__ (General Availability)
 Example output:
 Campaigns List Page V3
 Value Add:
-* Improved campaign listing by allowing top bar metrics selection independently from listing columns
-* Enhanced audit log for PG Ad Groups by removing inapplicable bid fields for improved clarity
+● Improved campaign listing by allowing top bar metrics selection independently from listing columns
+● Enhanced audit log for PG Ad Groups by removing inapplicable bid fields for improved clarity
 General Availability
 
 Example input (bug fixes):
@@ -324,9 +326,9 @@ __Bug Fixes__ (General Availability)
 
 Example output:
 Bug Fixes:
-* Fixed Add frequency button issue ensuring the button remains visible when directly deleting existing frequency on ad-group quickview
-* Fixed null date display issue in tooltip ensuring correct date formatting when hovering on graph datapoints in Goal Widget
-* Fixed package deal targeting issue ensuring deals are targeted as part of the package rather than individually when new packages are created
+● Fixed Add frequency button issue ensuring the button remains visible when directly deleting existing frequency on ad-group quickview
+● Fixed null date display issue in tooltip ensuring correct date formatting when hovering on graph datapoints in Goal Widget
+● Fixed package deal targeting issue ensuring deals are targeted as part of the package rather than individually when new packages are created
 General Availability
 
 KEY PRINCIPLES:

@@ -177,16 +177,18 @@ CRITICAL FORMAT RULES - Follow this EXACT style:
 3. Epic names as headers on their own line
 4. Include "Value Add:" header followed by the description
 5. For SINGLE item: Write inline after "Value Add:" as one sentence
-6. For MULTIPLE items: Use bullet points with asterisks (*) on separate lines
+6. For MULTIPLE items: Use bullet points with ● (filled circle) on separate lines
 7. Each bullet should start with action verb (Updated, Added, Improved, Included, Removed, Fixed, Enhanced)
 8. Explain WHAT the change does and WHY it matters (e.g., "enabling...", "to ensure...", "for better...")
 9. End each epic section with status tag on its own line: General Availability OR Feature Flag
 10. ONE blank line between epic sections
 
-FOR BUG FIXES:
+CRITICAL BUG FIX FORMAT - THIS IS MANDATORY:
 - Group all bug fixes under "Bug Fixes:" header (plural)
-- EVERY bug fix bullet MUST start with "Fixed" (e.g., "Fixed package deal targeting issue ensuring...")
-- Format: "Fixed [what was broken] issue [explanation of fix and benefit]"
+- EVERY bug fix bullet MUST start with the word "Fixed" - NO EXCEPTIONS
+- Format: "Fixed [what was broken] issue ensuring [explanation of benefit]"
+- WRONG: "● Package deals now target correctly as unified packages"
+- CORRECT: "● Fixed package deal targeting issue ensuring deals are targeted as part of the package rather than individually"
 - Use "ensuring", "enabling", "allowing" to explain the benefit of the fix
 - Put the status tag after all bug fixes
 
@@ -224,8 +226,8 @@ Items:
 CORRECT OUTPUT:
 Campaigns List Page V3
 Value Add:
-* Improved campaign listing by allowing top bar metrics selection independently from listing columns
-* Enhanced audit log for PG Ad Groups by removing inapplicable bid fields for improved clarity
+● Improved campaign listing by allowing top bar metrics selection independently from listing columns
+● Enhanced audit log for PG Ad Groups by removing inapplicable bid fields for improved clarity
 General Availability
 
 Raw Input:
@@ -239,10 +241,10 @@ Items:
 
 CORRECT OUTPUT:
 Bug Fixes:
-* Fixed Add frequency button issue ensuring the button remains visible when directly deleting existing frequency on ad-group quickview
-* Fixed null date display issue ensuring correct date formatting when hovering on graph datapoints in Goal Widget
-* Fixed ad group status change issue enabling users to change status from preview on campaign dashboard
-* Fixed package deal targeting issue ensuring deals are targeted as part of the package rather than individually when new packages are created
+● Fixed Add frequency button issue ensuring the button remains visible when directly deleting existing frequency on ad-group quickview
+● Fixed null date display issue ensuring correct date formatting when hovering on graph datapoints in Goal Widget
+● Fixed ad group status change issue enabling users to change status from preview on campaign dashboard
+● Fixed package deal targeting issue ensuring deals are targeted as part of the package rather than individually when new packages are created
 General Availability
 
 Raw Input:
@@ -255,8 +257,8 @@ Items:
 CORRECT OUTPUT:
 2FA and Passwordless support for Platform
 Value Add:
-* Renamed TOTP to "Authenticator" on Account Manager MFA slider for improved clarity and user understanding
-* Added ability to choose between EOTP and Authenticator Code on SSO UI to provide flexibility in authentication methods
+● Renamed TOTP to "Authenticator" on Account Manager MFA slider for improved clarity and user understanding
+● Added ability to choose between EOTP and Authenticator Code on SSO UI to provide flexibility in authentication methods
 Feature Flag
 
 KEY PRINCIPLES:
@@ -265,8 +267,9 @@ KEY PRINCIPLES:
 - State the ACTUAL PROBLEM SOLVED, not vague improvements
 - COMBINE related functionality into single bullets - fewer bullets is better
 - DROP low-value items that don't add meaningful information
-- Use asterisks (*) for bullet points
+- Use ● (filled circle) for bullet points
 - Start with simple verbs: Added, Fixed, Migrated, Converted, Updated
+- FOR BUG FIXES: ALWAYS start with "Fixed" - this is mandatory
 - AVOID redundant words: "simultaneously", "directly", "immediately", "dedicated", "individual"
 - AVOID padding phrases: "enhanced performance", "improved experience", "streamlined navigation", "information access"
 - Use simple phrases: "migrated to", "added to", "via bulk action" NOT "now appears in the revamped interface"
@@ -274,27 +277,27 @@ KEY PRINCIPLES:
 STYLE COMPARISON - BAD vs GOOD:
 
 BAD (too verbose, marketing fluff):
-* Users can now retrieve their complete conversation history through improved Redis checkpointer integration for each thread_id
-* Chat interface operates with enhanced performance through asynchronous LLM processing that eliminates sync client errors
-* Session management displays all user sessions in an organized sidebar with backend integration
-* Search functionality allows users to quickly locate specific conversations by searching session titles
+● Users can now retrieve their complete conversation history through improved Redis checkpointer integration for each thread_id
+● Chat interface operates with enhanced performance through asynchronous LLM processing that eliminates sync client errors
+● Session management displays all user sessions in an organized sidebar with backend integration
+● Search functionality allows users to quickly locate specific conversations by searching session titles
 
 GOOD (concise, technical, direct):
-* Users can now retrieve full conversation history from Redis checkpointer for any thread
-* LLM invoke calls converted to async (ainvoke) to resolve sync client unavailable errors in async environments
-* Session list now fetched from backend and displayed in sidebar with search functionality
-* Users can search sessions by title to quickly find and return to relevant conversations
+● Users can now retrieve full conversation history from Redis checkpointer for any thread
+● LLM invoke calls converted to async (ainvoke) to resolve sync client unavailable errors in async environments
+● Session list now fetched from backend and displayed in sidebar with search functionality
+● Users can search sessions by title to quickly find and return to relevant conversations
 
 BAD (too wordy, redundant):
-* Users can now add individual users to multiple advertisers simultaneously through bulk actions in the revamped Account Manager
-* Account Manager displays current user role tags directly on the organization details page for immediate role identification
-* Organization details page includes a dedicated tab component for streamlined navigation and information access
-* Existing ticker functionality from the previous Account Manager version now appears in the revamped interface
+● Users can now add individual users to multiple advertisers simultaneously through bulk actions in the revamped Account Manager
+● Account Manager displays current user role tags directly on the organization details page for immediate role identification
+● Organization details page includes a dedicated tab component for streamlined navigation and information access
+● Existing ticker functionality from the previous Account Manager version now appears in the revamped interface
 
 GOOD (simple, direct, fewer bullets):
-* New tab navigation component added to organization details page for improved user experience
-* Existing ticker migrated to the revamped Account Manager UI for consistency
-* Users can now add a user to multiple advertisers via bulk action for streamlined user management
+● New tab navigation component added to organization details page for improved user experience
+● Existing ticker migrated to the revamped Account Manager UI for consistency
+● Users can now add a user to multiple advertisers via bulk action for streamlined user management
 
 CONSOLIDATION - Combine related items:
 Raw items about same feature:
@@ -302,7 +305,7 @@ Raw items about same feature:
 - Ad group creation and editing flows now show mandatory conversion selections that align with campaign group level ACBA configurations
 
 CORRECT OUTPUT (consolidated):
-* ACBA-related conversions selected at Campaign Group level now display in the Ad Group builder conversions widget with appropriate enabled/disabled states for clearer visibility
+● ACBA-related conversions selected at Campaign Group level now display in the Ad Group builder conversions widget with appropriate enabled/disabled states for clearer visibility
 
 Transform sections for {product}:"""
         }]
@@ -310,20 +313,20 @@ Transform sections for {product}:"""
 
     result = message.content[0].text.strip()
 
-    # Post-process: Normalize bullet characters to asterisks
+    # Post-process: Normalize bullet characters to ● (filled circle)
     lines = result.split('\n')
     processed_lines = []
     for line in lines:
         stripped = line.lstrip()
-        # Convert various bullet characters to asterisk format
-        if stripped.startswith('● '):
-            line = line.replace('● ', '* ', 1)
+        # Convert various bullet characters to ● format
+        if stripped.startswith('* '):
+            line = line.replace('* ', '● ', 1)
         elif stripped.startswith('• '):
-            line = line.replace('• ', '* ', 1)
+            line = line.replace('• ', '● ', 1)
         elif stripped.startswith('- ') and not stripped.lower().startswith('- media') and not stripped.lower().startswith('- dsp'):
-            # Convert dash bullets to asterisks (but not if it's part of a PL name)
+            # Convert dash bullets to ● (but not if it's part of a PL name)
             if len(stripped) > 2 and stripped[2].isupper():
-                line = line.replace('- ', '* ', 1)
+                line = line.replace('- ', '● ', 1)
         processed_lines.append(line)
 
     return '\n'.join(processed_lines)
@@ -473,7 +476,7 @@ def process_tickets_with_claude():
                 for s in sections:
                     body_text += f"{s['title']}\n\nValue Add:\n"
                     for item in s['items']:
-                        body_text += f"• {item}\n"
+                        body_text += f"● {item}\n"
                     status = s.get('status', 'General Availability')
                     body_text += f"\n{status}\n\n"
                 body_by_pl[pl] = body_text

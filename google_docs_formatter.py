@@ -34,8 +34,8 @@ from collections import defaultdict
 
 
 # Color definitions (RGB values 0-1 scale for Google Docs API)
-BLUE_COLOR = {"red": 0.06, "green": 0.36, "blue": 0.7}  # Link blue
-GREEN_COLOR = {"red": 0.13, "green": 0.55, "blue": 0.13}  # Dark green for status tags
+BLUE_COLOR = {"red": 0.06, "green": 0.36, "blue": 0.7}  # Link blue - also used for "General Availability" label
+GREEN_COLOR = {"red": 0.13, "green": 0.55, "blue": 0.13}  # Dark green for "Feature Flag" and epic names
 GRAY_COLOR = {"red": 0.5, "green": 0.5, "blue": 0.5}  # Gray for section headers
 
 # Product Line order - grouped by category for consistent display
@@ -116,6 +116,7 @@ class GoogleDocsFormatter:
             "bold": [],      # [(start, end), ...]
             "links": [],     # [(start, end, url), ...]
             "green": [],     # [(start, end), ...]
+            "blue": [],      # [(start, end), ...] - for General Availability status
             "gray": [],      # [(start, end), ...]
             "heading": [],   # [(start, end, level), ...]
         }
@@ -129,6 +130,7 @@ class GoogleDocsFormatter:
             "bold": [],
             "links": [],
             "green": [],
+            "blue": [],
             "gray": [],
             "heading": [],
         }
@@ -162,8 +164,12 @@ class GoogleDocsFormatter:
         self.formatting_positions["links"].append((start, end, url))
 
     def _mark_green(self, start: int, end: int):
-        """Mark text range as green (status tags)."""
+        """Mark text range as green (Feature Flag status and epic names)."""
         self.formatting_positions["green"].append((start, end))
+
+    def _mark_blue(self, start: int, end: int):
+        """Mark text range as blue (General Availability status)."""
+        self.formatting_positions["blue"].append((start, end))
 
     def _mark_gray(self, start: int, end: int):
         """Mark text range as gray."""
@@ -358,7 +364,7 @@ class GoogleDocsFormatter:
                 elements.append({
                     "type": "status",
                     "text": stripped + "\n",
-                    "color": "green"
+                    "color": "blue"  # General Availability uses blue color
                 })
                 in_value_section = False
                 continue
@@ -367,7 +373,7 @@ class GoogleDocsFormatter:
                 elements.append({
                     "type": "status",
                     "text": stripped + "\n",
-                    "color": "green"
+                    "color": "green"  # Feature Flag uses green color
                 })
                 in_value_section = False
                 continue
@@ -561,8 +567,10 @@ class GoogleDocsFormatter:
                             if element.get("bold"):
                                 # Bold the epic name (excluding newline)
                                 self._mark_bold(elem_start, elem_end - 1)
+                            # Epic names are green colored
+                            self._mark_green(elem_start, elem_end - 1)
                             if element.get("url"):
-                                # Add hyperlink
+                                # Add hyperlink (will override green with blue link color)
                                 self._mark_link(elem_start, elem_end - 1, element["url"])
 
                         elif element["type"] in ("value_add_header", "bug_fixes_header"):
@@ -572,9 +580,11 @@ class GoogleDocsFormatter:
                                 self._mark_bold(elem_start + bold_start, elem_start + bold_end)
 
                         elif element["type"] == "status":
-                            # Green color for status tags
+                            # Color based on status type
                             if element.get("color") == "green":
                                 self._mark_green(elem_start, elem_end - 1)
+                            elif element.get("color") == "blue":
+                                self._mark_blue(elem_start, elem_end - 1)
 
                         # "prose" type has no special formatting - just regular text
 
@@ -659,7 +669,7 @@ class GoogleDocsFormatter:
                 }
             })
 
-        # Green text (status tags)
+        # Green text (Feature Flag status tags and epic names)
         for start, end in self.formatting_positions["green"]:
             if end > start:
                 self.format_requests.append({
@@ -667,6 +677,19 @@ class GoogleDocsFormatter:
                         "range": {"startIndex": start, "endIndex": end},
                         "textStyle": {
                             "foregroundColor": {"color": {"rgbColor": GREEN_COLOR}}
+                        },
+                        "fields": "foregroundColor"
+                    }
+                })
+
+        # Blue text (General Availability status tags)
+        for start, end in self.formatting_positions["blue"]:
+            if end > start:
+                self.format_requests.append({
+                    "updateTextStyle": {
+                        "range": {"startIndex": start, "endIndex": end},
+                        "textStyle": {
+                            "foregroundColor": {"color": {"rgbColor": BLUE_COLOR}}
                         },
                         "fields": "foregroundColor"
                     }
