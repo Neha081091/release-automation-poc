@@ -23,6 +23,30 @@ except ImportError:
     ANTHROPIC_AVAILABLE = False
     print("[Formatter] Warning: anthropic package not installed. LLM consolidation disabled.")
 
+# Latest Claude model and settings for high-quality release notes
+CLAUDE_MODEL = "claude-sonnet-4-5-20250929"
+CLAUDE_TEMPERATURE = 0  # Zero temperature for deterministic, consistent output
+
+# System prompt that establishes the AI as a professional release notes writer,
+# matching the quality users get when they interact with Claude AI directly.
+RELEASE_NOTES_SYSTEM_PROMPT = """You are a senior technical writer at DeepIntent, a healthcare advertising \
+technology company. You specialize in writing polished, stakeholder-facing release notes that translate \
+raw Jira ticket summaries into clear, professional deployment summaries.
+
+Your audience is Product Management Officers (PMOs), engineering leadership, and cross-functional \
+stakeholders who need to quickly understand what shipped, why it matters, and how it impacts users.
+
+Writing principles:
+- Write in clear, confident prose that a non-technical executive can understand
+- Focus on user value and business impact, not implementation details
+- Use active voice and present tense ("Users can now..." not "Added ability to...")
+- Group related changes into coherent narratives rather than listing them individually
+- Translate technical jargon into plain language (e.g., "feature flag" stays, but "IRSA-based auth" becomes "secure role-based access")
+- Maintain a professional yet approachable tone — informative without being dry
+- Be concise but complete — every word should earn its place
+- When multiple tickets describe the same integration across repositories, consolidate them into a single meaningful statement
+"""
+
 
 # Product Line mapping based on components or labels
 PRODUCT_LINE_MAPPING = {
@@ -146,26 +170,30 @@ def consolidate_tldr_with_claude(raw_summaries_by_product: Dict[str, List[str]])
             summaries_text = "\n".join([f"- {s}" for s in summaries])
 
             message = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=500,
+                model=CLAUDE_MODEL,
+                max_tokens=1024,
+                temperature=CLAUDE_TEMPERATURE,
+                system=RELEASE_NOTES_SYSTEM_PROMPT,
                 messages=[{
                     "role": "user",
-                    "content": f"""Consolidate these raw Jira ticket summaries into ONE polished prose sentence for TLDR.
+                    "content": f"""I need you to write a TL;DR summary for the "{product}" product line in our Daily Deployment Summary.
 
-Product: {product}
-Raw Summaries:
+Here are the raw Jira ticket summaries that shipped in this release:
+
 {summaries_text}
 
-Rules:
-1. Group related items conceptually (by feature area, not by change type)
-2. Use flowing narrative with semicolons separating major sections
-3. NO category labels like "usability improvements with", "data capabilities with"
-4. NO bullet points or lists
-5. Use natural connectors: "with", "including", "featuring", "spanning"
-6. Should read smoothly when spoken aloud
-7. Focus on feature areas and user impact
-8. Keep to ONE sentence (no paragraph breaks)
-9. Output ONLY the consolidated prose (no product name prefix)
+Write ONE polished prose sentence that captures all of the above. This sentence will appear in a \
+"Key Deployments" section that PMOs read to get a quick overview of what's shipping.
+
+Guidelines:
+- Consolidate related tickets into coherent themes (e.g., if 10 tickets all say "Integrating X into Y repo", \
+summarize as "X integration expanded across N repositories")
+- Separate distinct themes with semicolons
+- Use natural connectors like "with", "including", "alongside", "spanning"
+- Focus on what users/stakeholders gain, not what developers did
+- NO bullet points, NO category labels, NO product name prefix
+- Should read like a polished executive summary when spoken aloud
+- If there are security/vulnerability fixes, mention them clearly
 
 Example input:
 - Open Orders page with the last applied Status column filter
@@ -175,9 +203,11 @@ Example input:
 - Fix di-creative-service critical vulnerability
 
 Example output:
-Order listing usability improvements with multi-select status filtering, persistent filter preferences across sessions, automatic selection clearing on archive; forecasting enhancements with Deal/Exchange-derived filter logic and validation; critical security vulnerability patched in di-creative-service
+Order listing now supports multi-select status filtering with persistent preferences across sessions and \
+automatic selection clearing on archive; forecasting enhanced with Deal and Exchange-derived filter extraction \
+and validation logic; critical security vulnerability resolved in di-creative-service
 
-Now consolidate for {product}:"""
+Now write the TL;DR for {product}:"""
                 }]
             )
 
@@ -185,6 +215,9 @@ Now consolidate for {product}:"""
             # Remove product name prefix if Claude added it
             if result.lower().startswith(product.lower()):
                 result = result[len(product):].lstrip(" -:")
+            # Remove wrapping quotes if present
+            if result.startswith('"') and result.endswith('"'):
+                result = result[1:-1]
             consolidated[product] = result
             print(f"[Formatter] Consolidated TLDR for {product}")
 
@@ -229,61 +262,50 @@ def consolidate_body_sections_with_claude(product: str, release: str, sections: 
     for section in sections:
         items_list = "\n".join([f"- {item}" for item in section.get("items", [])])
         status = section.get("status", "")
-        status_text = f" ({status})" if status else ""
+        status_text = f" [Release Status: {status}]" if status else ""
         sections_text += f"\n__{section['title']}__{status_text}\n{items_list}\n"
 
     try:
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2000,
+            model=CLAUDE_MODEL,
+            max_tokens=4096,
+            temperature=CLAUDE_TEMPERATURE,
+            system=RELEASE_NOTES_SYSTEM_PROMPT,
             messages=[{
                 "role": "user",
-                "content": f"""Consolidate these raw feature sections into polished, flowing prose bullet points.
+                "content": f"""I need you to write the detailed body section for the "{product}" product line \
+({release}) in our Daily Deployment Summary document.
 
-Product: {product}
-Release: {release}
+Below are the raw Jira ticket summaries grouped by Epic. Transform them into polished, stakeholder-ready \
+release notes.
 
-Raw Sections:
+Raw feature sections:
 {sections_text}
 
-Rules for consolidation:
-1. Keep the original section structure (one section per heading)
-2. Convert raw Jira summaries into flowing, descriptive prose bullets
-3. Each bullet should be a complete, well-written sentence
-4. Use natural language that reads smoothly and explains user value
-5. Do NOT group sections together - keep them separate with their original titles
-6. Include the status flag at the end of each section (General Availability, Feature Flag, etc.)
-7. Format output as:
-   __Section Title__
+Instructions:
+- Keep each Epic as a separate section with its original title (use __Title__ format)
+- Under each section, add a "Value Add:" header
+- Write 1-3 polished bullet points (using * prefix) per section that explain the user/business value
+- Each bullet should be a complete, well-written sentence (1-2 sentences max)
+- If multiple tickets describe repetitive work (e.g., "Integrating X into repo-A", "Integrating X into repo-B", etc.), \
+consolidate them into ONE meaningful bullet that captures the scope (e.g., "X has been integrated across N key repositories \
+including repo-A, repo-B, and repo-C, enabling Y")
+- Translate developer-speak into stakeholder-friendly language
+- After the bullets, include the release status on its own line (General Availability, Feature Flag, etc.) if provided
+- Do NOT invent features — only describe what the tickets actually cover
+- Do NOT add extra sections or group epics together
 
-   Value Add:
-
-   * Polished prose bullet point 1 explaining the feature and its impact
-   * Polished prose bullet point 2 with more context and details
-   * Polished prose bullet point 3 connecting to user value
-
-   Status Flag (if applicable)
-
-8. Do NOT abbreviate or use technical jargon - explain clearly for stakeholders
-9. Each bullet should be 1-2 complete sentences
-
-Example input:
-__Forecasting in Ad Groups__
-- Add Channel , Device , Inventory , Creative Unit Length Filter Extraction & Validation Logic based on Deals / Exchanges
-- One time Pixel Audience Data in DCR Clickhouse
-
-Example output:
-__Forecasting in Ad Groups__
+Format each section exactly like this:
+__Epic Name__
 
 Value Add:
 
-* Enhanced forecasting filter logic now accurately derives Channel, Device, Inventory Type, and Creative Unit Length from attached Deals and Exchanges.
-* Validation errors now alert users when targeting configurations conflict (e.g., CTV deals attached to Banner ad groups or audio ad groups).
-* Pixel audience data is now available in DCR Clickhouse to support complex audience size calculations spanning HCP and patient campaigns.
+* Clear, stakeholder-friendly description of what shipped and why it matters.
+* Another bullet if the epic has multiple distinct deliverables.
 
-Feature Flag
+General Availability
 
-Now consolidate for {product}:"""
+Now write the body sections for {product}:"""
             }]
         )
 

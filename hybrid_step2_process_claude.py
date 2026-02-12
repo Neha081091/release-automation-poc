@@ -5,6 +5,9 @@ HYBRID STEP 2: Process with Claude API (Run on Server)
 This script reads the exported Jira tickets JSON and processes them
 with Claude API to create polished release notes.
 
+Uses the same model, system prompt, and quality settings as formatter.py
+to ensure consistent output matching direct Claude AI conversation quality.
+
 Usage:
     python hybrid_step2_process_claude.py
 
@@ -23,6 +26,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import anthropic
+from formatter import CLAUDE_MODEL, CLAUDE_TEMPERATURE, RELEASE_NOTES_SYSTEM_PROMPT
 
 
 def consolidate_with_claude(client, product: str, summaries: list) -> str:
@@ -30,34 +34,41 @@ def consolidate_with_claude(client, product: str, summaries: list) -> str:
     summaries_text = "\n".join([f"- {s}" for s in summaries])
 
     message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=500,
+        model=CLAUDE_MODEL,
+        max_tokens=1024,
+        temperature=CLAUDE_TEMPERATURE,
+        system=RELEASE_NOTES_SYSTEM_PROMPT,
         messages=[{
             "role": "user",
-            "content": f"""Consolidate these raw Jira ticket summaries into ONE polished prose sentence for TLDR.
+            "content": f"""I need you to write a TL;DR summary for the "{product}" product line in our Daily Deployment Summary.
 
-Product: {product}
-Raw Summaries:
+Here are the raw Jira ticket summaries that shipped in this release:
+
 {summaries_text}
 
-Rules:
-1. Group related items conceptually (by feature area, not by change type)
-2. Use flowing narrative with semicolons separating major sections
-3. NO category labels like "usability improvements with", "data capabilities with"
-4. NO bullet points or lists
-5. Use natural connectors: "with", "including", "featuring", "spanning"
-6. Should read smoothly when spoken aloud
-7. Focus on feature areas and user impact
-8. Keep to ONE sentence (no paragraph breaks)
-9. Output ONLY the consolidated prose (no product name prefix)
+Write ONE polished prose sentence that captures all of the above. This sentence will appear in a \
+"Key Deployments" section that PMOs read to get a quick overview of what's shipping.
 
-Now consolidate for {product}:"""
+Guidelines:
+- Consolidate related tickets into coherent themes (e.g., if 10 tickets all say "Integrating X into Y repo", \
+summarize as "X integration expanded across N repositories")
+- Separate distinct themes with semicolons
+- Use natural connectors like "with", "including", "alongside", "spanning"
+- Focus on what users/stakeholders gain, not what developers did
+- NO bullet points, NO category labels, NO product name prefix
+- Should read like a polished executive summary when spoken aloud
+- If there are security/vulnerability fixes, mention them clearly
+
+Now write the TL;DR for {product}:"""
         }]
     )
 
     result = message.content[0].text.strip()
     if result.lower().startswith(product.lower()):
         result = result[len(product):].lstrip(" -:")
+    # Remove wrapping quotes if present
+    if result.startswith('"') and result.endswith('"'):
+        result = result[1:-1]
     return result
 
 
@@ -67,41 +78,48 @@ def consolidate_body_with_claude(client, product: str, sections: list) -> str:
     for section in sections:
         items_list = "\n".join([f"- {item}" for item in section.get("items", [])])
         status = section.get("status", "")
-        status_text = f" ({status})" if status else ""
+        status_text = f" [Release Status: {status}]" if status else ""
         sections_text += f"\n__{section['title']}__{status_text}\n{items_list}\n"
 
     message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=2000,
+        model=CLAUDE_MODEL,
+        max_tokens=4096,
+        temperature=CLAUDE_TEMPERATURE,
+        system=RELEASE_NOTES_SYSTEM_PROMPT,
         messages=[{
             "role": "user",
-            "content": f"""Consolidate these raw feature sections into polished, flowing prose bullet points.
+            "content": f"""I need you to write the detailed body section for the "{product}" product line \
+in our Daily Deployment Summary document.
 
-Product: {product}
+Below are the raw Jira ticket summaries grouped by Epic. Transform them into polished, stakeholder-ready \
+release notes.
 
-Raw Sections:
+Raw feature sections:
 {sections_text}
 
-Rules for consolidation:
-1. Keep the original section structure (one section per heading)
-2. Convert raw Jira summaries into flowing, descriptive prose bullets
-3. Each bullet should be a complete, well-written sentence
-4. Use natural language that reads smoothly and explains user value
-5. Do NOT group sections together - keep them separate with their original titles
-6. Include the status flag at the end of each section (General Availability, Feature Flag, etc.)
-7. Format output as:
-   __Section Title__
+Instructions:
+- Keep each Epic as a separate section with its original title (use __Title__ format)
+- Under each section, add a "Value Add:" header
+- Write 1-3 polished bullet points (using * prefix) per section that explain the user/business value
+- Each bullet should be a complete, well-written sentence (1-2 sentences max)
+- If multiple tickets describe repetitive work (e.g., "Integrating X into repo-A", "Integrating X into repo-B", etc.), \
+consolidate them into ONE meaningful bullet that captures the scope
+- Translate developer-speak into stakeholder-friendly language
+- After the bullets, include the release status on its own line if provided
+- Do NOT invent features — only describe what the tickets actually cover
+- Do NOT add extra sections or group epics together
 
-   Value Add:
+Format each section exactly like this:
+__Epic Name__
 
-   * Polished prose bullet point 1 explaining the feature and its impact
-   * Polished prose bullet point 2 with more context and details
+Value Add:
 
-   Status Flag (if applicable)
+* Clear, stakeholder-friendly description of what shipped and why it matters.
+* Another bullet if the epic has multiple distinct deliverables.
 
-8. Do NOT abbreviate or use technical jargon - explain clearly for stakeholders
+General Availability
 
-Now consolidate for {product}:"""
+Now write the body sections for {product}:"""
         }]
     )
 
