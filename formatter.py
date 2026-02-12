@@ -182,18 +182,18 @@ Here are the raw Jira ticket summaries that shipped in this release:
 
 {summaries_text}
 
-Write ONE polished prose sentence that captures all of the above. This sentence will appear in a \
-"Key Deployments" section that PMOs read to get a quick overview of what's shipping.
+Write a concise TL;DR summary that will appear as a sub-bullet under "Key Deployments:" \
+in this format:
+   * {product} - [brief description of what shipped, focusing on user/business value]
 
 Guidelines:
 - Consolidate related tickets into coherent themes (e.g., if 10 tickets all say "Integrating X into Y repo", \
 summarize as "X integration expanded across N repositories")
 - Separate distinct themes with semicolons
-- Use natural connectors like "with", "including", "alongside", "spanning"
 - Focus on what users/stakeholders gain, not what developers did
-- NO bullet points, NO category labels, NO product name prefix
-- Should read like a polished executive summary when spoken aloud
+- Do NOT include the product name prefix — output ONLY the description part after the dash
 - If there are security/vulnerability fixes, mention them clearly
+- Keep it concise but informative — this is a quick-scan summary for leadership
 
 Example input:
 - Open Orders page with the last applied Status column filter
@@ -207,7 +207,7 @@ Order listing now supports multi-select status filtering with persistent prefere
 automatic selection clearing on archive; forecasting enhanced with Deal and Exchange-derived filter extraction \
 and validation logic; critical security vulnerability resolved in di-creative-service
 
-Now write the TL;DR for {product}:"""
+Now write the TL;DR description for {product} (without the product name prefix):"""
                 }]
             )
 
@@ -231,7 +231,8 @@ Now write the TL;DR for {product}:"""
 
 def consolidate_body_sections_with_claude(product: str, release: str, sections: List[Dict]) -> str:
     """
-    Consolidates raw feature sections into flowing prose bullet points.
+    Consolidates raw feature sections into polished release notes matching
+    the exact format used in the manual Claude AI prompt.
 
     Args:
         product: Product name (e.g., "DSP Core PL1")
@@ -239,12 +240,19 @@ def consolidate_body_sections_with_claude(product: str, release: str, sections: 
         sections: List of section dicts with structure:
             {
                 "title": "Epic Name",
+                "url": "https://...",  # Epic URL for hyperlink
                 "items": ["item 1", "item 2"],
+                "bug_items": ["bug 1", "bug 2"],  # Optional bug items
                 "status": "General Availability" or "Feature Flag"
             }
 
     Returns:
-        Consolidated body text with flowing prose bullets
+        Consolidated body text with:
+        - #### [Epic Name](url) headings
+        - **Value Add**: bold format
+        - Flat bullet points
+        - Separate Bug Fixes section
+        - GA/FF availability tags
     """
     if not ANTHROPIC_AVAILABLE:
         print("[Formatter] Anthropic not available, returning raw sections")
@@ -257,13 +265,20 @@ def consolidate_body_sections_with_claude(product: str, release: str, sections: 
 
     client = anthropic.Anthropic(api_key=api_key)
 
-    # Format sections for Claude
+    # Format sections for Claude with URLs and bug separation
     sections_text = ""
     for section in sections:
-        items_list = "\n".join([f"- {item}" for item in section.get("items", [])])
+        epic_url = section.get("url", "#")
+        items_list = "\n".join([f"- (Story/Task) {item}" for item in section.get("items", [])])
+        bug_items = section.get("bug_items", [])
+        bugs_list = "\n".join([f"- (Bug) {item}" for item in bug_items])
         status = section.get("status", "")
-        status_text = f" [Release Status: {status}]" if status else ""
-        sections_text += f"\n__{section['title']}__{status_text}\n{items_list}\n"
+        status_text = f"\nRelease Status: {status}" if status else ""
+        sections_text += f"\n=== Epic: {section['title']} ===\nEpic URL: {epic_url}{status_text}\n"
+        if items_list:
+            sections_text += f"Feature items:\n{items_list}\n"
+        if bugs_list:
+            sections_text += f"Bug items:\n{bugs_list}\n"
 
     try:
         message = client.messages.create(
@@ -282,28 +297,29 @@ release notes.
 Raw feature sections:
 {sections_text}
 
-Instructions:
-- Keep each Epic as a separate section with its original title (use __Title__ format)
-- Under each section, add a "Value Add:" header
-- Write 1-3 polished bullet points (using * prefix) per section that explain the user/business value
-- Each bullet should be a complete, well-written sentence (1-2 sentences max)
-- If multiple tickets describe repetitive work (e.g., "Integrating X into repo-A", "Integrating X into repo-B", etc.), \
-consolidate them into ONE meaningful bullet that captures the scope (e.g., "X has been integrated across N key repositories \
-including repo-A, repo-B, and repo-C, enabling Y")
-- Translate developer-speak into stakeholder-friendly language
-- After the bullets, include the release status on its own line (General Availability, Feature Flag, etc.) if provided
-- Do NOT invent features — only describe what the tickets actually cover
-- Do NOT add extra sections or group epics together
+Write polished release notes following this EXACT format for each epic:
 
-Format each section exactly like this:
-__Epic Name__
-
-Value Add:
-
+#### [Epic Name](epic_url)
+**Value Add**:
 * Clear, stakeholder-friendly description of what shipped and why it matters.
 * Another bullet if the epic has multiple distinct deliverables.
-
 General Availability
+
+If the epic has Bug tickets, add them separately:
+
+**Bug Fixes:**
+* Fixed issue where [description]
+
+Rules:
+- Use the Epic URL provided to create markdown hyperlinks: [Epic Name](epic_url)
+- "**Value Add**:" must be bold (use ** markdown) followed by a colon
+- Keep bullet points simple and FLAT — no sub-bullets or nested lists
+- Separate Bug tickets into a "**Bug Fixes:**" section after value-adds
+- Add the availability tag (General Availability or Feature Flag) on its own line after value-add bullets
+- If multiple tickets describe repetitive work, consolidate into ONE bullet
+- Translate developer-speak into stakeholder-friendly language
+- Do NOT invent features — only describe what the tickets actually cover
+- Do NOT add extra sections, introductions, or conclusions
 
 Now write the body sections for {product}:"""
             }]
@@ -319,16 +335,26 @@ Now write the body sections for {product}:"""
 
 
 def _format_raw_sections_fallback(sections: List[Dict]) -> str:
-    """Fallback formatting when LLM is not available."""
+    """Fallback formatting when LLM is not available.
+
+    Matches the new format: #### [Epic Name](url), **Value Add**:, flat bullets, Bug Fixes.
+    """
     output = []
     for section in sections:
-        output.append(f"{section['title']}\n")
-        output.append("Value Add:")
+        epic_url = section.get("url", "#")
+        output.append(f"#### [{section['title']}]({epic_url})")
+        output.append("**Value Add**:")
         for item in section.get("items", []):
-            output.append(f"   * {item}")
+            output.append(f"* {item}")
         status = section.get("status", "")
         if status:
-            output.append(f"\n{status}\n")
+            output.append(status)
+        bug_items = section.get("bug_items", [])
+        if bug_items:
+            output.append("")
+            output.append("**Bug Fixes:**")
+            for item in bug_items:
+                output.append(f"* {item}")
         output.append("")
     return "\n".join(output)
 

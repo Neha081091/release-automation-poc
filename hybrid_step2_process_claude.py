@@ -83,17 +83,44 @@ def _build_full_ticket_context(tickets: list) -> str:
 def _build_epic_sections_context(epics: dict) -> str:
     """
     Build structured context grouped by Epic, with full ticket details.
+
+    Includes epic URLs, fix version URLs, and labels so Claude can:
+    - Create hyperlinks for epic names
+    - Determine GA/FF status from story labels
+    - Separate bugs from stories for the Bug Fixes section
     """
     sections = []
     for epic_name, epic_tickets in epics.items():
-        sections.append(f"=== Epic: {epic_name} ===")
+        # Get epic URL from first ticket that has it
+        epic_url = ""
+        for t in epic_tickets:
+            if t.get("epic_url"):
+                epic_url = t["epic_url"]
+                break
 
-        # Determine release status for this epic
+        sections.append(f"=== Epic: {epic_name} ===")
+        if epic_url:
+            sections.append(f"Epic URL: {epic_url}")
+
+        # Determine release status for this epic from labels and release_type
         statuses = set()
         for t in epic_tickets:
             rt = t.get("release_type")
             if rt:
                 statuses.add(rt)
+            # For stories (not bugs), check labels for GA/FF
+            if t.get("issue_type", "").lower() in ("story", "task"):
+                labels = t.get("labels", [])
+                for label in labels:
+                    label_lower = label.lower()
+                    if "general" in label_lower and "availability" in label_lower:
+                        statuses.add("General Availability")
+                    elif "feature" in label_lower and "flag" in label_lower:
+                        statuses.add("Feature Flag")
+                    elif label_lower in ("ga", "general_availability"):
+                        statuses.add("General Availability")
+                    elif label_lower in ("ff", "feature_flag", "featureflag"):
+                        statuses.add("Feature Flag")
         if statuses:
             sections.append(f"Release Status: {', '.join(statuses)}")
 
@@ -105,8 +132,10 @@ def _build_epic_sections_context(epics: dict) -> str:
             summary = t.get("summary", "")
             description = (t.get("description") or "").strip()
             issue_type = t.get("issue_type", "")
+            labels = ", ".join(t.get("labels", [])) or "—"
 
             sections.append(f"  [{key}] ({issue_type}) {summary}")
+            sections.append(f"    Labels: {labels}")
             if description and description.lower() != summary.lower():
                 desc_clean = " ".join(description.split())
                 if len(desc_clean) > 500:
@@ -126,6 +155,9 @@ def generate_tldr_with_claude(client, product: str, fix_version: str,
                               epics: dict) -> str:
     """
     Generate a polished TL;DR for one Product Line using full ticket context.
+
+    Output matches the "Key Deployments" sub-bullet format from the manual prompt:
+      * DSP Core PL3 - Feature description with user impact; second theme with details
 
     Unlike the old approach that only passed summaries, this sends descriptions,
     issue types, priorities, and labels — giving Claude the same information
@@ -156,22 +188,29 @@ actually shipped, not just the Jira summary titles:
 
 {ticket_context}
 
-Now write ONE polished prose sentence that captures the essence of this deployment. \
-This sentence will appear in a "Key Deployments" section that PMOs and leadership read \
-for a quick overview.
+Write a concise TL;DR summary that will appear as a sub-bullet under "Key Deployments:" \
+in this format:
+
+   * {product} - [brief description of what shipped, focusing on user/business value]
+
+EXAMPLE format (from a real deployment summary):
+   * Audiences PL1 - Channel chart scale updated to use 4MM HCP Universe for better \
+visualization of reach differences between EHR and other channels; improved scale \
+readability when filters are applied
+   * DSP Core PL2 - Unique Reach now auto-enabled as default primary goal for new ad \
+groups and templates; Outcomes reports with 'REQUESTED' state ad groups now visible \
+(~50 analyses); SmartBid template added to Reporting Listing V2
 
 Guidelines:
 - Read the descriptions to understand the real user impact — don't just rephrase the titles
-- Consolidate related tickets into coherent themes (e.g., 10 "Integrating X into Y repo" \
-tickets become "X integration expanded across N repositories")
+- Consolidate related tickets into coherent themes
 - Separate distinct themes with semicolons
-- Use natural connectors: "with", "including", "alongside", "spanning"
 - Focus on what users and stakeholders gain, not what developers built
-- NO bullet points, NO category labels, NO product name prefix
 - If there are security or vulnerability fixes, call them out explicitly
-- Should read like a polished executive summary when spoken aloud
+- Keep it concise but informative — this is a quick-scan summary for leadership
+- Do NOT include the product name prefix — output ONLY the description part after the dash
 
-Output ONLY the single summary sentence — nothing else."""
+Output ONLY the summary description (without the product name prefix) — nothing else."""
         }]
     )
 
@@ -181,6 +220,8 @@ Output ONLY the single summary sentence — nothing else."""
         result = result[len(product):].lstrip(" -:")
     if result.startswith('"') and result.endswith('"'):
         result = result[1:-1]
+    # Remove leading dash/bullet if Claude added one
+    result = result.lstrip("*- ").strip()
     return result
 
 
@@ -191,6 +232,13 @@ def generate_body_with_claude(client, product: str, fix_version: str,
 
     Sends complete ticket data including descriptions so Claude can write
     stakeholder-quality prose — the same output you'd get in a direct Claude AI chat.
+
+    Output format matches the exact structure used in the manual Claude AI prompt:
+    - Epic names as markdown hyperlinks: #### [Epic Name](url)
+    - **Value Add**: bold with colon
+    - Flat bullet points (no sub-bullets)
+    - Separate Bug Fixes section for bugs
+    - GA/FF availability tags after value-adds
     """
     epic_context = _build_epic_sections_context(epics)
 
@@ -214,30 +262,54 @@ reflect in the release notes:
 
 {epic_context}
 
-Write polished, stakeholder-ready release notes following this exact structure for EACH epic:
+Write polished, stakeholder-ready release notes following this EXACT structure for EACH epic:
 
-__Epic Name__
+#### [Epic Name](epic_url)
+**Value Add**:
+* A clear, stakeholder-friendly sentence explaining what shipped and why it matters.
+* Another bullet if the epic has multiple distinct deliverables.
+General Availability
 
-Value Add:
+OR for multiple value-adds:
 
-* A clear, stakeholder-friendly sentence explaining what shipped and why it matters. \
-Draw from the ticket descriptions to explain the real user value — not just the Jira title.
-* Another bullet if the epic has multiple distinct deliverables. Each bullet should be \
-1-2 complete sentences.
+#### [Epic Name](epic_url)
+**Value Add**:
+* First value-add bullet explaining user benefit
+* Second value-add bullet explaining user benefit
+Feature Flag
 
-Release Status (on its own line, e.g., "General Availability" or "Feature Flag")
+If the epic has Bug tickets, add them in a separate section AFTER the value-adds:
+
+**Bug Fixes:**
+* Fixed issue where [description of what was broken and what was fixed]
+* Fixed [another bug description]
+
+EXAMPLE of a complete epic section:
+
+#### [Campaigns List Page V3](https://deepintent.atlassian.net/browse/DI-12345)
+**Value Add**:
+* Improved campaign listing by allowing top bar metrics selection independently from listing columns
+* Enhanced audit log for PG Ad Groups by removing inapplicable bid fields for improved clarity
+General Availability
+
+**Bug Fixes:**
+* Fixed issue where Add frequency button disappears when directly deleting existing frequency on ad-group quickview
+* Fixed null date display in tooltip when hovering on graph datapoints in Goal Widget
 
 Critical rules:
+- Use the Epic URL provided in the data to create markdown hyperlinks: [Epic Name](epic_url)
+- "**Value Add**:" must be bold (use ** markdown) followed by a colon
+- Keep bullet points simple and FLAT — no sub-bullets or nested lists
+- Separate Bug tickets (issue_type=Bug) into a "**Bug Fixes:**" section after value-adds
+- For story/task tickets (not bugs), check the Labels field for GA/FF information
+- Add the availability tag (General Availability or Feature Flag) on its own line after value-add bullets
+- If multiple tickets in an epic describe the same work across different repos, consolidate into ONE bullet
 - Keep each Epic as a SEPARATE section — do NOT merge epics together
-- Use the original Epic name as the section title in __Title__ format
-- If multiple tickets in an epic describe the same integration across different \
-repositories, consolidate them into ONE bullet that names the key repos and explains \
-the overall purpose
-- Draw from the ticket descriptions to explain WHY the change matters, not just WHAT changed
+- Draw from ticket descriptions to explain WHY the change matters, not just WHAT changed
 - Translate developer jargon into language a PMO or executive would understand
-- Only include the Release Status line if one was specified (General Availability, Feature Flag)
-- Do NOT invent features or benefits that aren't supported by the ticket data
+- Do NOT invent features or benefits not supported by the ticket data
 - Do NOT add an introduction or conclusion — jump straight into the first epic section
+- Exclude the release ticket itself from the summary
 
 Output the formatted sections now:"""
         }]
@@ -248,14 +320,15 @@ Output the formatted sections now:"""
 
 def generate_release_overview_with_claude(client, release_summary: str,
                                           all_pls: dict,
-                                          tldr_by_pl: dict) -> str:
+                                          tldr_by_pl: dict) -> dict:
     """
     Generate a release-wide executive overview by reviewing all PL summaries.
 
-    This is a final synthesis pass — Claude reads all the per-PL TLDRs and
-    produces a 2-3 sentence executive overview of the entire release. This
-    mirrors what you'd get in a Claude AI conversation if you asked
-    "Now give me a high-level overview of this whole release."
+    Returns a dict with structured TL;DR components matching the manual prompt format:
+    - deployments_by: List of PL names (e.g., "DSP PL2 and DSP PL4")
+    - major_feature: 1-2 sentences about the biggest feature
+    - key_enhancement: 1-2 sentences about important improvements
+    - overview: 2-3 sentence executive overview paragraph
     """
     # Build context: PL names, ticket counts, and TLDRs
     pl_context_lines = []
@@ -270,6 +343,15 @@ def generate_release_overview_with_claude(client, release_summary: str,
         for epics in all_pls.values()
     )
 
+    # Generate the deployments_by list
+    pl_names = list(all_pls.keys())
+    if len(pl_names) == 1:
+        deployments_by = pl_names[0]
+    elif len(pl_names) == 2:
+        deployments_by = f"{pl_names[0]} and {pl_names[1]}"
+    else:
+        deployments_by = ", ".join(pl_names[:-1]) + f", and {pl_names[-1]}"
+
     message = client.messages.create(
         model=CLAUDE_MODEL,
         max_tokens=1024,
@@ -277,7 +359,7 @@ def generate_release_overview_with_claude(client, release_summary: str,
         system=RELEASE_NOTES_SYSTEM_PROMPT,
         messages=[{
             "role": "user",
-            "content": f"""I need a brief executive overview for our Daily Deployment Summary.
+            "content": f"""I need a structured TL;DR overview for our Daily Deployment Summary.
 
 Release: {release_summary}
 Total: {total_tickets} tickets across {len(all_pls)} product lines
@@ -285,25 +367,48 @@ Total: {total_tickets} tickets across {len(all_pls)} product lines
 Per-PL summaries:
 {pl_context}
 
-Write a 2-3 sentence executive overview that captures the most impactful themes across \
-the ENTIRE release. This sits at the very top of the document before the TL;DR section. \
-It should give a CTO or VP-level reader an instant understanding of what's shipping today.
+Generate EXACTLY these three items, each on its own line with the exact prefix shown:
+
+Major Feature: [1-2 sentences about the single biggest/most impactful feature in this release]
+Key Enhancement: [1-2 sentences about the most important improvement or enhancement]
+Overview: [2-3 sentence executive overview capturing the most impactful themes across the ENTIRE release]
 
 Guidelines:
-- Highlight the 2-3 most significant themes across all PLs
-- If there's a common thread (e.g., multiple PLs doing security work), call it out
-- Mention the breadth: "{len(all_pls)} product lines, {total_tickets} total changes"
-- Keep it to 2-3 sentences maximum
-- Professional, confident tone
+- Major Feature should highlight the single most significant new capability
+- Key Enhancement should highlight the most impactful improvement to existing functionality
+- Overview should give a CTO or VP-level reader an instant understanding of what's shipping
+- If there's a common thread (e.g., multiple PLs doing security work), call it out in Overview
+- Mention breadth in Overview: "{len(all_pls)} product lines, {total_tickets} total changes"
+- Professional, confident tone throughout
 
-Output ONLY the overview paragraph — nothing else."""
+Output ONLY these three labeled lines — nothing else."""
         }]
     )
 
-    result = message.content[0].text.strip()
-    if result.startswith('"') and result.endswith('"'):
-        result = result[1:-1]
-    return result
+    result_text = message.content[0].text.strip()
+
+    # Parse the structured response
+    overview_data = {
+        "deployments_by": deployments_by,
+        "major_feature": "",
+        "key_enhancement": "",
+        "overview": ""
+    }
+
+    for line in result_text.split("\n"):
+        line = line.strip()
+        if line.lower().startswith("major feature:"):
+            overview_data["major_feature"] = line.split(":", 1)[1].strip()
+        elif line.lower().startswith("key enhancement:"):
+            overview_data["key_enhancement"] = line.split(":", 1)[1].strip()
+        elif line.lower().startswith("overview:"):
+            overview_data["overview"] = line.split(":", 1)[1].strip()
+
+    # Fallback: if parsing didn't capture overview, use full text
+    if not overview_data["overview"]:
+        overview_data["overview"] = result_text
+
+    return overview_data
 
 
 def review_and_polish_with_claude(client, product: str, body_text: str) -> str:
@@ -311,8 +416,12 @@ def review_and_polish_with_claude(client, product: str, body_text: str) -> str:
     Final quality review pass — Claude reviews its own body output for consistency,
     readability, and formatting correctness.
 
-    This mirrors the iterative refinement you'd do in a direct Claude AI conversation:
-    "Can you review this and fix any issues?"
+    Validates against the exact format used in the manual Claude AI prompt:
+    - #### [Epic Name](url) headings
+    - **Value Add**: bold format
+    - Flat bullets only
+    - Separate Bug Fixes section
+    - GA/FF availability tags
     """
     message = client.messages.create(
         model=CLAUDE_MODEL,
@@ -326,13 +435,27 @@ def review_and_polish_with_claude(client, product: str, body_text: str) -> str:
 
 {body_text}
 
-Review and fix ONLY if there are actual issues:
-1. Formatting: Every epic must follow __Title__, then blank line, then "Value Add:", \
-then blank line, then "* " bullets, then release status if present
-2. Clarity: Each bullet should be a complete sentence a PMO can understand
-3. Accuracy: Bullets should not claim features or benefits not supported by the titles
-4. Consolidation: Repetitive items (e.g., same integration across repos) should be one bullet
-5. No extra sections, introductions, or conclusions
+Review and fix ONLY if there are actual issues. The format must match this exact structure:
+
+#### [Epic Name](url)
+**Value Add**:
+* Flat bullet describing user value
+* Another flat bullet if needed
+General Availability
+
+**Bug Fixes:**
+* Fixed issue where [description]
+
+Validation checklist:
+1. Formatting: Every epic must use #### [Epic Name](url) as the heading
+2. "**Value Add**:" must be bold (wrapped in **) followed by a colon
+3. Bullet points must be flat — NO sub-bullets or nested lists
+4. Bug tickets must be in a separate "**Bug Fixes:**" section (not mixed with value-adds)
+5. Availability tags (General Availability / Feature Flag) must be on their own line after bullets
+6. Clarity: Each bullet should be a complete sentence a PMO can understand
+7. Accuracy: Bullets should not claim features or benefits not supported by the ticket data
+8. Consolidation: Repetitive items (e.g., same integration across repos) should be one bullet
+9. No extra sections, introductions, or conclusions
 
 If the draft is already good, return it unchanged. Output ONLY the final release notes."""
             }
@@ -393,6 +516,8 @@ def process_tickets_with_claude():
     # -----------------------------------------------------------------------
     grouped = defaultdict(lambda: defaultdict(list))
     fix_versions = {}
+    fix_version_urls = {}
+    epic_urls = {}
 
     for ticket in tickets:
         fix_version = ticket.get("fix_version", "")
@@ -409,6 +534,10 @@ def process_tickets_with_claude():
 
         if pl not in fix_versions:
             fix_versions[pl] = fix_version
+        if pl not in fix_version_urls and ticket.get("fix_version_url"):
+            fix_version_urls[pl] = ticket["fix_version_url"]
+        if epic_name not in epic_urls and ticket.get("epic_url"):
+            epic_urls[epic_name] = ticket["epic_url"]
 
     print(f"[Step 2] Grouped into {len(grouped)} product lines:")
     for pl, epics in grouped.items():
@@ -449,18 +578,32 @@ def process_tickets_with_claude():
             print(f"  -> {pl}: generated ({len(body_by_pl[pl])} chars)")
         except Exception as e:
             print(f"  ERROR {pl}: {e}")
-            # Fallback to raw formatting
+            # Fallback to raw formatting matching new format
             body_text = ""
             for epic_name, epic_tickets in epics.items():
-                body_text += f"__{epic_name}__\n\nValue Add:\n"
+                epic_url = ""
+                for t in epic_tickets:
+                    if t.get("epic_url"):
+                        epic_url = t["epic_url"]
+                        break
+                body_text += f"#### [{epic_name}]({epic_url})\n"
+                body_text += "**Value Add**:\n"
+                bug_fixes = []
                 for t in epic_tickets:
                     if t.get("summary"):
-                        body_text += f"   * {t['summary']}\n"
+                        if t.get("issue_type", "").lower() == "bug":
+                            bug_fixes.append(t["summary"])
+                        else:
+                            body_text += f"* {t['summary']}\n"
                 # Check for release type
                 for t in epic_tickets:
                     if t.get("release_type"):
-                        body_text += f"\n{t['release_type']}\n"
+                        body_text += f"{t['release_type']}\n"
                         break
+                if bug_fixes:
+                    body_text += "\n**Bug Fixes:**\n"
+                    for fix in bug_fixes:
+                        body_text += f"* {fix}\n"
                 body_text += "\n"
             body_by_pl[pl] = body_text
 
@@ -480,14 +623,23 @@ def process_tickets_with_claude():
     # Step 5: Generate release-wide executive overview
     # -----------------------------------------------------------------------
     print("\n[Step 2] Generating release-wide executive overview...")
-    release_overview = ""
+    release_overview = {"deployments_by": "", "major_feature": "", "key_enhancement": "", "overview": ""}
     try:
         release_overview = generate_release_overview_with_claude(
             client, release_summary, grouped, tldr_by_pl
         )
-        print(f"  -> Overview: {release_overview[:100]}...")
+        print(f"  -> Deployments by: {release_overview.get('deployments_by', '')}")
+        print(f"  -> Major Feature: {release_overview.get('major_feature', '')[:80]}...")
+        print(f"  -> Key Enhancement: {release_overview.get('key_enhancement', '')[:80]}...")
+        print(f"  -> Overview: {release_overview.get('overview', '')[:80]}...")
     except Exception as e:
         print(f"  Overview skipped: {e}")
+        # Build basic deployments_by as fallback
+        pl_names = list(grouped.keys())
+        if len(pl_names) <= 2:
+            release_overview["deployments_by"] = " and ".join(pl_names)
+        else:
+            release_overview["deployments_by"] = ", ".join(pl_names[:-1]) + f", and {pl_names[-1]}"
 
     # -----------------------------------------------------------------------
     # Step 6: Export
@@ -504,6 +656,8 @@ def process_tickets_with_claude():
         "tldr_by_pl": tldr_by_pl,
         "body_by_pl": body_by_pl,
         "fix_versions": fix_versions,
+        "fix_version_urls": fix_version_urls,
+        "epic_urls": epic_urls,
         "grouped_data": {
             pl: {
                 epic: [t["key"] for t in tickets]

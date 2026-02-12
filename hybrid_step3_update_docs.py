@@ -18,6 +18,7 @@ Output:
 
 import json
 import os
+import re
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -27,8 +28,27 @@ from google_docs_handler import GoogleDocsHandler
 from slack_handler import SlackHandler
 
 
+def _extract_release_number(fix_version: str) -> str:
+    """Extract the release number from a fix version string.
+
+    Examples:
+        "DSP Core PL3 2025: Release 23.0" -> "Release 23.0"
+        "Developer Experience 2026 : Release 6.0" -> "Release 6.0"
+    """
+    match = re.search(r'(Release\s+[\d.]+)', fix_version)
+    return match.group(1) if match else fix_version
+
+
 def update_google_docs(processed_data: dict) -> bool:
-    """Update Google Docs with processed notes."""
+    """Update Google Docs with processed notes.
+
+    Document format matches the manual Claude AI prompt output:
+    - Title: Daily Deployment Summary: [Date]
+    - TL;DR section with Key Deployments, Major Feature, Key Enhancement
+    - Team sections with ------------------DSP------------------ separators
+    - PL headers: DSP PL3: Release 23.0 (with hyperlink to fix version)
+    - Body with #### [Epic Name](url), **Value Add**:, bullets, GA/FF tags
+    """
     print("\n[Step 3a] Updating Google Docs...")
 
     try:
@@ -50,6 +70,13 @@ def update_google_docs(processed_data: dict) -> bool:
         tldr_by_pl = processed_data.get("tldr_by_pl", {})
         body_by_pl = processed_data.get("body_by_pl", {})
         product_lines = processed_data.get("product_lines", [])
+        fix_versions = processed_data.get("fix_versions", {})
+        fix_version_urls = processed_data.get("fix_version_urls", {})
+        release_overview = processed_data.get("release_overview", {})
+
+        # Handle both old string format and new dict format for release_overview
+        if isinstance(release_overview, str):
+            release_overview = {"deployments_by": "", "major_feature": "", "key_enhancement": "", "overview": release_overview}
 
         # Build requests for Google Docs API
         requests = []
@@ -65,7 +92,7 @@ def update_google_docs(processed_data: dict) -> bool:
         })
         current_index += len(title)
 
-        # TL;DR Section
+        # TL;DR Section Header
         tldr_header = "------------------TL;DR:------------------\n\n"
         requests.append({
             "insertText": {
@@ -75,8 +102,45 @@ def update_google_docs(processed_data: dict) -> bool:
         })
         current_index += len(tldr_header)
 
-        # Key Deployments
-        key_deploy_header = "Key Deployments:\n"
+        # Deployments by line
+        deployments_by = release_overview.get("deployments_by", "")
+        if not deployments_by:
+            deployments_by = ", ".join(product_lines)
+        deploy_by_line = f"* Deployments by: {deployments_by}\n"
+        requests.append({
+            "insertText": {
+                "location": {"index": current_index},
+                "text": deploy_by_line
+            }
+        })
+        current_index += len(deploy_by_line)
+
+        # Major Feature line (Version 2 format)
+        major_feature = release_overview.get("major_feature", "")
+        if major_feature:
+            major_line = f"* Major Feature: {major_feature}\n"
+            requests.append({
+                "insertText": {
+                    "location": {"index": current_index},
+                    "text": major_line
+                }
+            })
+            current_index += len(major_line)
+
+        # Key Enhancement line (Version 2 format)
+        key_enhancement = release_overview.get("key_enhancement", "")
+        if key_enhancement:
+            enhance_line = f"* Key Enhancement: {key_enhancement}\n"
+            requests.append({
+                "insertText": {
+                    "location": {"index": current_index},
+                    "text": enhance_line
+                }
+            })
+            current_index += len(enhance_line)
+
+        # Key Deployments sub-bullets per PL
+        key_deploy_header = "* Key Deployments:\n"
         requests.append({
             "insertText": {
                 "location": {"index": current_index},
@@ -85,11 +149,10 @@ def update_google_docs(processed_data: dict) -> bool:
         })
         current_index += len(key_deploy_header)
 
-        # TL;DR per PL
         for pl in product_lines:
             if pl in tldr_by_pl:
                 summary = tldr_by_pl[pl]
-                deploy_line = f"   • {pl} - {summary}\n"
+                deploy_line = f"   * {pl} - {summary}\n"
                 requests.append({
                     "insertText": {
                         "location": {"index": current_index},
@@ -107,38 +170,86 @@ def update_google_docs(processed_data: dict) -> bool:
         })
         current_index += 1
 
-        # Body sections per PL
+        # Determine team groupings from PLs (e.g., "DSP" from "DSP Core PL3")
+        team_pls = {}
         for pl in product_lines:
-            # PL Header
-            pl_header = f"------------------{pl}------------------\n\n"
+            # Extract team prefix (e.g., "DSP" from "DSP Core PL3", "Audiences" from "Audiences PL1")
+            team = pl.split()[0] if pl.split() else pl
+            if team not in team_pls:
+                team_pls[team] = []
+            team_pls[team].append(pl)
+
+        # Body sections grouped by team
+        for team, pls in team_pls.items():
+            # Team separator
+            team_header = f"------------------{team}------------------\n\n"
             requests.append({
                 "insertText": {
                     "location": {"index": current_index},
-                    "text": pl_header
+                    "text": team_header
                 }
             })
-            current_index += len(pl_header)
+            current_index += len(team_header)
 
-            # Approval checkboxes
-            approval_text = "☐ Yes   ☐ No   ☐ Release Tomorrow\n\n"
-            requests.append({
-                "insertText": {
-                    "location": {"index": current_index},
-                    "text": approval_text
-                }
-            })
-            current_index += len(approval_text)
+            for pl in pls:
+                # PL Header with release version (e.g., "DSP PL3: Release 23.0")
+                fv = fix_versions.get(pl, "")
+                release_num = _extract_release_number(fv)
+                fv_url = fix_version_urls.get(pl, "")
 
-            # Body content (polished from Claude)
-            if pl in body_by_pl:
-                body_text = body_by_pl[pl] + "\n\n"
+                if fv_url:
+                    pl_title = f"{pl}: {release_num}\n"
+                else:
+                    pl_title = f"{pl}: {release_num}\n"
+
                 requests.append({
                     "insertText": {
                         "location": {"index": current_index},
-                        "text": body_text
+                        "text": pl_title
                     }
                 })
-                current_index += len(body_text)
+                # Store position for hyperlink on the release number
+                release_num_start = current_index + len(f"{pl}: ")
+                release_num_end = release_num_start + len(release_num)
+                current_index += len(pl_title)
+
+                # Add hyperlink to the release number if URL available
+                if fv_url:
+                    requests.append({
+                        "updateTextStyle": {
+                            "range": {
+                                "startIndex": release_num_start,
+                                "endIndex": release_num_end
+                            },
+                            "textStyle": {
+                                "link": {"url": fv_url},
+                                "foregroundColor": {
+                                    "color": {"rgbColor": {"blue": 0.8, "red": 0.06, "green": 0.36}}
+                                }
+                            },
+                            "fields": "link,foregroundColor"
+                        }
+                    })
+
+                # Blank line after PL header
+                requests.append({
+                    "insertText": {
+                        "location": {"index": current_index},
+                        "text": "\n"
+                    }
+                })
+                current_index += 1
+
+                # Body content (polished from Claude)
+                if pl in body_by_pl:
+                    body_text = body_by_pl[pl] + "\n\n"
+                    requests.append({
+                        "insertText": {
+                            "location": {"index": current_index},
+                            "text": body_text
+                        }
+                    })
+                    current_index += len(body_text)
 
         # Clear and update document
         google_docs.clear_document()
@@ -153,7 +264,14 @@ def update_google_docs(processed_data: dict) -> bool:
 
 
 def send_slack_notification(processed_data: dict) -> bool:
-    """Send Slack notification with processed notes."""
+    """Send Slack notification with processed notes.
+
+    Includes the enhanced TL;DR format:
+    - Deployments by
+    - Major Feature
+    - Key Enhancement
+    - Key Deployments per PL
+    """
     print("\n[Step 3b] Sending Slack notification...")
 
     try:
@@ -166,12 +284,31 @@ def send_slack_notification(processed_data: dict) -> bool:
         release_date = processed_data.get("release_summary", "").replace("Release ", "")
         tldr_by_pl = processed_data.get("tldr_by_pl", {})
         product_lines = processed_data.get("product_lines", [])
+        release_overview = processed_data.get("release_overview", {})
 
-        # Build TL;DR summary
-        tldr_lines = ["*Key Deployments:*"]
+        # Handle both old string format and new dict format
+        if isinstance(release_overview, str):
+            release_overview = {"deployments_by": "", "major_feature": "", "key_enhancement": "", "overview": release_overview}
+
+        # Build TL;DR summary with enhanced format
+        tldr_lines = []
+
+        deployments_by = release_overview.get("deployments_by", "")
+        if deployments_by:
+            tldr_lines.append(f"• *Deployments by:* {deployments_by}")
+
+        major_feature = release_overview.get("major_feature", "")
+        if major_feature:
+            tldr_lines.append(f"• *Major Feature:* {major_feature}")
+
+        key_enhancement = release_overview.get("key_enhancement", "")
+        if key_enhancement:
+            tldr_lines.append(f"• *Key Enhancement:* {key_enhancement}")
+
+        tldr_lines.append("• *Key Deployments:*")
         for pl in product_lines:
             if pl in tldr_by_pl:
-                tldr_lines.append(f"   • {pl}: {tldr_by_pl[pl]}")
+                tldr_lines.append(f"   • {pl} - {tldr_by_pl[pl]}")
 
         tldr_summary = "\n".join(tldr_lines)
 
