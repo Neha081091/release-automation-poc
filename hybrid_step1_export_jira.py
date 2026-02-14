@@ -22,14 +22,40 @@ load_dotenv()
 from jira_handler import JiraHandler
 
 
+def _ordinal(day: int) -> str:
+    """Return day with ordinal suffix (1st, 2nd, 3rd, 4th, ...)."""
+    if 11 <= day <= 13:
+        return f"{day}th"
+    return f"{day}{['th','st','nd','rd','th','th','th','th','th','th'][day % 10]}"
+
+
+def _today_release_summary() -> str:
+    """Build 'Release 14th February 2026' for today's date."""
+    today = datetime.now()
+    return f"Release {_ordinal(today.day)} {today.strftime('%B %Y')}"
+
+
+def is_weekday() -> bool:
+    """Return True if today is Monday-Friday."""
+    return datetime.now().weekday() < 5  # 0=Mon … 4=Fri
+
+
 def export_jira_tickets():
     """Fetch Jira tickets and export to JSON."""
     print("=" * 60)
     print("  HYBRID STEP 1: Export Jira Tickets")
     print("=" * 60)
 
-    release_summary = os.getenv('RELEASE_TICKET_SUMMARY', 'Release 2nd February 2026')
+    # Weekend guard
+    if not is_weekday():
+        day_name = datetime.now().strftime('%A')
+        print(f"\n[Step 1] Today is {day_name} — no releases on weekends. Skipping.")
+        return None
+
+    # Auto-detect today's release summary; fall back to env override
+    release_summary = os.getenv('RELEASE_TICKET_SUMMARY') or _today_release_summary()
     project_key = os.getenv('JIRA_PROJECT_KEY', 'DI')
+    print(f"\n[Step 1] Auto-detected today's release: {release_summary}")
 
     print(f"\n[Step 1] Connecting to Jira...")
     jira = JiraHandler()

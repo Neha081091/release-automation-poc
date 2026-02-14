@@ -306,15 +306,21 @@ def main():
     # Update Google Docs
     docs_success = update_google_docs(processed_data)
 
-    # Send Slack notification
-    slack_success = send_slack_notification(processed_data)
+    # Only send Slack notification if Google Docs was actually updated.
+    # If docs were skipped (e.g., duplicate detection), skip Slack too
+    # to avoid re-sending approval requests for an old release.
+    slack_success = False
+    if docs_success:
+        slack_success = send_slack_notification(processed_data)
+    else:
+        print("\n[Step 3b] Skipping Slack notification — Google Docs was not updated")
 
     # Summary
     print("\n" + "=" * 60)
     print("  HYBRID WORKFLOW COMPLETE")
     print("=" * 60)
-    print(f"  Google Docs: {'✅ SUCCESS' if docs_success else '❌ FAILED'}")
-    print(f"  Slack:       {'✅ SUCCESS' if slack_success else '❌ FAILED'}")
+    print(f"  Google Docs: {'✅ SUCCESS' if docs_success else '❌ FAILED / SKIPPED'}")
+    print(f"  Slack:       {'✅ SUCCESS' if slack_success else '❌ SKIPPED (no doc update)'}")
     print("=" * 60)
 
 

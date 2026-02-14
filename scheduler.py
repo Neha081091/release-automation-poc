@@ -304,8 +304,9 @@ View logs:
     # Create scheduler
     scheduler = BlockingScheduler()
 
-    # Add the daily job
+    # Add the weekday-only job (Monday-Friday)
     trigger = CronTrigger(
+        day_of_week='mon-fri',
         hour=Config.SCHEDULE_HOUR,
         minute=Config.SCHEDULE_MINUTE,
         timezone=Config.TIMEZONE

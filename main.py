@@ -30,6 +30,24 @@ from google_docs_handler import GoogleDocsHandler, create_formatted_requests
 from slack_handler import SlackHandler
 
 
+def _ordinal(day: int) -> str:
+    """Return day with ordinal suffix (1st, 2nd, 3rd, 4th, ...)."""
+    if 11 <= day <= 13:
+        return f"{day}th"
+    return f"{day}{['th','st','nd','rd','th','th','th','th','th','th'][day % 10]}"
+
+
+def _today_date_str() -> str:
+    """Return today's date formatted like '14th February 2026'."""
+    today = datetime.now()
+    return f"{_ordinal(today.day)} {today.strftime('%B %Y')}"
+
+
+def is_weekday() -> bool:
+    """Return True if today is Monday-Friday."""
+    return datetime.now().weekday() < 5  # 0=Mon … 4=Fri
+
+
 def print_banner():
     """Print application banner."""
     print("""
@@ -431,6 +449,13 @@ def run_release_automation(release_date: str = None, skip_approval: bool = False
         "success": False
     }
 
+    # Weekend guard
+    if not is_weekday():
+        day_name = datetime.now().strftime('%A')
+        print(f"\n[WORKFLOW] Today is {day_name} — no releases on weekends. Exiting.")
+        results["error"] = "Weekend — no releases"
+        return results
+
     # STEP 1: Fetch Jira tickets
     release_ticket, linked_tickets = step1_fetch_jira_tickets()
     results["steps"]["1_jira"] = {
@@ -439,7 +464,13 @@ def run_release_automation(release_date: str = None, skip_approval: bool = False
     }
 
     if not linked_tickets:
-        print("\n[WORKFLOW] Cannot continue without tickets. Exiting.")
+        print("\n[WORKFLOW] No release found for today. Sending Slack notification...")
+        try:
+            slack = SlackHandler()
+            if slack.test_connection():
+                slack.send_no_release_notification(_today_date_str())
+        except Exception as e:
+            print(f"[WORKFLOW] Could not send no-release Slack notification: {e}")
         results["error"] = "No tickets found"
         return results
 

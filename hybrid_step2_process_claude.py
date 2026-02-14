@@ -466,6 +466,14 @@ def process_tickets_with_claude():
     with open(input_file, 'r') as f:
         export_data = json.load(f)
 
+    # Validate that export data is from today (prevent stale data processing)
+    exported_at = export_data.get("exported_at", "")
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    if exported_at and not exported_at.startswith(today_str):
+        print(f"[Step 2] ERROR: tickets_export.json is stale (exported {exported_at[:10]}, today is {today_str})")
+        print("[Step 2] Re-run hybrid_step1_export_jira.py to get fresh data")
+        return None
+
     tickets = export_data.get("tickets", [])
     release_summary = export_data.get("release_summary", "")
     print(f"[Step 2] Loaded {len(tickets)} tickets from {input_file}")

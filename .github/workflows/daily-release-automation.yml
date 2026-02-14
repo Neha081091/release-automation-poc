@@ -1,9 +1,9 @@
 name: Daily Release Automation
 
-# Run daily at 12:00 PM IST (6:30 AM UTC)
+# Run weekdays only at 12:00 PM IST (6:30 AM UTC), Monday-Friday
 on:
   schedule:
-    - cron: '30 6 * * *'  # 6:30 AM UTC = 12:00 PM IST
+    - cron: '30 6 * * 1-5'  # 6:30 AM UTC = 12:00 PM IST, Mon-Fri only
 
   # Allow manual trigger from GitHub UI
   workflow_dispatch:

@@ -164,6 +164,34 @@ class SlackHandler:
             print(f"[Slack] Error sending message: {e.response['error']}")
             return None
 
+    def send_no_release_notification(self, today_date: str, channel: str = None) -> Optional[Dict]:
+        """
+        Send a 'No release planned for today' notification to Slack.
+
+        Args:
+            today_date: Today's date string (e.g., "13th February 2026")
+            channel: Target channel (uses default if not provided)
+
+        Returns:
+            API response or None on failure
+        """
+        print("[Slack] Sending 'no release planned' notification...")
+
+        blocks = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"No release planned for today ({today_date})."
+                }
+            }
+        ]
+
+        return self.send_message(
+            f"No release planned for today ({today_date}).",
+            channel, blocks
+        )
+
     def send_review_notification(self, release_date: str, doc_url: str,
                                  tldr_summary: str, channel: str = None) -> Optional[Dict]:
         """

@@ -30,6 +30,35 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _ordinal(day: int) -> str:
+    """Return day with ordinal suffix (1st, 2nd, 3rd, 4th, ...)."""
+    if 11 <= day <= 13:
+        return f"{day}th"
+    return f"{day}{['th','st','nd','rd','th','th','th','th','th','th'][day % 10]}"
+
+
+def _today_date_str() -> str:
+    """Return today's date formatted like '14th February 2026'."""
+    today = datetime.now()
+    return f"{_ordinal(today.day)} {today.strftime('%B %Y')}"
+
+
+def is_weekday() -> bool:
+    """Return True if today is Monday-Friday."""
+    return datetime.now().weekday() < 5  # 0=Mon … 4=Fri
+
+
+def _send_no_release_slack():
+    """Send 'No release planned for today' Slack notification."""
+    try:
+        from slack_handler import SlackHandler
+        slack = SlackHandler()
+        if slack.test_connection():
+            slack.send_no_release_notification(_today_date_str())
+    except Exception as e:
+        print(f"[Slack] Could not send no-release notification: {e}")
+
+
 def run_command(cmd, description=""):
     """Run a shell command and return output."""
     print(f"  → {description or cmd}")
@@ -44,6 +73,12 @@ def step1_export_jira():
     print("\n" + "=" * 60)
     print("  STEP 1: Export Jira Tickets")
     print("=" * 60)
+
+    # Weekend guard
+    if not is_weekday():
+        day_name = datetime.now().strftime('%A')
+        print(f"\n[Step 1] Today is {day_name} — no releases on weekends. Skipping.")
+        return False
 
     # Import and run export
     from hybrid_step1_export_jira import export_jira_tickets
@@ -141,8 +176,17 @@ def full_workflow():
     print("  FULL AUTOMATED WORKFLOW")
     print("=" * 60)
 
-    # Step 1: Export
+    # Weekend guard
+    if not is_weekday():
+        day_name = datetime.now().strftime('%A')
+        print(f"\n[Workflow] Today is {day_name} — no releases on weekends. Skipping.")
+        return False
+
+    # Step 1: Export — abort entire pipeline if no release found
     if not step1_export_jira():
+        print("\n[Workflow] No release ticket found or export failed.")
+        print("[Workflow] Sending 'no release planned' Slack notification...")
+        _send_no_release_slack()
         return False
 
     print("\n[Workflow] Waiting for server to process...")
@@ -175,7 +219,8 @@ def main():
     args = parser.parse_args()
 
     if args.export:
-        step1_export_jira()
+        if not step1_export_jira():
+            _send_no_release_slack()
     elif args.process:
         step2_process_claude()
     elif args.update:
