@@ -11,6 +11,7 @@ This module handles all Google Docs operations:
 import os
 import json
 import pickle
+import re
 from typing import List, Dict, Optional, Tuple
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -298,6 +299,46 @@ class GoogleDocsHandler:
         except HttpError as e:
             print(f"[Google Docs] Connection test failed: {e}")
             return False
+
+
+def _parse_markdown_bold(text: str) -> Tuple[str, List[Tuple[int, int]]]:
+    """Parse **bold** markers from text and return clean text plus bold ranges.
+
+    Args:
+        text: Text that may contain **bold** markdown markers.
+
+    Returns:
+        Tuple of (clean_text, bold_ranges) where bold_ranges is a list of
+        (start, end) tuples representing character positions in the clean
+        text that should be bold.
+    """
+    clean_parts = []
+    bold_ranges = []
+    current_pos = 0
+    i = 0
+
+    while i < len(text):
+        if text[i:i+2] == '**':
+            # Find the closing **
+            end = text.find('**', i + 2)
+            if end != -1:
+                bold_start = current_pos
+                bold_text = text[i+2:end]
+                clean_parts.append(bold_text)
+                current_pos += len(bold_text)
+                bold_ranges.append((bold_start, current_pos))
+                i = end + 2
+            else:
+                # No closing **, treat as literal
+                clean_parts.append(text[i])
+                current_pos += 1
+                i += 1
+        else:
+            clean_parts.append(text[i])
+            current_pos += 1
+            i += 1
+
+    return ''.join(clean_parts), bold_ranges
 
 
 def parse_fix_version(fix_version: str) -> Tuple[str, str]:
@@ -609,14 +650,74 @@ def create_formatted_requests(release_date: str, grouped_data: Dict,
             # Use LLM-consolidated body text (polished prose)
             consolidated_text = consolidated_bodies[pl]
             if consolidated_text:
-                # Add the consolidated body text
-                body_text = f"{consolidated_text}\n\n"
+                # Parse markdown **bold** markers from Claude output
+                clean_text, bold_ranges = _parse_markdown_bold(consolidated_text)
+                body_text = f"{clean_text}\n\n"
+                body_start = current_index
                 requests.append({
                     "insertText": {
                         "location": {"index": current_index},
                         "text": body_text
                     }
                 })
+
+                # Reset bold for entire body to prevent style inheritance
+                requests.append({
+                    "updateTextStyle": {
+                        "range": {
+                            "startIndex": body_start,
+                            "endIndex": body_start + len(body_text)
+                        },
+                        "textStyle": {"bold": False},
+                        "fields": "bold"
+                    }
+                })
+
+                # Apply bold to markdown-marked ranges
+                for bold_s, bold_e in bold_ranges:
+                    requests.append({
+                        "updateTextStyle": {
+                            "range": {
+                                "startIndex": body_start + bold_s,
+                                "endIndex": body_start + bold_e
+                            },
+                            "textStyle": {"bold": True},
+                            "fields": "bold"
+                        }
+                    })
+
+                # Apply green color to GA/FF availability tags
+                for ga_match in re.finditer(r'General Availability', clean_text):
+                    requests.append({
+                        "updateTextStyle": {
+                            "range": {
+                                "startIndex": body_start + ga_match.start(),
+                                "endIndex": body_start + ga_match.end()
+                            },
+                            "textStyle": {
+                                "foregroundColor": {
+                                    "color": {"rgbColor": {"red": 0.0, "green": 0.6, "blue": 0.0}}
+                                }
+                            },
+                            "fields": "foregroundColor"
+                        }
+                    })
+                for ff_match in re.finditer(r'Feature Flag', clean_text):
+                    requests.append({
+                        "updateTextStyle": {
+                            "range": {
+                                "startIndex": body_start + ff_match.start(),
+                                "endIndex": body_start + ff_match.end()
+                            },
+                            "textStyle": {
+                                "foregroundColor": {
+                                    "color": {"rgbColor": {"red": 0.13, "green": 0.55, "blue": 0.13}}
+                                }
+                            },
+                            "fields": "foregroundColor"
+                        }
+                    })
+
                 current_index += len(body_text)
         else:
             # Fallback: Process epics individually (raw Jira summaries)

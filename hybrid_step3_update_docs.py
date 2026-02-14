@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from google_docs_handler import GoogleDocsHandler
+from google_docs_handler import GoogleDocsHandler, _parse_markdown_bold
 from slack_handler import SlackHandler
 
 
@@ -209,13 +209,74 @@ def update_google_docs(processed_data: dict) -> bool:
 
                 # Body content (polished from Claude)
                 if pl in body_by_pl:
-                    body_text = body_by_pl[pl] + "\n\n"
+                    # Parse markdown **bold** markers from Claude output
+                    clean_text, bold_ranges = _parse_markdown_bold(body_by_pl[pl])
+                    body_text = clean_text + "\n\n"
+                    body_start = current_index
                     requests.append({
                         "insertText": {
                             "location": {"index": current_index},
                             "text": body_text
                         }
                     })
+
+                    # Reset bold for entire body to prevent style inheritance
+                    requests.append({
+                        "updateTextStyle": {
+                            "range": {
+                                "startIndex": body_start,
+                                "endIndex": body_start + len(body_text)
+                            },
+                            "textStyle": {"bold": False},
+                            "fields": "bold"
+                        }
+                    })
+
+                    # Apply bold to markdown-marked ranges
+                    for bold_s, bold_e in bold_ranges:
+                        requests.append({
+                            "updateTextStyle": {
+                                "range": {
+                                    "startIndex": body_start + bold_s,
+                                    "endIndex": body_start + bold_e
+                                },
+                                "textStyle": {"bold": True},
+                                "fields": "bold"
+                            }
+                        })
+
+                    # Apply green color to GA/FF availability tags
+                    for ga_match in re.finditer(r'General Availability', clean_text):
+                        requests.append({
+                            "updateTextStyle": {
+                                "range": {
+                                    "startIndex": body_start + ga_match.start(),
+                                    "endIndex": body_start + ga_match.end()
+                                },
+                                "textStyle": {
+                                    "foregroundColor": {
+                                        "color": {"rgbColor": {"red": 0.0, "green": 0.6, "blue": 0.0}}
+                                    }
+                                },
+                                "fields": "foregroundColor"
+                            }
+                        })
+                    for ff_match in re.finditer(r'Feature Flag', clean_text):
+                        requests.append({
+                            "updateTextStyle": {
+                                "range": {
+                                    "startIndex": body_start + ff_match.start(),
+                                    "endIndex": body_start + ff_match.end()
+                                },
+                                "textStyle": {
+                                    "foregroundColor": {
+                                        "color": {"rgbColor": {"red": 0.13, "green": 0.55, "blue": 0.13}}
+                                    }
+                                },
+                                "fields": "foregroundColor"
+                            }
+                        })
+
                     current_index += len(body_text)
 
         # Clear and update document
