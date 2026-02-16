@@ -259,7 +259,8 @@ def step2_update_google_doc(formatter: ReleaseNotesFormatter) -> Tuple[bool, str
 
 
 def step3_send_slack_notification(release_date: str, doc_url: str,
-                                  tldr_summary: str) -> Tuple[bool, Optional[Dict]]:
+                                  tldr_summary: str,
+                                  pl_names: list = None) -> Tuple[bool, Optional[Dict]]:
     """
     STEP 3: Send Slack Notification to PMOs.
 
@@ -267,6 +268,7 @@ def step3_send_slack_notification(release_date: str, doc_url: str,
         release_date: Release date string
         doc_url: Google Doc URL
         tldr_summary: TL;DR summary text
+        pl_names: List of product line names for per-PL dropdowns
 
     Returns:
         Tuple of (success, message_info)
@@ -288,7 +290,8 @@ def step3_send_slack_notification(release_date: str, doc_url: str,
         result = slack.send_review_notification(
             release_date=release_date,
             doc_url=doc_url,
-            tldr_summary=tldr_summary
+            tldr_summary=tldr_summary,
+            pl_names=pl_names or []
         )
 
         if result:
@@ -500,11 +503,12 @@ def run_release_automation(release_date: str = None, skip_approval: bool = False
             doc_url = f"https://docs.google.com/document/d/{doc_url}/edit"
 
     # STEP 3: Send Slack notification
-    tldr_summary = formatter.get_tldr_for_slack()
+    pl_names = list(formatter.grouped_data.keys()) if formatter.grouped_data else []
     slack_success, message_info = step3_send_slack_notification(
         release_date=formatter.release_date,
         doc_url=doc_url,
-        tldr_summary=tldr_summary
+        tldr_summary="",
+        pl_names=pl_names
     )
     results["steps"]["3_slack_notification"] = {
         "success": slack_success,
@@ -652,24 +656,17 @@ Examples:
 
         formatter = ReleaseNotesFormatter(release_date)
         formatter.process_tickets(tickets)
-        # Skip LLM consolidation — build TL;DR directly
-        tldr = formatter.generate_tldr(use_llm=False)
-        lines = ["*Key Deployments:*"]
-        for deployment in tldr.get("key_deployments", []):
-            pl_name = deployment["pl"]
-            version = deployment.get("version", "")
-            summary = deployment.get("summary", "")
-            if version:
-                lines.append(f"   \u2022 {pl_name} ({version}): {summary}")
-            else:
-                lines.append(f"   \u2022 {pl_name}: {summary}")
-        tldr_summary = "\n".join(lines)
+
+        # Extract PL names from grouped data
+        pl_names = list(formatter.grouped_data.keys()) if formatter.grouped_data else []
 
         doc_id = os.getenv('GOOGLE_DOC_ID', '')
         doc_url = f"https://docs.google.com/document/d/{doc_id}/edit" if doc_id else ""
 
-        # Send only the Slack notification
-        success, result = step3_send_slack_notification(release_date, doc_url, tldr_summary)
+        # Send the Slack notification with per-PL dropdowns
+        success, result = step3_send_slack_notification(
+            release_date, doc_url, "", pl_names=pl_names
+        )
         sys.exit(0 if success else 1)
 
     # Refresh mode: re-fetch tickets from Jira under existing fix versions
@@ -721,10 +718,10 @@ Examples:
                 return
 
         if args.step >= 3 and formatter:
-            tldr_summary = formatter.get_tldr_for_slack()
+            pl_names = list(formatter.grouped_data.keys()) if formatter.grouped_data else []
             doc_id = os.getenv('GOOGLE_DOC_ID', '')
             doc_url = f"https://docs.google.com/document/d/{doc_id}/edit" if doc_id else ""
-            step3_send_slack_notification(formatter.release_date, doc_url, tldr_summary)
+            step3_send_slack_notification(formatter.release_date, doc_url, "", pl_names=pl_names)
             if args.step == 3:
                 return
 
