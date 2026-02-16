@@ -429,8 +429,14 @@ class ReleaseNotesFormatter:
         return self.grouped_data
 
     def _is_release_ticket(self, ticket: Dict) -> bool:
-        """Check if a ticket is a release ticket (to be excluded)."""
+        """Check if a ticket is a release ticket or deployment tracker (to be excluded)."""
         summary = ticket.get("summary", "").lower()
+        issue_type = ticket.get("issue_type", "").lower()
+
+        # Exclude Deployment Tracker tickets
+        if "deployment" in issue_type and "tracker" in issue_type:
+            return True
+
         return "release" in summary and any(
             keyword in summary for keyword in ["deployment", "release notes", "release "]
         )

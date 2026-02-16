@@ -493,6 +493,11 @@ def process_tickets_with_claude():
     epic_urls = {}
 
     for ticket in tickets:
+        # Skip Deployment Tracker tickets — they are internal and should not appear in release notes
+        issue_type = ticket.get("issue_type", "").lower()
+        if "deployment" in issue_type and "tracker" in issue_type:
+            continue
+
         fix_version = ticket.get("fix_version", "")
         # Parse PL from fix version
         match = re.match(r'^(.+?)\s*\d{4}:\s*Release', fix_version)
