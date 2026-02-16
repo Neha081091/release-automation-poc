@@ -652,7 +652,18 @@ Examples:
 
         formatter = ReleaseNotesFormatter(release_date)
         formatter.process_tickets(tickets)
-        tldr_summary = formatter.get_tldr_for_slack()
+        # Skip LLM consolidation — build TL;DR directly
+        tldr = formatter.generate_tldr(use_llm=False)
+        lines = ["*Key Deployments:*"]
+        for deployment in tldr.get("key_deployments", []):
+            pl_name = deployment["pl"]
+            version = deployment.get("version", "")
+            summary = deployment.get("summary", "")
+            if version:
+                lines.append(f"   \u2022 {pl_name} ({version}): {summary}")
+            else:
+                lines.append(f"   \u2022 {pl_name}: {summary}")
+        tldr_summary = "\n".join(lines)
 
         doc_id = os.getenv('GOOGLE_DOC_ID', '')
         doc_url = f"https://docs.google.com/document/d/{doc_id}/edit" if doc_id else ""
