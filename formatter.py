@@ -173,6 +173,7 @@ def consolidate_tldr_with_claude(raw_summaries_by_product: Dict[str, List[str]])
 
             message = client.messages.create(
                 model="claude-opus-4-5-20250918",
+                temperature=0,
                 max_tokens=500,
                 messages=[{
                     "role": "user",
@@ -275,6 +276,7 @@ def consolidate_body_sections_with_claude(product: str, release: str, sections: 
     try:
         message = client.messages.create(
             model="claude-opus-4-5-20250918",
+            temperature=0,
             max_tokens=2000,
             messages=[{
                 "role": "user",

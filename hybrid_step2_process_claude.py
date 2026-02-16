@@ -99,6 +99,7 @@ def consolidate_with_claude(client, product: str, summaries: list, statuses: lis
 
     message = client.messages.create(
         model="claude-opus-4-5-20250918",
+        temperature=0,
         max_tokens=500,
         messages=[{
             "role": "user",
@@ -160,6 +161,7 @@ def consolidate_body_with_claude(client, product: str, sections: list, release_v
 
     message = client.messages.create(
         model="claude-opus-4-5-20250918",
+        temperature=0,
         max_tokens=2000,
         messages=[{
             "role": "user",
