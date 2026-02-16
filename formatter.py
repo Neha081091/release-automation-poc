@@ -315,7 +315,8 @@ Rules:
 - "**Value Add**:" must be bold (use ** markdown) followed by a colon
 - Keep bullet points simple and FLAT — no sub-bullets or nested lists
 - Separate Bug tickets into a "**Bug Fixes:**" section after value-adds
-- Add the availability tag (General Availability or Feature Flag) on its own line after value-add bullets
+- Add the availability tag (General Availability or Feature Flag) on its own line after value-add bullets ONLY for stories/tasks
+- NEVER add availability tags (General Availability or Feature Flag) to the Bug Fixes section
 - If multiple tickets describe repetitive work, consolidate into ONE bullet
 - Translate developer-speak into stakeholder-friendly language
 - Do NOT invent features — only describe what the tickets actually cover

@@ -103,12 +103,15 @@ def _build_epic_sections_context(epics: dict) -> str:
             sections.append(f"Epic URL: {epic_url}")
 
         # Determine release status for this epic from labels and release_type
+        # Only derive availability from stories/tasks — bugs should NOT carry GA/FF tags
         statuses = set()
         for t in epic_tickets:
+            if t.get("issue_type", "").lower() == "bug":
+                continue
             rt = t.get("release_type")
             if rt:
                 statuses.add(rt)
-            # For stories (not bugs), check labels for GA/FF
+            # For stories/tasks, check labels for GA/FF
             if t.get("issue_type", "").lower() in ("story", "task"):
                 labels = t.get("labels", [])
                 for label in labels:
@@ -302,7 +305,8 @@ Critical rules:
 - Keep bullet points simple and FLAT — no sub-bullets or nested lists
 - Separate Bug tickets (issue_type=Bug) into a "**Bug Fixes:**" section after value-adds
 - For story/task tickets (not bugs), check the Labels field for GA/FF information
-- Add the availability tag (General Availability or Feature Flag) on its own line after value-add bullets
+- Add the availability tag (General Availability or Feature Flag) on its own line after value-add bullets ONLY for stories/tasks
+- NEVER add availability tags (General Availability or Feature Flag) to the Bug Fixes section
 - If multiple tickets in an epic describe the same work across different repos, consolidate into ONE bullet
 - Keep each Epic as a SEPARATE section — do NOT merge epics together
 - Draw from ticket descriptions to explain WHY the change matters, not just WHAT changed
@@ -416,7 +420,7 @@ Validation checklist:
 2. "**Value Add**:" must be bold (wrapped in **) followed by a colon
 3. Bullet points must be flat — NO sub-bullets or nested lists
 4. Bug tickets must be in a separate "**Bug Fixes:**" section (not mixed with value-adds)
-5. Availability tags (General Availability / Feature Flag) must be on their own line after bullets
+5. Availability tags (General Availability / Feature Flag) must be on their own line after value-add bullets ONLY — NEVER after Bug Fixes
 6. Clarity: Each bullet should be a complete sentence a PMO can understand
 7. Accuracy: Bullets should not claim features or benefits not supported by the ticket data
 8. Consolidation: Repetitive items (e.g., same integration across repos) should be one bullet
@@ -573,9 +577,9 @@ def process_tickets_with_claude():
                             bug_fixes.append(t["summary"])
                         else:
                             body_text += f"* {t['summary']}\n"
-                # Check for release type
+                # Check for release type (only from stories/tasks, not bugs)
                 for t in epic_tickets:
-                    if t.get("release_type"):
+                    if t.get("issue_type", "").lower() != "bug" and t.get("release_type"):
                         body_text += f"{t['release_type']}\n"
                         break
                 if bug_fixes:
