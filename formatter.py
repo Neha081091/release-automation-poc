@@ -172,7 +172,7 @@ def consolidate_tldr_with_claude(raw_summaries_by_product: Dict[str, List[str]])
             summaries_text = "\n".join([f"- {s}" for s in summaries])
 
             message = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-5-20250929",
                 max_tokens=500,
                 messages=[{
                     "role": "user",
@@ -274,7 +274,7 @@ def consolidate_body_sections_with_claude(product: str, release: str, sections: 
 
     try:
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=2000,
             messages=[{
                 "role": "user",

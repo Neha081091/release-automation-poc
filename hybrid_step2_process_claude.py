@@ -98,7 +98,7 @@ def consolidate_with_claude(client, product: str, summaries: list, statuses: lis
         has_feature_flag = any("feature flag" in str(s).lower() for s in statuses if s)
 
     message = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-5-20250929",
         max_tokens=500,
         messages=[{
             "role": "user",
@@ -159,7 +159,7 @@ def consolidate_body_with_claude(client, product: str, sections: list, release_v
         sections_text += f"\nEpic: {section['title']}\nStatus: {status}\nItems:\n{items_list}\n"
 
     message = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-5-20250929",
         max_tokens=2000,
         messages=[{
             "role": "user",
