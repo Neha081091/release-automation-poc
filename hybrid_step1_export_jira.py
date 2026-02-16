@@ -100,6 +100,17 @@ def export_jira_tickets(release_date_str: str = None):
 
     print(f"[Step 1] Found {len(linked_tickets)} tickets")
 
+    # Filter out Hotfix tickets
+    original_count = len(linked_tickets)
+    linked_tickets = [
+        t for t in linked_tickets
+        if "hotfix" not in t.get("fix_version", "").lower()
+    ]
+    hotfix_count = original_count - len(linked_tickets)
+    if hotfix_count > 0:
+        print(f"[Step 1] Filtered out {hotfix_count} Hotfix ticket(s)")
+        print(f"[Step 1] Remaining: {len(linked_tickets)} tickets")
+
     # Export to JSON
     export_data = {
         "exported_at": datetime.now().isoformat(),

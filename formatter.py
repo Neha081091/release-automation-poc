@@ -456,6 +456,12 @@ class ReleaseNotesFormatter:
             if self._is_release_ticket(ticket):
                 continue
 
+            # Skip Hotfix versions
+            fix_version = ticket.get("fix_version", "")
+            if fix_version and "hotfix" in fix_version.lower():
+                print(f"[Formatter] Skipping Hotfix ticket: {ticket.get('key')} ({fix_version})")
+                continue
+
             # Determine product line
             product_line = self._determine_product_line(ticket)
 
