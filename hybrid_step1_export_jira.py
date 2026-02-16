@@ -153,10 +153,23 @@ def refresh_tickets():
         print("[Refresh] ERROR: Could not connect to Jira")
         return None
 
-    # Re-fetch all tickets from the same fix versions
+    # Re-check the release ticket for any newly added fix versions
+    current_fix_versions = set(old_fix_versions)
+    if release_key:
+        latest_fix_versions = jira.get_fix_versions_for_ticket(release_key)
+        new_fix_versions = set(latest_fix_versions) - set(old_fix_versions)
+        if new_fix_versions:
+            print(f"[Refresh] NEW fix versions detected on release ticket: {sorted(new_fix_versions)}")
+            current_fix_versions.update(new_fix_versions)
+        else:
+            print("[Refresh] No new fix versions on release ticket.")
+
+    # Re-fetch all tickets from the combined fix versions
     all_tickets = []
-    if old_fix_versions:
-        all_tickets = jira.get_tickets_by_fix_versions(old_fix_versions, exclude_key=release_key)
+    if current_fix_versions:
+        all_tickets = jira.get_tickets_by_fix_versions(
+            sorted(current_fix_versions), exclude_key=release_key
+        )
     else:
         # Fallback: re-fetch via linked tickets
         all_tickets = jira.get_linked_tickets(release_key)

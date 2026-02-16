@@ -198,6 +198,32 @@ class JiraHandler:
 
         return linked_tickets
 
+    def get_fix_versions_for_ticket(self, issue_key: str) -> List[str]:
+        """
+        Fetch the current fix version names from a Jira ticket.
+
+        Used by refresh to detect newly added fix versions on the release ticket.
+
+        Args:
+            issue_key: The Jira issue key (e.g., DI-12345)
+
+        Returns:
+            List of fix version name strings (excluding Hotfix versions)
+        """
+        endpoint = f"issue/{issue_key}"
+        params = {"fields": "fixVersions"}
+
+        result = self._make_request("GET", endpoint, params=params)
+        if not result:
+            return []
+
+        fix_versions = result.get("fields", {}).get("fixVersions", [])
+        names = [
+            fv.get("name") for fv in fix_versions
+            if fv.get("name") and "hotfix" not in fv.get("name", "").lower()
+        ]
+        return names
+
     def get_tickets_by_fix_versions(self, fix_versions: List[str], exclude_key: str = None) -> List[Dict]:
         """
         Get all tickets with any of the specified Fix Versions.
