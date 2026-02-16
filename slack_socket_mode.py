@@ -358,6 +358,22 @@ def update_message_with_status(channel: str, message_ts: str):
 
     blocks.append({"type": "divider"})
 
+    # Refresh button
+    blocks.append({
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": "Refresh to check for new Jira versions or tickets"
+        },
+        "accessory": {
+            "type": "button",
+            "text": {"type": "plain_text", "text": "Refresh", "emoji": True},
+            "action_id": "refresh_tickets",
+            "value": "refresh"
+        }
+    })
+    blocks.append({"type": "divider"})
+
     # Add PL blocks
     blocks.extend(build_pl_blocks(pls, message_ts))
 
@@ -529,6 +545,143 @@ def handle_tomorrow(ack, body, action):
         traceback.print_exc()
 
     update_message_with_status(channel, message_ts)
+
+
+@app.action("refresh_tickets")
+def handle_refresh_tickets(ack, body):
+    """Handle Refresh button click - re-fetch tickets from Jira.
+
+    Detects two cases:
+    1. New fix versions added to the release ticket
+    2. New Stories/Bugs added under existing fix versions
+    """
+    ack()
+
+    user = body['user']['username']
+    message_ts = body['message']['ts']
+    channel = body['channel']['id']
+
+    print(f"[Socket Mode] {user} clicked REFRESH")
+
+    # Post a temporary status message
+    try:
+        status_msg = client.chat_postMessage(
+            channel=channel,
+            thread_ts=message_ts,
+            text="🔄 Refreshing tickets from Jira..."
+        )
+    except Exception as e:
+        print(f"[Socket Mode] Error posting refresh status: {e}")
+        status_msg = None
+
+    try:
+        from hybrid_step1_export_jira import refresh_tickets as do_refresh
+
+        result = do_refresh()
+
+        if result:
+            # New tickets found - reload export and re-run formatter
+            with open("tickets_export.json", 'r') as f:
+                export_data = json.load(f)
+
+            refreshed_tickets = export_data.get("tickets", [])
+            new_ticket_keys = export_data.get("new_tickets", [])
+
+            print(f"[Socket Mode] Refresh found {len(new_ticket_keys)} new ticket(s): {new_ticket_keys}")
+
+            # Re-run formatter to regenerate release notes
+            from formatter import ReleaseNotesFormatter
+            formatter = ReleaseNotesFormatter()
+            grouped_data = formatter.process_tickets(refreshed_tickets)
+            formatted_output = formatter.format_output(grouped_data)
+
+            # Save processed notes
+            processed_data = formatter.get_processed_data()
+            with open('processed_notes.json', 'w') as f:
+                json.dump(processed_data, f, indent=2, default=str)
+
+            # Update Google Doc
+            try:
+                from google_docs_handler import GoogleDocsHandler
+                google_docs = GoogleDocsHandler()
+                if google_docs.authenticate():
+                    google_docs.update_document(formatted_output)
+                    print("[Socket Mode] Google Doc updated after refresh")
+            except Exception as e:
+                print(f"[Socket Mode] Error updating Google Doc: {e}")
+
+            # Check if new PLs appeared (not in existing message metadata)
+            message_metadata = load_message_metadata()
+            existing_pls = message_metadata.get(message_ts, {}).get('pls', [])
+            new_pls_from_notes = processed_data.get('product_lines', [])
+            clean_new_pls = [re.sub(r'\s+20\d{2}$', '', pl) for pl in new_pls_from_notes]
+
+            added_pls = [pl for pl in clean_new_pls if pl not in existing_pls]
+
+            if added_pls:
+                print(f"[Socket Mode] New PLs detected: {added_pls}")
+                # Update message metadata with new PLs
+                updated_pls = existing_pls + added_pls
+                message_metadata[message_ts]['pls'] = updated_pls
+                message_metadata[message_ts]['notes_by_pl'] = processed_data.get('body_by_pl', {})
+                save_message_metadata(message_metadata)
+
+            # Update the Slack review message to reflect any new PLs
+            update_message_with_status(channel, message_ts)
+
+            # Post refresh result in thread
+            summary_lines = [f"✅ *Refresh complete* - {len(new_ticket_keys)} new ticket(s) found:"]
+            for key in new_ticket_keys[:10]:
+                summary_lines.append(f"  • {key}")
+            if len(new_ticket_keys) > 10:
+                summary_lines.append(f"  _...and {len(new_ticket_keys) - 10} more_")
+            if added_pls:
+                summary_lines.append(f"\n📋 New PL(s) added: {', '.join(added_pls)}")
+            summary_lines.append("\n_Google Doc and release notes updated._")
+
+            if status_msg:
+                client.chat_update(
+                    channel=channel,
+                    ts=status_msg['ts'],
+                    text='\n'.join(summary_lines)
+                )
+            else:
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=message_ts,
+                    text='\n'.join(summary_lines)
+                )
+        else:
+            # No new tickets
+            msg = "✅ *Refresh complete* - No new tickets found. Release notes are up to date."
+            if status_msg:
+                client.chat_update(
+                    channel=channel,
+                    ts=status_msg['ts'],
+                    text=msg
+                )
+            else:
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=message_ts,
+                    text=msg
+                )
+
+    except Exception as e:
+        print(f"[Socket Mode] Error during refresh: {e}")
+        import traceback
+        traceback.print_exc()
+        error_msg = f"❌ *Refresh failed*: {str(e)}"
+        if status_msg:
+            try:
+                client.chat_update(channel=channel, ts=status_msg['ts'], text=error_msg)
+            except:
+                pass
+        else:
+            try:
+                client.chat_postMessage(channel=channel, thread_ts=message_ts, text=error_msg)
+            except:
+                pass
 
 
 @app.action("good_to_announce")
@@ -964,6 +1117,22 @@ def post_approval_message(pls: list = None, doc_url: str = None, release_date: s
             }
         })
 
+    blocks.append({"type": "divider"})
+
+    # Refresh button
+    blocks.append({
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": "Refresh to check for new Jira versions or tickets"
+        },
+        "accessory": {
+            "type": "button",
+            "text": {"type": "plain_text", "text": "Refresh", "emoji": True},
+            "action_id": "refresh_tickets",
+            "value": "refresh"
+        }
+    })
     blocks.append({"type": "divider"})
 
     # Add PL blocks (no message_ts yet, so all will be pending)

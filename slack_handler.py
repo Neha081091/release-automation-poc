@@ -245,7 +245,7 @@ class SlackHandler:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "Refresh to check for new Jira versions"
+                    "text": "Refresh to check for new Jira versions or tickets"
                 },
                 "accessory": {
                     "type": "button",

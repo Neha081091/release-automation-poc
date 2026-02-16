@@ -134,6 +134,98 @@ def export_jira_tickets(release_date_str: str = None):
     return output_file
 
 
+def refresh_tickets():
+    """Re-fetch tickets from Jira to pick up newly added fix versions or new tickets under existing fix versions.
+
+    Compares against the previous tickets_export.json to detect new tickets.
+
+    Returns:
+        output file path if new tickets found, None otherwise
+    """
+    print("=" * 60)
+    print("  REFRESH: Re-fetching Jira Tickets")
+    print("=" * 60)
+
+    # Load existing export to get release key and previous tickets
+    try:
+        with open("tickets_export.json", 'r') as f:
+            previous_export = json.load(f)
+    except FileNotFoundError:
+        print("[Refresh] ERROR: tickets_export.json not found. Run export first.")
+        return None
+
+    release_key = previous_export.get("release_key")
+    release_summary = previous_export.get("release_summary", "")
+    if not release_key:
+        print("[Refresh] ERROR: No release_key in tickets_export.json")
+        return None
+
+    previous_ticket_keys = {t.get("key") for t in previous_export.get("tickets", [])}
+    print(f"[Refresh] Release ticket: {release_key}")
+    print(f"[Refresh] Previously exported: {len(previous_ticket_keys)} tickets")
+
+    # Connect to Jira and fetch current fix versions
+    jira = JiraHandler()
+    if not jira.test_connection():
+        print("[Refresh] ERROR: Could not connect to Jira")
+        return None
+
+    current_fix_versions = jira.get_fix_versions_for_ticket(release_key)
+    if not current_fix_versions:
+        print("[Refresh] No fix versions found on release ticket")
+        return None
+
+    print(f"[Refresh] Current fix versions on {release_key}: {current_fix_versions}")
+
+    # Fetch all tickets across all current fix versions
+    all_tickets = jira.get_tickets_by_fix_versions(current_fix_versions, exclude_key=release_key)
+    if not all_tickets:
+        print("[Refresh] No tickets found across fix versions")
+        return None
+
+    # Filter out Hotfix tickets
+    original_count = len(all_tickets)
+    all_tickets = [
+        t for t in all_tickets
+        if "hotfix" not in t.get("fix_version", "").lower()
+    ]
+    hotfix_count = original_count - len(all_tickets)
+    if hotfix_count > 0:
+        print(f"[Refresh] Filtered out {hotfix_count} Hotfix ticket(s)")
+
+    # Detect new tickets
+    current_ticket_keys = {t.get("key") for t in all_tickets}
+    new_ticket_keys = current_ticket_keys - previous_ticket_keys
+    new_tickets = [t.get("key") for t in all_tickets if t.get("key") in new_ticket_keys]
+
+    print(f"[Refresh] Total tickets now: {len(all_tickets)}")
+    print(f"[Refresh] New tickets: {len(new_tickets)}")
+    if new_tickets:
+        print(f"[Refresh] New ticket keys: {new_tickets}")
+
+    # Save updated export
+    export_data = {
+        "exported_at": datetime.now().isoformat(),
+        "release_summary": release_summary,
+        "release_key": release_key,
+        "ticket_count": len(all_tickets),
+        "tickets": all_tickets,
+        "new_tickets": new_tickets,
+        "refreshed_at": datetime.now().isoformat()
+    }
+
+    output_file = "tickets_export.json"
+    with open(output_file, 'w') as f:
+        json.dump(export_data, f, indent=2, default=str)
+
+    if new_tickets:
+        print(f"\n[Refresh] UPDATED {output_file} with {len(new_tickets)} new ticket(s)")
+        return output_file
+    else:
+        print(f"\n[Refresh] No new tickets found. Export is up to date.")
+        return None
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Export Jira tickets for release')
     parser.add_argument('--date', type=str, help='Release date (e.g., "5th Feb 2026"). Auto-detects today if not provided.')
