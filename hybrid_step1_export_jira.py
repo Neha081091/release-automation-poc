@@ -83,11 +83,11 @@ def export_jira_tickets():
 
     print(f"[Step 1] Found {len(linked_tickets)} tickets")
 
-    # Collect unique fix versions for refresh capability
+    # Collect unique fix versions for refresh capability (exclude Hotfix versions)
     fix_version_set = set()
     for t in linked_tickets:
         fv = t.get("fix_version")
-        if fv:
+        if fv and "hotfix" not in fv.lower():
             fix_version_set.add(fv)
 
     # Export to JSON
@@ -137,7 +137,11 @@ def refresh_tickets():
 
     release_key = export_data.get("release_key")
     release_summary = export_data.get("release_summary", "")
-    old_fix_versions = export_data.get("fix_versions", [])
+    # Filter out any Hotfix versions that may have been stored from older exports
+    old_fix_versions = [
+        fv for fv in export_data.get("fix_versions", [])
+        if "hotfix" not in fv.lower()
+    ]
     old_ticket_keys = {t["key"] for t in export_data.get("tickets", [])}
 
     print(f"[Refresh] Release: {release_summary} ({release_key})")
@@ -190,11 +194,11 @@ def refresh_tickets():
     if not added and not removed:
         print("[Refresh] No changes detected — ticket list is up to date.")
 
-    # Collect fix versions from refreshed set
+    # Collect fix versions from refreshed set (exclude Hotfix versions)
     fix_version_set = set()
     for t in all_tickets:
         fv = t.get("fix_version")
-        if fv:
+        if fv and "hotfix" not in fv.lower():
             fix_version_set.add(fv)
 
     # Write updated export
