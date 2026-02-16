@@ -573,6 +573,7 @@ Examples:
   python main.py --step 1                 # Run only Step 1 (Jira)
   python main.py --step 2                 # Run Steps 1-2 (Jira + Format)
   python main.py --test-connections       # Test all API connections
+  python main.py --slack-only             # Send only the Slack approval message
         """
     )
 
@@ -584,6 +585,8 @@ Examples:
                        help='Test all API connections without running workflow')
     parser.add_argument('--refresh', action='store_true',
                        help='Refresh tickets from Jira (picks up newly added stories/bugs under existing fix versions)')
+    parser.add_argument('--slack-only', action='store_true',
+                       help='Send only the Slack approval message (uses existing tickets_export.json)')
 
     args = parser.parse_args()
 
@@ -617,6 +620,46 @@ Examples:
             print(f"   Slack: FAILED - {e}\n")
 
         return
+
+    # Slack-only mode: send just the Slack approval message
+    if args.slack_only:
+        print_banner()
+        print("Sending Slack approval message only...\n")
+
+        import json
+
+        # Load tickets from existing export
+        try:
+            with open("tickets_export.json", 'r') as f:
+                export_data = json.load(f)
+            tickets = export_data.get("tickets", [])
+        except FileNotFoundError:
+            print("[Slack-only] ERROR: tickets_export.json not found. Run the full workflow first.")
+            sys.exit(1)
+
+        if not tickets:
+            print("[Slack-only] ERROR: No tickets in tickets_export.json")
+            sys.exit(1)
+
+        # Build formatter to get TL;DR
+        release_summary = os.getenv('RELEASE_TICKET_SUMMARY', 'Release 2nd February 2026')
+        release_date = args.release_date
+        if not release_date:
+            if 'Release ' in release_summary:
+                release_date = release_summary.replace('Release ', '')
+            else:
+                release_date = datetime.now().strftime("%d %B %Y")
+
+        formatter = ReleaseNotesFormatter(release_date)
+        formatter.process_tickets(tickets)
+        tldr_summary = formatter.get_tldr_for_slack()
+
+        doc_id = os.getenv('GOOGLE_DOC_ID', '')
+        doc_url = f"https://docs.google.com/document/d/{doc_id}/edit" if doc_id else ""
+
+        # Send only the Slack notification
+        success, result = step3_send_slack_notification(release_date, doc_url, tldr_summary)
+        sys.exit(0 if success else 1)
 
     # Refresh mode: re-fetch tickets from Jira under existing fix versions
     if args.refresh:
