@@ -503,6 +503,10 @@ def process_tickets_with_claude():
             continue
 
         fix_version = ticket.get("fix_version", "")
+
+        # Skip tickets from Hotfix fix versions
+        if "hotfix" in fix_version.lower():
+            continue
         # Parse PL from fix version
         match = re.match(r'^(.+?)\s*\d{4}:\s*Release', fix_version)
         if match:

@@ -83,11 +83,19 @@ def export_jira_tickets():
 
     print(f"[Step 1] Found {len(linked_tickets)} tickets")
 
+    # Collect unique fix versions for refresh capability
+    fix_version_set = set()
+    for t in linked_tickets:
+        fv = t.get("fix_version")
+        if fv:
+            fix_version_set.add(fv)
+
     # Export to JSON
     export_data = {
         "exported_at": datetime.now().isoformat(),
         "release_summary": release_summary,
         "release_key": release_key,
+        "fix_versions": sorted(fix_version_set),
         "ticket_count": len(linked_tickets),
         "tickets": linked_tickets
     }
@@ -98,6 +106,7 @@ def export_jira_tickets():
 
     print(f"\n[Step 1] EXPORTED to: {output_file}")
     print(f"[Step 1] Tickets: {len(linked_tickets)}")
+    print(f"[Step 1] Fix Versions: {sorted(fix_version_set)}")
     print("\n" + "=" * 60)
     print("  NEXT: Copy tickets_export.json to server and run:")
     print("  python hybrid_step2_process_claude.py")
@@ -106,5 +115,101 @@ def export_jira_tickets():
     return output_file
 
 
+def refresh_tickets():
+    """
+    Refresh tickets by re-querying Jira for the same fix versions
+    from the existing export. Picks up any newly added stories/bugs.
+
+    Returns:
+        Path to updated export file, or None on failure.
+    """
+    print("=" * 60)
+    print("  REFRESH: Re-fetching Tickets from Jira")
+    print("=" * 60)
+
+    input_file = "tickets_export.json"
+    if not os.path.exists(input_file):
+        print("[Refresh] ERROR: tickets_export.json not found. Run export first.")
+        return None
+
+    with open(input_file, 'r') as f:
+        export_data = json.load(f)
+
+    release_key = export_data.get("release_key")
+    release_summary = export_data.get("release_summary", "")
+    old_fix_versions = export_data.get("fix_versions", [])
+    old_ticket_keys = {t["key"] for t in export_data.get("tickets", [])}
+
+    print(f"[Refresh] Release: {release_summary} ({release_key})")
+    print(f"[Refresh] Previous ticket count: {len(old_ticket_keys)}")
+    print(f"[Refresh] Fix Versions to re-query: {old_fix_versions}")
+
+    if not old_fix_versions and not release_key:
+        print("[Refresh] ERROR: No fix versions or release key in export to refresh from.")
+        return None
+
+    jira = JiraHandler()
+    if not jira.test_connection():
+        print("[Refresh] ERROR: Could not connect to Jira")
+        return None
+
+    # Re-fetch all tickets from the same fix versions
+    all_tickets = []
+    if old_fix_versions:
+        all_tickets = jira.get_tickets_by_fix_versions(old_fix_versions, exclude_key=release_key)
+    else:
+        # Fallback: re-fetch via linked tickets
+        all_tickets = jira.get_linked_tickets(release_key)
+
+    if not all_tickets:
+        print("[Refresh] No tickets found. Nothing to update.")
+        return None
+
+    new_ticket_keys = {t["key"] for t in all_tickets}
+    added = new_ticket_keys - old_ticket_keys
+    removed = old_ticket_keys - new_ticket_keys
+
+    print(f"[Refresh] Total tickets now: {len(all_tickets)}")
+    if added:
+        print(f"[Refresh] NEW tickets added: {sorted(added)}")
+    if removed:
+        print(f"[Refresh] Tickets removed: {sorted(removed)}")
+    if not added and not removed:
+        print("[Refresh] No changes detected — ticket list is up to date.")
+
+    # Collect fix versions from refreshed set
+    fix_version_set = set()
+    for t in all_tickets:
+        fv = t.get("fix_version")
+        if fv:
+            fix_version_set.add(fv)
+
+    # Write updated export
+    updated_export = {
+        "exported_at": datetime.now().isoformat(),
+        "release_summary": release_summary,
+        "release_key": release_key,
+        "fix_versions": sorted(fix_version_set),
+        "ticket_count": len(all_tickets),
+        "refreshed": True,
+        "previous_count": len(old_ticket_keys),
+        "new_tickets": sorted(added),
+        "tickets": all_tickets
+    }
+
+    with open(input_file, 'w') as f:
+        json.dump(updated_export, f, indent=2, default=str)
+
+    print(f"\n[Refresh] UPDATED {input_file} with {len(all_tickets)} tickets")
+    if added:
+        print(f"[Refresh] {len(added)} new ticket(s) pulled in")
+
+    return input_file
+
+
 if __name__ == "__main__":
-    export_jira_tickets()
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--refresh":
+        refresh_tickets()
+    else:
+        export_jira_tickets()

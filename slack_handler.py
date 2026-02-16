@@ -288,6 +288,16 @@ class SlackHandler:
                         },
                         "action_id": "defer_release",
                         "value": "deferred"
+                    },
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "Refresh Tickets",
+                            "emoji": True
+                        },
+                        "action_id": "refresh_tickets",
+                        "value": "refresh"
                     }
                 ]
             }

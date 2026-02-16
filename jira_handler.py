@@ -174,8 +174,14 @@ class JiraHandler:
         if not linked_keys:
             fix_versions = result.get("fields", {}).get("fixVersions", [])
             if fix_versions:
-                # Get all fix version names
-                fix_version_names = [fv.get("name") for fv in fix_versions if fv.get("name")]
+                # Get all fix version names, excluding Hotfix versions
+                fix_version_names = [
+                    fv.get("name") for fv in fix_versions
+                    if fv.get("name") and "hotfix" not in fv.get("name", "").lower()
+                ]
+                excluded = [fv.get("name") for fv in fix_versions if fv.get("name") and "hotfix" in fv.get("name", "").lower()]
+                if excluded:
+                    print(f"[Jira] Excluding Hotfix versions: {excluded}")
                 print(f"[Jira] No links found. Searching by {len(fix_version_names)} Fix Versions: {fix_version_names}")
                 return self.get_tickets_by_fix_versions(fix_version_names, issue_key)
             else:

@@ -582,6 +582,8 @@ Examples:
                        help='Run up to specific step only')
     parser.add_argument('--test-connections', action='store_true',
                        help='Test all API connections without running workflow')
+    parser.add_argument('--refresh', action='store_true',
+                       help='Refresh tickets from Jira (picks up newly added stories/bugs under existing fix versions)')
 
     args = parser.parse_args()
 
@@ -614,6 +616,37 @@ Examples:
         except Exception as e:
             print(f"   Slack: FAILED - {e}\n")
 
+        return
+
+    # Refresh mode: re-fetch tickets from Jira under existing fix versions
+    if args.refresh:
+        print_banner()
+        print("Refreshing tickets from Jira...\n")
+        from hybrid_step1_export_jira import refresh_tickets
+        result = refresh_tickets()
+        if result:
+            print("\n[Refresh] Tickets refreshed. Re-running release notes generation...")
+            # Re-read refreshed tickets
+            import json
+            with open("tickets_export.json", 'r') as f:
+                export_data = json.load(f)
+            refreshed_tickets = export_data.get("tickets", [])
+            new_tickets = export_data.get("new_tickets", [])
+            if not new_tickets:
+                print("[Refresh] No new tickets found. Release notes are up to date.")
+                return
+            print(f"[Refresh] {len(new_tickets)} new ticket(s) found: {new_tickets}")
+            print("[Refresh] Re-generating release notes with updated tickets...")
+
+            # Re-run steps 2 and 2b with refreshed tickets
+            formatter, plain_text = step2_create_release_notes(refreshed_tickets, args.release_date)
+            if formatter:
+                step2_update_google_doc(formatter)
+                print("\n[Refresh] Release notes and Google Doc updated with new tickets.")
+            else:
+                print("[Refresh] ERROR: Failed to regenerate release notes.")
+        else:
+            print("[Refresh] No changes or refresh failed.")
         return
 
     # Step-limited mode

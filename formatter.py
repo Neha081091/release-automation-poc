@@ -430,12 +430,17 @@ class ReleaseNotesFormatter:
         return self.grouped_data
 
     def _is_release_ticket(self, ticket: Dict) -> bool:
-        """Check if a ticket is a release ticket or deployment tracker (to be excluded)."""
+        """Check if a ticket is a release ticket, deployment tracker, or hotfix (to be excluded)."""
         summary = ticket.get("summary", "").lower()
         issue_type = ticket.get("issue_type", "").lower()
+        fix_version = ticket.get("fix_version", "").lower()
 
         # Exclude Deployment Tracker tickets
         if "deployment" in issue_type and "tracker" in issue_type:
+            return True
+
+        # Exclude tickets from Hotfix fix versions
+        if "hotfix" in fix_version:
             return True
 
         return "release" in summary and any(

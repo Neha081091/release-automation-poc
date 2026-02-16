@@ -215,10 +215,30 @@ def main():
     parser.add_argument('--process', action='store_true', help='Step 2: Process with Claude API')
     parser.add_argument('--update', action='store_true', help='Step 3: Pull and update docs')
     parser.add_argument('--full', action='store_true', help='Full workflow (requires GitHub Actions)')
+    parser.add_argument('--refresh', action='store_true',
+                       help='Refresh: Re-fetch tickets from Jira (picks up newly added stories/bugs), reprocess, and push')
 
     args = parser.parse_args()
 
-    if args.export:
+    if args.refresh:
+        print("\n" + "=" * 60)
+        print("  REFRESH: Re-fetching & Reprocessing Tickets")
+        print("=" * 60)
+        from hybrid_step1_export_jira import refresh_tickets
+        result = refresh_tickets()
+        if result:
+            # Commit and push refreshed export
+            print("\n[Refresh] Committing refreshed export to Git...")
+            run_command("git add tickets_export.json", "Adding refreshed tickets_export.json")
+            run_command(
+                f'git commit -m "Refresh Jira tickets {datetime.now().isoformat()}"',
+                "Committing"
+            )
+            run_command("git push", "Pushing to remote")
+            print("[Refresh] Refreshed export pushed. GitHub Actions will reprocess with Claude.")
+        else:
+            print("[Refresh] No changes detected or refresh failed.")
+    elif args.export:
         if not step1_export_jira():
             _send_no_release_slack()
     elif args.process:
@@ -233,6 +253,7 @@ Usage:
     python hybrid_automated.py --export     # Mac: Export Jira tickets
     python hybrid_automated.py --process    # Server: Process with Claude API
     python hybrid_automated.py --update     # Mac: Update Google Docs & Slack
+    python hybrid_automated.py --refresh    # Refresh: Pull new tickets under existing fix versions
 
 Workflow:
     1. Mac:    python hybrid_automated.py --export
@@ -241,6 +262,9 @@ Workflow:
 
 Or with GitHub Actions for Step 2:
     Mac:       python hybrid_automated.py --full
+
+Refresh (after initial release notes are generated):
+    Mac:       python hybrid_automated.py --refresh
         """)
 
 
