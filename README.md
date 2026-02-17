@@ -1,10 +1,10 @@
 # Release Automation PoC - DeepIntent
 
-Automated end-to-end release announcement workflow that runs daily at 12 PM with zero manual intervention.
+Automated end-to-end release announcement workflow that runs weekdays at 12 PM IST with zero manual intervention.
 
 ## Overview
 
-This PoC automates the complete release notes workflow:
+This PoC automates the complete release notes workflow (direct mode via `main.py`):
 
 1. **Step 1**: Fetch release tickets from Jira
 2. **Step 2**: Generate formatted release notes and update Google Doc
@@ -22,6 +22,10 @@ release-automation-poc/
 ├── google_docs_handler.py  # Google Docs API functions
 ├── slack_handler.py        # Slack API functions
 ├── formatter.py            # Release notes formatting
+├── hybrid_automated.py      # Hybrid 3-phase orchestrator
+├── hybrid_step1_export_jira.py  # Step 1: Export Jira -> tickets_export.json
+├── hybrid_step2_process_claude.py  # Step 2: Claude processing -> processed_notes.json
+├── hybrid_step3_update_docs.py  # Step 3: Google Docs + Slack
 ├── scheduler.py            # Daily trigger scheduling
 ├── requirements.txt        # Python dependencies
 ├── .env.example            # Environment configuration template
@@ -90,7 +94,11 @@ python main.py --step 3    # Jira + Google Doc + Slack notification
 | `RELEASE_TICKET_SUMMARY` | Summary of release ticket to find | `Release 2nd February 2026` |
 | `GOOGLE_DOC_ID` | Google Doc ID for release notes | `1D7mHR4_kjDLhvmYNlTgtQtBr1Kfen_T1RmLPDmHqBgs` |
 | `SLACK_BOT_TOKEN` | Slack Bot OAuth token | `xoxb-...` |
-| `SLACK_DM_CHANNEL` | Slack channel for notifications | `D0694CZAXAA` |
+| `SLACK_WEBHOOK_URL` | Slack incoming webhook URL | `https://hooks.slack.com/services/...` |
+| `SLACK_DM_CHANNEL` | Slack channel for PoC notifications | `D0694CZAXAA` |
+| `SLACK_REVIEW_CHANNEL` | Slack channel for PMO review | `C123ABC456` |
+| `SLACK_ANNOUNCE_CHANNEL` | Slack channel for final announcements | `C789DEF012` |
+| `SLACK_RELEASE_CHANNEL` | Legacy final release channel | `C789DEF012` |
 | `SCHEDULE_TIME` | Daily automation time | `12:00` |
 
 ## Workflow Details
@@ -136,6 +144,21 @@ Features:
 - Grouped by Product Line and Epic
 - GA/Feature Flag tags for stories
 
+### LLM Configuration
+
+- Model: `claude-opus-4-5-20250918` (configured in `formatter.py` and used by the hybrid processor)
+- Temperature: `0` for deterministic output
+
+### Hybrid 3-Phase Workflow (Mac + GitHub Actions)
+
+The hybrid flow splits Claude processing to GitHub Actions and keeps Google Docs/Slack on Mac:
+
+1. **Step 1 (Mac)**: `hybrid_step1_export_jira.py` exports Jira tickets to `tickets_export.json` and pushes to Git.
+2. **Step 2 (Server)**: `hybrid_step2_process_claude.py` runs on GitHub Actions, generates TL;DR + body sections + executive overview, and writes `processed_notes.json`.
+3. **Step 3 (Mac)**: `hybrid_step3_update_docs.py` pulls `processed_notes.json`, updates Google Docs, and posts the Slack approval message.
+
+To run the full hybrid flow locally: `python hybrid_automated.py --full`.
+
 ### Step 3: Slack Notification
 
 Sends rich formatted message with:
@@ -162,25 +185,23 @@ Sends rich formatted message with:
 ### Local Development
 
 ```bash
-# Start scheduler (runs daily at configured time)
-python scheduler.py --start
+# Start scheduler (runs at 12:00 PM IST, Mon-Fri)
+python scheduler.py
 
 # Run immediately (manual trigger)
-python scheduler.py --run-once
+python scheduler.py --run-now
 
-# Custom time
-python scheduler.py --start --time 14:00
+# Test mode (runs in 10 seconds)
+python scheduler.py --test
 ```
 
 ### Cloud Deployment
 
-**Google Cloud Scheduler:**
-```bash
-# Generate deployment templates
-python scheduler.py --generate-templates
-```
+**GitHub Actions Cron:**
 
-**Cron Schedule:** `0 12 * * *` (12:00 PM daily)
+**Cron Schedule:** `30 6 * * 1-5` (6:30 AM UTC = 12:00 PM IST, Mon-Fri only)
+
+**Workflow Command:** `python main.py --skip-approval`
 
 ## Testing
 

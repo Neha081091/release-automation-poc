@@ -23,6 +23,30 @@ except ImportError:
     ANTHROPIC_AVAILABLE = False
     print("[Formatter] Warning: anthropic package not installed. LLM consolidation disabled.")
 
+# Latest Claude model and settings for high-quality release notes
+CLAUDE_MODEL = "claude-opus-4-5-20250918"
+CLAUDE_TEMPERATURE = 0  # Zero temperature for deterministic, consistent output
+
+# System prompt that establishes the AI as a professional release notes writer,
+# matching the quality users get when they interact with Claude AI directly.
+RELEASE_NOTES_SYSTEM_PROMPT = """You are a senior technical writer at DeepIntent, a healthcare advertising \
+technology company. You specialize in writing polished, stakeholder-facing release notes that translate \
+raw Jira ticket summaries into clear, professional deployment summaries.
+
+Your audience is Product Management Officers (PMOs), engineering leadership, and cross-functional \
+stakeholders who need to quickly understand what shipped, why it matters, and how it impacts users.
+
+Writing principles:
+- Write in clear, confident prose that a non-technical executive can understand
+- Focus on user value and business impact, not implementation details
+- Use active voice and present tense ("Users can now..." not "Added ability to...")
+- Group related changes into coherent narratives rather than listing them individually
+- Translate technical jargon into plain language (e.g., "feature flag" stays, but "IRSA-based auth" becomes "secure role-based access")
+- Maintain a professional yet approachable tone — informative without being dry
+- Be concise but complete — every word should earn its place
+- When multiple tickets describe the same integration across repositories, consolidate them into a single meaningful statement
+"""
+
 
 # Product Line mapping based on components or labels
 PRODUCT_LINE_MAPPING = {
@@ -54,17 +78,7 @@ PRODUCT_LINE_MAPPING = {
 
 # Order for displaying product lines (dynamic - will be populated from fix versions)
 # These are fallback/common names; actual names come from fix versions
-# Grouped by category: Media -> Audiences -> DSP Core -> Developer Experience -> Data Ingress -> Helix -> Data Governance
 PRODUCT_LINE_ORDER = [
-    # Media PLs
-    "Media PL1",
-    "Media PL2",
-    "Media",
-    # Audiences PLs
-    "Audiences PL1",
-    "Audiences PL2",
-    "Audiences",
-    # DSP Core PLs
     "DSP Core PL1",
     "DSP Core PL2",
     "DSP Core PL3",
@@ -73,16 +87,15 @@ PRODUCT_LINE_ORDER = [
     "DSP PL2",
     "DSP PL3",
     "DSP",
-    # Developer Experience
-    "Developer Experience",
-    "Developer Experience 2026",
-    # Data Ingress
-    "Data Ingress",
-    "Data Ingress 2026",
-    # Helix PLs
+    "Audiences PL1",
+    "Audiences PL2",
+    "Audiences",
+    "Media PL1",
+    "Media",
     "Helix PL3",
     "Helix",
-    # Data Governance
+    "Developer Experience",
+    "Developer Experience 2026",
     "Data Governance",
     "Other"
 ]
@@ -90,10 +103,10 @@ PRODUCT_LINE_ORDER = [
 
 def parse_pl_from_fix_version(fix_version: str) -> str:
     """
-    Extract product line name from fix version string, preserving year if present.
+    Extract product line name from fix version string.
 
     Examples:
-        "DSP Core PL3 2026: Release 4.0" -> "DSP Core PL3 2026"
+        "DSP Core PL3 2026: Release 4.0" -> "DSP Core PL3"
         "DSP Core PL1: Release 3.0" -> "DSP Core PL1"
         "Developer Experience: Release 6.0" -> "Developer Experience"
         "Audiences PL2: Release 4.0" -> "Audiences PL2"
@@ -102,14 +115,13 @@ def parse_pl_from_fix_version(fix_version: str) -> str:
         fix_version: Fix version string from Jira
 
     Returns:
-        Product line name (with year if present)
+        Product line name
     """
     if not fix_version:
         return "Other"
 
     # Try to match pattern with year: "DSP Core PL3 2026: Release 4.0"
-    # Preserve the year in the PL name
-    match = re.match(r'^(.+?\s*\d{4}):\s*Release', fix_version)
+    match = re.match(r'^(.+?)\s*\d{4}:\s*Release', fix_version)
     if match:
         return match.group(1).strip()
 
@@ -143,26 +155,12 @@ def consolidate_tldr_with_claude(raw_summaries_by_product: Dict[str, List[str]])
     """
     if not ANTHROPIC_AVAILABLE:
         print("[Formatter] Anthropic not available, returning raw summaries")
-        # Capitalize first letter of joined summaries
-        result = {}
-        for product, summaries in raw_summaries_by_product.items():
-            text = "; ".join(summaries)
-            if text:
-                text = text[0].upper() + text[1:]
-            result[product] = text
-        return result
+        return {product: "; ".join(summaries) for product, summaries in raw_summaries_by_product.items()}
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         print("[Formatter] ANTHROPIC_API_KEY not set, returning raw summaries")
-        # Capitalize first letter of joined summaries
-        result = {}
-        for product, summaries in raw_summaries_by_product.items():
-            text = "; ".join(summaries)
-            if text:
-                text = text[0].upper() + text[1:]
-            result[product] = text
-        return result
+        return {product: "; ".join(summaries) for product, summaries in raw_summaries_by_product.items()}
 
     client = anthropic.Anthropic(api_key=api_key)
     consolidated = {}
@@ -172,47 +170,44 @@ def consolidate_tldr_with_claude(raw_summaries_by_product: Dict[str, List[str]])
             summaries_text = "\n".join([f"- {s}" for s in summaries])
 
             message = client.messages.create(
-                model="claude-opus-4-5-20250918",
-                temperature=0,
-                max_tokens=500,
+                model=CLAUDE_MODEL,
+                max_tokens=1024,
+                temperature=CLAUDE_TEMPERATURE,
+                system=RELEASE_NOTES_SYSTEM_PROMPT,
                 messages=[{
                     "role": "user",
-                    "content": f"""Consolidate these raw Jira ticket summaries into ONE polished prose sentence for TLDR.
+                    "content": f"""I need you to write a TL;DR summary for the "{product}" product line in our Daily Deployment Summary.
 
-Product: {product}
-Raw Summaries:
+Here are the raw Jira ticket summaries that shipped in this release:
+
 {summaries_text}
 
-Rules:
-1. Write ONE flowing prose sentence (NOT bullet points or technical jargon dumps)
-2. Start with the main feature/improvement name, then use "with" to connect specific details
-3. Use natural connectors: "with", "including", "enabling", "along with"
-4. Use commas to list related items, semicolons only for truly separate feature areas
-5. Should read smoothly when spoken aloud - like a natural summary
-6. Keep technical names but explain them in context
-7. Be SPECIFIC with details (file sizes, button names, field names, etc.)
-8. Explain the PURPOSE/BENEFIT after changes using "enabling...", "for better...", "to ensure..."
-9. For bug fixes, each fix MUST start with "Fixed" - e.g., "Fixed [issue] ensuring [benefit]"
-10. Output ONLY the consolidated prose (no product name prefix)
-11. ELIMINATE REPETITIVE items - if multiple summaries describe the same feature (same component + same context like "ACBA goals" or "campaign group level"), mention it ONCE only
+Write a concise TL;DR summary that will appear as a sub-bullet under "Key Deployments:" \
+in this format:
+   * {product} - [brief description of what shipped, focusing on user/business value]
+
+Guidelines:
+- Consolidate related tickets into coherent themes (e.g., if 10 tickets all say "Integrating X into Y repo", \
+summarize as "X integration expanded across N repositories")
+- Separate distinct themes with semicolons
+- Focus on what users/stakeholders gain, not what developers did
+- Do NOT include the product name prefix — output ONLY the description part after the dash
+- If there are security/vulnerability fixes, mention them clearly
+- Keep it concise but informative — this is a quick-scan summary for leadership
 
 Example input:
-- Add restart chat button to Sales Planning Copilot
-- Update placeholder text to "How can I help?"
-- Enhanced welcome message for uploading briefs
+- Open Orders page with the last applied Status column filter
+- Deselect Order Selections when user Archives Order
+- Allow Multi-select Option for Status Column Filter on Order Listing
+- Add Channel, Device, Inventory Filter Extraction Logic
+- Fix di-creative-service critical vulnerability
 
 Example output:
-Sales Planning Copilot UX improvements with restart chat button, updated placeholders ("How can I help?"), and enhanced welcome messaging for better user guidance on uploading HCP or DTC RFP briefs
+Order listing now supports multi-select status filtering with persistent preferences across sessions and \
+automatic selection clearing on archive; forecasting enhanced with Deal and Exchange-derived filter extraction \
+and validation logic; critical security vulnerability resolved in di-creative-service
 
-Example input (bug fixes):
-- Fix HCP Planner target list upload for files >3.5 MB
-- Fix patient age calculation hardcoded year
-- Fix audience token mapping for multiple token types
-
-Example output:
-Fixed HCP Planner target list upload issue enabling support for files >3.5 MB; fixed patient age calculation issue removing hardcoded year values for accurate age computation; fixed audience token mapping ensuring correct handling of multiple token types
-
-Now consolidate for {product}:"""
+Now write the TL;DR description for {product} (without the product name prefix):"""
                 }]
             )
 
@@ -220,26 +215,24 @@ Now consolidate for {product}:"""
             # Remove product name prefix if Claude added it
             if result.lower().startswith(product.lower()):
                 result = result[len(product):].lstrip(" -:")
-            # Capitalize the first letter of the summary
-            if result:
-                result = result[0].upper() + result[1:]
+            # Remove wrapping quotes if present
+            if result.startswith('"') and result.endswith('"'):
+                result = result[1:-1]
             consolidated[product] = result
             print(f"[Formatter] Consolidated TLDR for {product}")
 
         except Exception as e:
             print(f"[Formatter] Error consolidating {product}: {str(e)}")
-            # Fallback to joining with semicolons, capitalize first letter
-            text = "; ".join(summaries)
-            if text:
-                text = text[0].upper() + text[1:]
-            consolidated[product] = text
+            # Fallback to joining with semicolons
+            consolidated[product] = "; ".join(summaries)
 
     return consolidated
 
 
 def consolidate_body_sections_with_claude(product: str, release: str, sections: List[Dict]) -> str:
     """
-    Consolidates raw feature sections into flowing prose bullet points.
+    Consolidates raw feature sections into polished release notes matching
+    the exact format used in the manual Claude AI prompt.
 
     Args:
         product: Product name (e.g., "DSP Core PL1")
@@ -247,12 +240,19 @@ def consolidate_body_sections_with_claude(product: str, release: str, sections: 
         sections: List of section dicts with structure:
             {
                 "title": "Epic Name",
+                "url": "https://...",  # Epic URL for hyperlink
                 "items": ["item 1", "item 2"],
+                "bug_items": ["bug 1", "bug 2"],  # Optional bug items
                 "status": "General Availability" or "Feature Flag"
             }
 
     Returns:
-        Consolidated body text with flowing prose bullets
+        Consolidated body text with:
+        - #### [Epic Name](url) headings
+        - **Value Add**: bold format
+        - Flat bullet points
+        - Separate Bug Fixes section
+        - GA/FF availability tags
     """
     if not ANTHROPIC_AVAILABLE:
         print("[Formatter] Anthropic not available, returning raw sections")
@@ -265,125 +265,64 @@ def consolidate_body_sections_with_claude(product: str, release: str, sections: 
 
     client = anthropic.Anthropic(api_key=api_key)
 
-    # Format sections for Claude
+    # Format sections for Claude with URLs and bug separation
     sections_text = ""
     for section in sections:
-        items_list = "\n".join([f"- {item}" for item in section.get("items", [])])
+        epic_url = section.get("url", "#")
+        items_list = "\n".join([f"- (Story/Task) {item}" for item in section.get("items", [])])
+        bug_items = section.get("bug_items", [])
+        bugs_list = "\n".join([f"- (Bug) {item}" for item in bug_items])
         status = section.get("status", "")
-        status_text = f" ({status})" if status else ""
-        sections_text += f"\n__{section['title']}__{status_text}\n{items_list}\n"
+        status_text = f"\nRelease Status: {status}" if status else ""
+        sections_text += f"\n=== Epic: {section['title']} ===\nEpic URL: {epic_url}{status_text}\n"
+        if items_list:
+            sections_text += f"Feature items:\n{items_list}\n"
+        if bugs_list:
+            sections_text += f"Bug items:\n{bugs_list}\n"
 
     try:
         message = client.messages.create(
-            model="claude-opus-4-5-20250918",
-            temperature=0,
-            max_tokens=2000,
+            model=CLAUDE_MODEL,
+            max_tokens=4096,
+            temperature=CLAUDE_TEMPERATURE,
+            system=RELEASE_NOTES_SYSTEM_PROMPT,
             messages=[{
                 "role": "user",
-                "content": f"""Transform these raw Jira sections into polished deployment value-add summaries.
+                "content": f"""I need you to write the detailed body section for the "{product}" product line \
+({release}) in our Daily Deployment Summary document.
 
-Product: {product}
-Release: {release}
+Below are the raw Jira ticket summaries grouped by Epic. Transform them into polished, stakeholder-ready \
+release notes.
 
-Raw Sections:
+Raw feature sections:
 {sections_text}
 
-CRITICAL FORMAT RULES:
-1. NO markdown formatting (no **, no __, no backticks)
-2. Use PLAIN TEXT only
-3. Epic names as headers on their own line
-4. Include "Value Add:" header followed by the description
-5. For SINGLE item: Write inline after "Value Add:" as one sentence
-6. For MULTIPLE items: Use bullet points with ● (filled circle) on separate lines
-7. Each bullet should start with action verb (Updated, Added, Improved, Included, Removed, Fixed, Enhanced)
-8. Explain WHAT the change does and WHY it matters (e.g., "enabling...", "to ensure...", "for better...")
-9. End each epic section with status tag on its own line: General Availability OR Feature Flag
-10. ONE blank line between epic sections
+Write polished release notes following this EXACT format for each epic:
 
-CRITICAL BUG FIX FORMAT - THIS IS MANDATORY:
-- Group all bug fixes under "Bug Fixes:" header (plural)
-- EVERY bug fix bullet MUST start with the word "Fixed" - NO EXCEPTIONS
-- Format: "Fixed [what was broken] issue ensuring [explanation of benefit]"
-- WRONG: "● Package deals now target correctly as unified packages"
-- CORRECT: "● Fixed package deal targeting issue ensuring deals are targeted as part of the package rather than individually"
-- Use "ensuring", "enabling", "allowing" to explain the benefit of the fix
-
-Example input:
-__Campaigns List Page V3__ (General Availability)
-- Allow top bar metrics selection independently from listing columns
-- Enhanced audit log for PG Ad Groups by removing inapplicable bid fields
-
-Example output:
-Campaigns List Page V3
-Value Add:
-● Improved campaign listing by allowing top bar metrics selection independently from listing columns
-● Enhanced audit log for PG Ad Groups by removing inapplicable bid fields for improved clarity
+#### [Epic Name](epic_url)
+**Value Add**:
+* Clear, stakeholder-friendly description of what shipped and why it matters.
+* Another bullet if the epic has multiple distinct deliverables.
 General Availability
 
-Example input (bug fixes):
-__Bug Fixes__ (General Availability)
-- Fix Add frequency button disappears when directly deleting existing frequency
-- Fix null date display in tooltip when hovering on graph datapoints
-- Package deals now target correctly as unified packages
+If the epic has Bug tickets, add them separately:
 
-Example output:
-Bug Fixes:
-● Fixed Add frequency button issue ensuring the button remains visible when directly deleting existing frequency on ad-group quickview
-● Fixed null date display issue in tooltip ensuring correct date formatting when hovering on graph datapoints in Goal Widget
-● Fixed package deal targeting issue ensuring deals are targeted as part of the package rather than individually when new packages are created
-General Availability
+**Bug Fixes:**
+* Fixed issue where [description]
 
-KEY PRINCIPLES:
-- Be CONCISE and DIRECT - short sentences, no verbose marketing language
-- KEEP TECHNICAL TERMS - preserve specific names like "ainvoke", "Redis checkpointer", "thread_id"
-- State the ACTUAL PROBLEM SOLVED, not vague improvements
-- COMBINE related functionality - fewer bullets is better
-- DROP low-value items that don't add meaningful information
-- AVOID redundant words: "simultaneously", "directly", "immediately", "dedicated", "individual"
-- AVOID padding phrases: "enhanced performance", "streamlined navigation", "information access"
-- Use simple phrases: "migrated to", "added to", "via bulk action"
+Rules:
+- Use the Epic URL provided to create markdown hyperlinks: [Epic Name](epic_url)
+- "**Value Add**:" must be bold (use ** markdown) followed by a colon
+- Keep bullet points simple and FLAT — no sub-bullets or nested lists
+- Separate Bug tickets into a "**Bug Fixes:**" section after value-adds
+- Add the availability tag (General Availability or Feature Flag) on its own line after value-add bullets ONLY for stories/tasks
+- NEVER add availability tags (General Availability or Feature Flag) to the Bug Fixes section
+- If multiple tickets describe repetitive work, consolidate into ONE bullet
+- Translate developer-speak into stakeholder-friendly language
+- Do NOT invent features — only describe what the tickets actually cover
+- Do NOT add extra sections, introductions, or conclusions
 
-STYLE COMPARISON - BAD vs GOOD:
-
-BAD (verbose):
-* Users can now retrieve their complete conversation history through improved Redis checkpointer integration
-* Chat interface operates with enhanced performance through asynchronous LLM processing
-
-GOOD (concise, technical):
-* Users can now retrieve full conversation history from Redis checkpointer for any thread
-* LLM invoke calls converted to async (ainvoke) to resolve sync client unavailable errors in async environments
-
-BAD (too wordy):
-* Organization details page includes a dedicated tab component for streamlined navigation and information access
-* Existing ticker functionality from the previous Account Manager version now appears in the revamped interface
-
-GOOD (simple, direct):
-* New tab navigation component added to organization details page for improved user experience
-* Existing ticker migrated to the revamped Account Manager UI for consistency
-
-CONSOLIDATION - Combine related items into one bullet:
-Raw items:
-- Conversions widget displays ACBA-related conversions selected at campaign group level
-- Ad group creation and editing flows now show mandatory conversion selections
-
-CORRECT OUTPUT:
-* ACBA-related conversions selected at Campaign Group level now display in the Ad Group builder conversions widget with appropriate enabled/disabled states
-
-DETECTING REPETITIVE ITEMS - Items that describe the SAME feature from different angles MUST be merged:
-Raw items (REPETITIVE - same feature, different wording):
-- Ad Group Builder displays conversions selected at campaign group level with ACBA goals, showing mandatory CPA goal conversions in a disabled state during create and edit flows
-- Conversions widget provides clear visibility into campaign group level conversion requirements when ACBA goals are active
-
-CORRECT OUTPUT (merged into ONE bullet):
-* Ad Group Builder displays campaign group level ACBA conversions with mandatory CPA goal conversions shown in a disabled state during create and edit flows
-
-Signs of repetitive items to merge:
-- Same feature name mentioned (e.g., "conversions widget", "Ad Group Builder")
-- Same context (e.g., "ACBA goals", "campaign group level")
-- One describes WHAT it does, another describes the BENEFIT - combine them
-- Items that would make a reader say "didn't you already say that?"
-
-Now consolidate for {product}:"""
+Now write the body sections for {product}:"""
             }]
         )
 
@@ -397,16 +336,26 @@ Now consolidate for {product}:"""
 
 
 def _format_raw_sections_fallback(sections: List[Dict]) -> str:
-    """Fallback formatting when LLM is not available."""
+    """Fallback formatting when LLM is not available.
+
+    Matches the new format: #### [Epic Name](url), **Value Add**:, flat bullets, Bug Fixes.
+    """
     output = []
     for section in sections:
-        output.append(f"{section['title']}\n")
-        output.append("Value Add:")
+        epic_url = section.get("url", "#")
+        output.append(f"#### [{section['title']}]({epic_url})")
+        output.append("**Value Add**:")
         for item in section.get("items", []):
-            output.append(f"   * {item}")
+            output.append(f"* {item}")
         status = section.get("status", "")
         if status:
-            output.append(f"\n{status}\n")
+            output.append(status)
+        bug_items = section.get("bug_items", [])
+        if bug_items:
+            output.append("")
+            output.append("**Bug Fixes:**")
+            for item in bug_items:
+                output.append(f"* {item}")
         output.append("")
     return "\n".join(output)
 
@@ -456,12 +405,6 @@ class ReleaseNotesFormatter:
             if self._is_release_ticket(ticket):
                 continue
 
-            # Skip Hotfix versions
-            fix_version = ticket.get("fix_version", "")
-            if fix_version and "hotfix" in fix_version.lower():
-                print(f"[Formatter] Skipping Hotfix ticket: {ticket.get('key')} ({fix_version})")
-                continue
-
             # Determine product line
             product_line = self._determine_product_line(ticket)
 
@@ -487,8 +430,19 @@ class ReleaseNotesFormatter:
         return self.grouped_data
 
     def _is_release_ticket(self, ticket: Dict) -> bool:
-        """Check if a ticket is a release ticket (to be excluded)."""
+        """Check if a ticket is a release ticket, deployment tracker, or hotfix (to be excluded)."""
         summary = ticket.get("summary", "").lower()
+        issue_type = ticket.get("issue_type", "").lower()
+        fix_version = ticket.get("fix_version", "").lower()
+
+        # Exclude Deployment Tracker tickets
+        if "deployment" in issue_type and "tracker" in issue_type:
+            return True
+
+        # Exclude tickets from Hotfix fix versions
+        if "hotfix" in fix_version:
+            return True
+
         return "release" in summary and any(
             keyword in summary for keyword in ["deployment", "release notes", "release "]
         )
@@ -574,9 +528,6 @@ class ReleaseNotesFormatter:
         for prefix in prefixes_to_remove:
             if text.upper().startswith(prefix.upper()):
                 text = text[len(prefix):].strip()
-        # Capitalize the first letter
-        if text:
-            text = text[0].upper() + text[1:]
         return text
 
     def _extract_bullets_from_description(self, description: str) -> List[str]:
@@ -630,11 +581,7 @@ class ReleaseNotesFormatter:
                 cleaned.append(s)
 
         # Join all summaries with semicolons
-        result = '; '.join(cleaned)
-        # Capitalize the first letter
-        if result:
-            result = result[0].upper() + result[1:]
-        return result
+        return '; '.join(cleaned)
 
     def generate_tldr(self, use_llm: bool = True) -> Dict[str, Any]:
         """
@@ -856,12 +803,16 @@ class ReleaseNotesFormatter:
         })
         current_index += len(key_deploy_header)
 
-        # TL;DR content - Key Deployments per PL (bullet point format)
+        # TL;DR content - Key Deployments per PL
         for deployment in tldr.get("key_deployments", []):
             pl_name = deployment["pl"]
+            version = deployment.get("version", "")
             summary = deployment.get("summary", "")
 
-            deploy_line = f"• {pl_name} - {summary}\n"
+            if version:
+                deploy_line = f"   * {pl_name} ({version}): {summary}\n"
+            else:
+                deploy_line = f"   * {pl_name}: {summary}\n"
 
             requests.append({
                 "insertText": {
@@ -1121,8 +1072,12 @@ class ReleaseNotesFormatter:
 
         for deployment in tldr.get("key_deployments", []):
             pl_name = deployment["pl"]
+            version = deployment.get("version", "")
             summary = deployment.get("summary", "")
-            lines.append(f"• {pl_name} - {summary}")
+            if version:
+                lines.append(f"   • {pl_name} ({version}): {summary}")
+            else:
+                lines.append(f"   • {pl_name}: {summary}")
 
         lines.append("")
 
@@ -1181,8 +1136,12 @@ class ReleaseNotesFormatter:
         lines = ["*Key Deployments:*"]
         for deployment in tldr.get("key_deployments", []):
             pl_name = deployment["pl"]
+            version = deployment.get("version", "")
             summary = deployment.get("summary", "")
-            lines.append(f"• {pl_name} - {summary}")
+            if version:
+                lines.append(f"   • {pl_name} ({version}): {summary}")
+            else:
+                lines.append(f"   • {pl_name}: {summary}")
 
         return "\n".join(lines)
 

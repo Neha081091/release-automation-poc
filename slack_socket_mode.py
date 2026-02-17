@@ -379,7 +379,7 @@ def restore_pl_to_google_doc(pl_name: str, deferred_pl_data: dict, message_ts: s
 
         tldr_summary = deferred_pl_data.get('tldr') or deferred_pl_data.get('notes') or "Updates added"
         pl_clean = _clean_pl_name_for_doc(pl_name)
-        tldr_line = f"{pl_clean} - {tldr_summary}\n"
+        tldr_line = f"• {pl_clean} - {tldr_summary}\n"
 
         tldr_insert_text_pos = None
         tldr_header_match = re.search(r'-{10,}\s*TL;DR:?\s*-{10,}', section_text, re.IGNORECASE)
@@ -439,7 +439,7 @@ def restore_pl_to_google_doc(pl_name: str, deferred_pl_data: dict, message_ts: s
             tldr_requests = [{"insertText": {"location": {"index": tldr_insert_index}, "text": tldr_line}}]
             tldr_format = [
                 {"updateTextStyle": {"range": {"startIndex": tldr_insert_index, "endIndex": tldr_insert_index + len(tldr_line)}, "textStyle": {"bold": False}, "fields": "bold"}},
-                {"updateTextStyle": {"range": {"startIndex": tldr_insert_index, "endIndex": tldr_insert_index + len(pl_clean)}, "textStyle": {"bold": True}, "fields": "bold"}}
+                {"updateTextStyle": {"range": {"startIndex": tldr_insert_index + len("• "), "endIndex": tldr_insert_index + len("• ") + len(pl_clean)}, "textStyle": {"bold": True}, "fields": "bold"}}
             ]
             jobs.append((tldr_insert_index, tldr_requests, tldr_format))
 
