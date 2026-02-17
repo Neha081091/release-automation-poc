@@ -205,7 +205,7 @@ def refresh_tickets():
     original_count = len(all_tickets)
     all_tickets = [
         t for t in all_tickets
-        if "hotfix" not in t.get("fix_version", "").lower()
+        if "hotfix" not in (t.get("fix_version") or "").lower()
     ]
     hotfix_count = original_count - len(all_tickets)
     if hotfix_count > 0:
