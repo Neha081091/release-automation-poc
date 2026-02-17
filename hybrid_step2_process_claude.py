@@ -99,8 +99,9 @@ def consolidate_with_claude(client, product: str, summaries: list, statuses: lis
 
     message = client.messages.create(
         model="claude-opus-4-5-20250918",
-        temperature=0,
         max_tokens=500,
+        temperature=0,
+        system="You are a professional technical writer at a healthcare ad-tech company. Write concise, polished deployment summaries.",
         messages=[{
             "role": "user",
             "content": f"""Write a flowing prose TL;DR summary for this deployment.
@@ -161,8 +162,9 @@ def consolidate_body_with_claude(client, product: str, sections: list, release_v
 
     message = client.messages.create(
         model="claude-opus-4-5-20250918",
-        temperature=0,
         max_tokens=2000,
+        temperature=0,
+        system="You are a professional technical writer at a healthcare ad-tech company. Write concise, polished deployment summaries.",
         messages=[{
             "role": "user",
             "content": f"""Transform these raw Jira sections into polished deployment value-add summaries.
@@ -367,7 +369,7 @@ def process_tickets_with_claude():
     grouped = defaultdict(lambda: defaultdict(list))
 
     for ticket in tickets:
-        fix_version = ticket.get("fix_version", "")
+        fix_version = ticket.get("fix_version") or ""
         # Parse PL from fix version - preserve year if present (e.g., "Media PL1 2026")
         match = re.match(r'^(.+?\s*\d{4}):\s*Release', fix_version)
         if match:
@@ -419,7 +421,7 @@ def process_tickets_with_claude():
     for pl, epics in grouped.items():
         for epic_name, epic_tickets in epics.items():
             for t in epic_tickets:
-                fix_version = t.get("fix_version", "")
+                fix_version = t.get("fix_version") or ""
                 # Extract version number (e.g., "Release 3.0" from "DSP Core PL1 2026: Release 3.0")
                 version_match = re.search(r'Release\s*([\d.]+)', fix_version)
                 if version_match:
