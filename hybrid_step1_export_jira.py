@@ -23,6 +23,22 @@ load_dotenv()
 
 from jira_handler import JiraHandler
 
+# Files that should be cleaned up when no release is planned
+STALE_FILES = ['tickets_export.json', 'processed_notes.json']
+
+
+def is_weekday() -> bool:
+    """Return True if today is Monday-Friday."""
+    return datetime.now().weekday() < 5  # 0=Mon … 4=Fri
+
+
+def cleanup_stale_exports():
+    """Remove stale export files so previous day's notes don't leak through."""
+    for filepath in STALE_FILES:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            print(f"[Cleanup] Removed stale {filepath}")
+
 
 def get_day_suffix(day: int) -> str:
     """Get the ordinal suffix for a day (1st, 2nd, 3rd, 4th, etc.)."""
@@ -84,8 +100,9 @@ def export_jira_tickets(release_date_str: str = None):
     release_ticket = jira.find_release_ticket(release_summary, project_key)
 
     if not release_ticket:
-        print(f"[Step 1] ERROR: Release ticket not found: '{release_summary}'")
+        print(f"[Step 1] No release planned: '{release_summary}' not found in Jira")
         print(f"[Step 1] TIP: Check if the date format matches Jira (e.g., '5th February 2026')")
+        cleanup_stale_exports()
         return None
 
     release_key = release_ticket['key']
@@ -96,6 +113,7 @@ def export_jira_tickets(release_date_str: str = None):
 
     if not linked_tickets:
         print("[Step 1] WARNING: No linked tickets found")
+        cleanup_stale_exports()
         return None
 
     print(f"[Step 1] Found {len(linked_tickets)} tickets")
