@@ -930,7 +930,9 @@ def handle_good_to_announce(ack, body):
             "type": "section",
             "text": {"type": "mrkdwn", "text": announcement_text}
         }])
-        save_json(LAST_ANNOUNCEMENT_FILE, {"channel": announce_channel, "message_ts": result.get('ts'), "text": announcement_text})
+        announcement_ts = result.get('ts')
+        if announcement_ts:
+            save_last_announcement(announce_channel, announcement_ts, announcement_text)
     except Exception:
         pass
 
@@ -940,6 +942,275 @@ def handle_good_to_announce(ack, body):
         {"type": "section", "text": {"type": "mrkdwn", "text": f"• Approved: {', '.join(approved_pls) if approved_pls else 'None'}\n• Deferred (Full): {', '.join(deferred_full_pls) if deferred_full_pls else 'None'}\n• Deferred (Partial): {', '.join(deferred_partial_pls) if deferred_partial_pls else 'None'}\n• Tomorrow: {', '.join(tomorrow_pls) if tomorrow_pls else 'None'}"}}
     ]
     client.chat_update(channel=channel, ts=message_ts, blocks=final_blocks, text="Release has been announced!")
+
+
+def save_last_announcement(channel: str, message_ts: str, text: str):
+    """Save the last announcement details for edit/delete."""
+    save_json(LAST_ANNOUNCEMENT_FILE, {
+        'channel': channel,
+        'message_ts': message_ts,
+        'text': text,
+        'posted_at': datetime.now().isoformat()
+    })
+
+
+def load_last_announcement() -> dict:
+    """Load the last announcement details."""
+    return load_json(LAST_ANNOUNCEMENT_FILE, {})
+
+
+@app.command("/delete-announcement")
+def handle_delete_announcement(ack, command, respond):
+    """Handle /delete-announcement slash command."""
+    ack()
+
+    user = command['user_name']
+    text = command.get('text', '').strip()
+    print(f"[Socket Mode] {user} triggered /delete-announcement")
+
+    if text:
+        parts = text.split()
+        if len(parts) >= 2:
+            channel = parts[0]
+            message_ts = parts[1]
+        else:
+            channel = os.getenv('SLACK_ANNOUNCE_CHANNEL', command['channel_id'])
+            message_ts = parts[0]
+    else:
+        last = load_last_announcement()
+        if not last:
+            respond("No announcement found to delete. Use `/delete-announcement <channel_id> <message_ts>` to specify.")
+            return
+        channel = last.get('channel')
+        message_ts = last.get('message_ts')
+
+    try:
+        client.chat_delete(channel=channel, ts=message_ts)
+        respond("✅ Announcement deleted successfully!")
+        if os.path.exists(LAST_ANNOUNCEMENT_FILE):
+            os.remove(LAST_ANNOUNCEMENT_FILE)
+    except Exception as e:
+        respond(f"❌ Failed to delete announcement: {str(e)}")
+
+
+@app.command("/edit-announcement")
+def handle_edit_announcement(ack, command, respond):
+    """Handle /edit-announcement slash command - opens a modal for editing."""
+    ack()
+
+    user = command['user_name']
+    trigger_id = command['trigger_id']
+    print(f"[Socket Mode] {user} triggered /edit-announcement")
+
+    last = load_last_announcement()
+    if not last:
+        respond("No announcement found to edit. Post an announcement first using 'Good to Announce'.")
+        return
+
+    def _split_text_chunks(text: str, size: int = 3000, parts: int = 3):
+        chunks = []
+        remaining = text or ""
+        for _ in range(parts):
+            chunks.append(remaining[:size])
+            remaining = remaining[size:]
+        return chunks
+
+    try:
+        part1, part2, part3 = _split_text_chunks(last.get('text', ''), 3000, 3)
+
+        def _input_block(block_id, action_id, label, initial_value):
+            element = {
+                "type": "plain_text_input",
+                "action_id": action_id,
+                "multiline": True,
+                "max_length": 3000
+            }
+            if initial_value:
+                element["initial_value"] = initial_value
+            else:
+                element["placeholder"] = {"type": "plain_text", "text": "Add text..."}
+            return {
+                "type": "input",
+                "block_id": block_id,
+                "optional": True if block_id != "announcement_text_1" else False,
+                "element": element,
+                "label": {"type": "plain_text", "text": label}
+            }
+        client.views_open(
+            trigger_id=trigger_id,
+            view={
+                "type": "modal",
+                "callback_id": "edit_announcement_modal",
+                "title": {"type": "plain_text", "text": "Edit Announcement"},
+                "submit": {"type": "plain_text", "text": "Update"},
+                "close": {"type": "plain_text", "text": "Cancel"},
+                "private_metadata": json.dumps({
+                    'channel': last.get('channel'),
+                    'message_ts': last.get('message_ts')
+                }),
+                "blocks": [
+                    _input_block("announcement_text_1", "text_input_1", "Announcement Text (Part 1)", part1),
+                    _input_block("announcement_text_2", "text_input_2", "Announcement Text (Part 2)", part2),
+                    _input_block("announcement_text_3", "text_input_3", "Announcement Text (Part 3)", part3)
+                ]
+            }
+        )
+    except Exception as e:
+        respond(f"❌ Failed to open edit modal: {str(e)}")
+
+
+@app.view("edit_announcement_modal")
+def handle_edit_modal_submission(ack, body, view):
+    """Handle the edit announcement modal submission."""
+    ack()
+
+    values = view.get('state', {}).get('values', {})
+    part1 = values.get('announcement_text_1', {}).get('text_input_1', {}).get('value', '') or ''
+    part2 = values.get('announcement_text_2', {}).get('text_input_2', {}).get('value', '') or ''
+    part3 = values.get('announcement_text_3', {}).get('text_input_3', {}).get('value', '') or ''
+    new_text = "\n".join([p for p in [part1, part2, part3] if p.strip()]) or part1
+    metadata = json.loads(view.get('private_metadata', '{}'))
+    channel = metadata.get('channel')
+    message_ts = metadata.get('message_ts')
+
+    if not channel or not message_ts:
+        print("[Socket Mode] Missing channel or message_ts in edit modal")
+        return
+
+    # Load fix version and epic URLs for auto-formatting
+    try:
+        with open('processed_notes.json', 'r') as f:
+            processed_data = json.load(f)
+    except Exception:
+        processed_data = {}
+
+    fix_version_urls = processed_data.get('fix_version_urls', {})
+    epic_urls_by_pl = processed_data.get('epic_urls_by_pl', {})
+
+    # Flatten epic URLs for easier lookup
+    all_epic_urls = {}
+    for _, epics in epic_urls_by_pl.items():
+        if epics:
+            for epic_name, epic_url in epics.items():
+                all_epic_urls[epic_name.lower()] = (epic_name, epic_url)
+
+    def auto_format_text(text: str) -> str:
+        lines = text.split('\n')
+        formatted_lines = []
+
+        def strip_formatting(s: str) -> str:
+            s = s.strip('*')
+            link_match = re.match(r'^<[^|]+\|(.+)>$', s)
+            if link_match:
+                s = link_match.group(1).strip('*')
+            return s.strip()
+
+        def is_already_formatted(s: str) -> bool:
+            return s.startswith('<') and '|' in s and s.endswith('>')
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                formatted_lines.append('')
+                continue
+
+            if is_already_formatted(stripped):
+                formatted_lines.append(stripped)
+                continue
+
+            clean_text = strip_formatting(stripped)
+            clean_lower = clean_text.lower()
+
+            if clean_lower in ('value add:', 'value add') and not stripped.startswith('*'):
+                formatted_lines.append('*Value Add:*')
+                continue
+            if clean_lower in ('bug fixes:', 'bug fixes') and not stripped.startswith('*'):
+                formatted_lines.append('*Bug Fixes:*')
+                continue
+
+            if clean_text in ('General Availability', 'Feature Flag', 'Beta') and not stripped.startswith('`'):
+                formatted_lines.append(f'`{clean_text}`')
+                continue
+
+            release_match = re.match(r'^\*?([^*:]+)\*?:\s*(Release\s+\d+\.\d+)$', stripped)
+            if release_match and '<' not in stripped:
+                pl_name = release_match.group(1).strip()
+                release_ver = release_match.group(2)
+                url = None
+                pl_name_lower = pl_name.lower()
+                for stored_pl, stored_url in fix_version_urls.items():
+                    stored_pl_lower = stored_pl.lower()
+                    stored_pl_clean = re.sub(r'\s+20\d{2}$', '', stored_pl_lower)
+                    pl_name_clean = re.sub(r'\s+20\d{2}$', '', pl_name_lower)
+                    if (pl_name_lower == stored_pl_lower or
+                        pl_name_clean == stored_pl_clean or
+                        pl_name_lower in stored_pl_lower or
+                        stored_pl_lower in pl_name_lower):
+                        url = stored_url
+                        break
+                if url:
+                    formatted_lines.append(f"*{pl_name}*: <{url}|{release_ver}>")
+                    continue
+
+            # Skip bullets/prose from epic matching
+            if '<' in stripped or stripped.startswith(('●', '•', '-', '*', '`')):
+                formatted_lines.append(stripped)
+                continue
+
+            clean_words = set(clean_lower.split())
+            found_epic = False
+            for epic_lower, (epic_name, epic_url) in all_epic_urls.items():
+                if clean_lower == epic_lower:
+                    formatted_lines.append(f"<{epic_url}|*{clean_text}*>")
+                    found_epic = True
+                    break
+                if epic_lower in clean_lower or clean_lower in epic_lower:
+                    formatted_lines.append(f"<{epic_url}|*{clean_text}*>")
+                    found_epic = True
+                    break
+                epic_words = set(epic_lower.split())
+                common_words = clean_words & epic_words
+                if len(epic_words) > 0 and len(clean_words) > 0:
+                    forward_ratio = len(common_words) / len(epic_words)
+                    reverse_ratio = len(common_words) / len(clean_words)
+                    if forward_ratio >= 0.7 or reverse_ratio >= 0.7:
+                        formatted_lines.append(f"<{epic_url}|*{clean_text}*>")
+                        found_epic = True
+                        break
+
+            if found_epic:
+                continue
+
+            formatted_lines.append(stripped)
+
+        return '\n'.join(formatted_lines)
+
+    formatted_text = auto_format_text(new_text)
+
+    def _build_text_blocks(text: str, chunk_size: int = 3000):
+        chunks = []
+        remaining = text or ""
+        while remaining:
+            chunks.append(remaining[:chunk_size])
+            remaining = remaining[chunk_size:]
+        return [{"type": "section", "text": {"type": "mrkdwn", "text": chunk}} for chunk in chunks] or [
+            {"type": "section", "text": {"type": "mrkdwn", "text": ""}}
+        ]
+
+    try:
+        client.chat_update(
+            channel=channel,
+            ts=message_ts,
+            text=formatted_text[:40000],
+            blocks=_build_text_blocks(formatted_text)
+        )
+        save_last_announcement(channel, message_ts, formatted_text)
+        try:
+            client.chat_postMessage(channel=body['user']['id'], text="✅ Announcement updated successfully!")
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"[Socket Mode] Error updating announcement: {e}")
 
 
 def post_approval_message(pls: list = None, doc_url: str = None, release_date: str = None, notes_by_pl: dict = None):
