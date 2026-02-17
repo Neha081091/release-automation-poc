@@ -510,6 +510,18 @@ class JiraHandler:
         return False
 
 
+def _today_release_summary() -> str:
+    """Return today's release summary like 'Release 17th February 2026'."""
+    from datetime import datetime
+    today = datetime.now()
+    day = today.day
+    if 11 <= day <= 13:
+        suffix = 'th'
+    else:
+        suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th')
+    return f"Release {day}{suffix} {today.strftime('%B %Y')}"
+
+
 def main():
     """Test the Jira handler."""
     from dotenv import load_dotenv
@@ -524,7 +536,7 @@ def main():
             return
 
         # Find release ticket
-        release_summary = os.getenv('RELEASE_TICKET_SUMMARY', 'Release 2nd February 2026')
+        release_summary = os.getenv('RELEASE_TICKET_SUMMARY', _today_release_summary())
         release_ticket = handler.find_release_ticket(release_summary)
 
         if release_ticket:

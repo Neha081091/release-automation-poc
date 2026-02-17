@@ -18,7 +18,7 @@ Usage:
 
     formatter = GoogleDocsFormatter()
     requests = formatter.format_release_notes(
-        release_date="5th February 2026",
+        release_date="<today's date, e.g. 17th February 2026>",
         tldr_by_pl={"DSP Core PL1": "summary..."},
         body_by_pl={"DSP Core PL1": "Epic Name\\nValue Add:\\n..."},
         product_lines=["DSP Core PL1"],
@@ -747,9 +747,20 @@ def format_for_google_docs(
 
 # Test the formatter
 if __name__ == "__main__":
+    from datetime import datetime
+
+    def _today_date_str() -> str:
+        today = datetime.now()
+        day = today.day
+        if 11 <= day <= 13:
+            suffix = 'th'
+        else:
+            suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th')
+        return f"{day}{suffix} {today.strftime('%B %Y')}"
+
     # Sample test data
     test_data = {
-        "release_summary": "5th February 2026",
+        "release_summary": _today_date_str(),
         "product_lines": ["Media PL1", "Developer Experience", "DSP Core PL1"],
         "tldr_by_pl": {
             "Media PL1": "InventoryTier dimension now visible in Reporting for seats with enabled priority tiers; Open Auction enablement flag added for Deal IDs with new Negotiated Bid Floor field for internal auction dynamics",

@@ -637,6 +637,18 @@ Time: {time.strftime('%Y-%m-%d %H:%M')}"""
             return []
 
 
+def _today_date_str() -> str:
+    """Return today's date formatted like '17th February 2026'."""
+    from datetime import datetime
+    today = datetime.now()
+    day = today.day
+    if 11 <= day <= 13:
+        suffix = 'th'
+    else:
+        suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th')
+    return f"{day}{suffix} {today.strftime('%B %Y')}"
+
+
 def main():
     """Test the Slack handler."""
     from dotenv import load_dotenv
@@ -657,7 +669,7 @@ def main():
 
             # Test sending review notification
             review_result = handler.send_review_notification(
-                release_date="2nd February 2026",
+                release_date=_today_date_str(),
                 doc_url="https://docs.google.com/document/d/test/edit",
                 tldr_summary="*Deployments by:* DSP PL2, Audiences PL1\n*Major Feature:* New targeting options\n*Key Enhancement:* Performance improvements"
             )
