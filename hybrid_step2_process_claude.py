@@ -532,13 +532,13 @@ def process_tickets_with_claude():
         if "deployment" in issue_type and "tracker" in issue_type:
             continue
 
-        fix_version = ticket.get("fix_version", "")
+        fix_version = ticket.get("fix_version") or ""
 
         # Skip tickets from Hotfix fix versions
         if "hotfix" in fix_version.lower():
             continue
-        # Parse PL from fix version
-        match = re.match(r'^(.+?)\s*\d{4}:\s*Release', fix_version)
+        # Parse PL from fix version - preserve year if present (e.g., "Media PL1 2026")
+        match = re.match(r'^(.+?\s*\d{4}):\s*Release', fix_version)
         if match:
             pl = match.group(1).strip()
         else:

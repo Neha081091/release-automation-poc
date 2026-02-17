@@ -122,7 +122,7 @@ def export_jira_tickets(release_date_str: str = None):
     original_count = len(linked_tickets)
     linked_tickets = [
         t for t in linked_tickets
-        if "hotfix" not in t.get("fix_version", "").lower()
+        if "hotfix" not in (t.get("fix_version") or "").lower()
     ]
     hotfix_count = original_count - len(linked_tickets)
     if hotfix_count > 0:

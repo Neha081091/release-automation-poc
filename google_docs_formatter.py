@@ -539,7 +539,7 @@ class GoogleDocsFormatter:
             if in_value_section:
                 # This is the prose description - just regular text
                 # Remove any accidental bullet characters
-                clean_text = re.sub(r'^[●•\*\-]\s*', '', stripped)
+                clean_text = re.sub(r'^[\*\-]\s*', '', stripped)
                 elements.append({
                     "type": "prose",
                     "text": clean_text + "\n"
@@ -746,6 +746,8 @@ class GoogleDocsFormatter:
                         if element["type"] == "epic":
                             if element.get("bold"):
                                 self._mark_bold(elem_start, elem_end - 1)
+                            # Epic names are blue colored
+                            self._mark_blue(elem_start, elem_end - 1)
                             if element.get("url"):
                                 self._mark_link(elem_start, elem_end - 1, element["url"])
                         elif element["type"] in ("value_add_header", "bug_fixes_header"):
