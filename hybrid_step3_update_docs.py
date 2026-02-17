@@ -128,7 +128,7 @@ def update_google_docs(processed_data: dict, force_update: bool = False) -> bool
             if not force_update:
                 print(f"[Step 3a] WARNING: Release '{release_date}' already exists in document")
                 print("[Step 3a] Skipping to avoid duplicates. Use --force to override.")
-                return True  # Return True since it's not an error
+                return "skipped"  # Distinct from True (success) and False (error)
             else:
                 print(f"[Step 3a] Force update: Adding '{release_date}' even though it exists")
 
@@ -393,11 +393,17 @@ def main():
         return
 
     # Update Google Docs
-    docs_success = update_google_docs(processed_data, force_update=args.force)
+    docs_result = update_google_docs(processed_data, force_update=args.force)
+    docs_success = docs_result is True  # True only on actual update, not "skipped"
+    docs_skipped = docs_result == "skipped"
 
-    # Send Slack notification (unless skipped)
+    # Send Slack notification (unless skipped or doc update was skipped)
     if not args.no_slack:
-        if args.simple_slack:
+        if docs_skipped:
+            print("\n[Step 3b] Skipping Slack notification (Google Docs update was skipped - duplicate)")
+        elif not docs_success:
+            print("\n[Step 3b] Skipping Slack notification (Google Docs update failed)")
+        elif args.simple_slack:
             # Use legacy simple notification
             slack_success = send_slack_notification(processed_data)
         else:
@@ -410,7 +416,8 @@ def main():
     print("\n" + "=" * 60)
     print("  HYBRID WORKFLOW COMPLETE")
     print("=" * 60)
-    print(f"  Google Docs: {'✅ SUCCESS' if docs_success else '❌ FAILED'}")
+    docs_status = "✅ SUCCESS" if docs_success else ("⏭️ SKIPPED (duplicate)" if docs_skipped else "❌ FAILED")
+    print(f"  Google Docs: {docs_status}")
     if not args.no_slack:
         print(f"  Slack:       {'✅ SUCCESS' if slack_success else '❌ FAILED'}")
         if slack_success and not args.simple_slack:

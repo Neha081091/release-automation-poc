@@ -103,6 +103,15 @@ def export_jira_tickets(release_date_str: str = None):
         print(f"[Step 1] No release planned: '{release_summary}' not found in Jira")
         print(f"[Step 1] TIP: Check if the date format matches Jira (e.g., '5th February 2026')")
         cleanup_stale_exports()
+        # Send Slack "no release planned" notification
+        try:
+            from slack_handler import SlackHandler
+            slack = SlackHandler()
+            today_date = release_summary or format_release_date(datetime.now())
+            slack.send_no_release_notification(today_date)
+            print(f"[Step 1] Sent 'no release planned' Slack notification")
+        except Exception as e:
+            print(f"[Step 1] Could not send Slack notification: {e}")
         return None
 
     release_key = release_ticket['key']

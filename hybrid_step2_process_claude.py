@@ -101,6 +101,7 @@ def consolidate_with_claude(client, product: str, summaries: list, statuses: lis
         model="claude-opus-4-6",
         temperature=0,
         max_tokens=500,
+        system="You are a professional technical writer at a healthcare ad-tech company. Write clear, concise deployment summaries for stakeholders.",
         messages=[{
             "role": "user",
             "content": f"""Write a flowing prose TL;DR summary for this deployment.
@@ -163,6 +164,7 @@ def consolidate_body_with_claude(client, product: str, sections: list, release_v
         model="claude-opus-4-6",
         temperature=0,
         max_tokens=2000,
+        system="You are a professional technical writer at a healthcare ad-tech company. Write clear, concise deployment summaries for stakeholders.",
         messages=[{
             "role": "user",
             "content": f"""Transform these raw Jira sections into polished deployment value-add summaries.
@@ -323,6 +325,15 @@ def process_tickets_with_claude():
 
     with open(input_file, 'r') as f:
         export_data = json.load(f)
+
+    # Stale data guard: reject tickets_export.json if exported_at date doesn't match today
+    exported_at = export_data.get("exported_at", "")
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    if exported_at and not exported_at.startswith(today_str):
+        print(f"[Step 2] ERROR: Stale data detected!")
+        print(f"[Step 2] tickets_export.json was exported on {exported_at[:10]}, but today is {today_str}")
+        print(f"[Step 2] Re-run hybrid_step1_export_jira.py to get fresh data")
+        return None
 
     tickets = export_data.get("tickets", [])
     print(f"[Step 2] Loaded {len(tickets)} tickets from {input_file}")

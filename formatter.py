@@ -175,6 +175,7 @@ def consolidate_tldr_with_claude(raw_summaries_by_product: Dict[str, List[str]])
                 model="claude-opus-4-6",
                 temperature=0,
                 max_tokens=500,
+                system="You are a professional technical writer at a healthcare ad-tech company. Write clear, concise deployment summaries for stakeholders.",
                 messages=[{
                     "role": "user",
                     "content": f"""Consolidate these raw Jira ticket summaries into ONE polished prose sentence for TLDR.
@@ -278,6 +279,7 @@ def consolidate_body_sections_with_claude(product: str, release: str, sections: 
             model="claude-opus-4-6",
             temperature=0,
             max_tokens=2000,
+            system="You are a professional technical writer at a healthcare ad-tech company. Write clear, concise deployment summaries for stakeholders.",
             messages=[{
                 "role": "user",
                 "content": f"""Transform these raw Jira sections into polished deployment value-add summaries.
