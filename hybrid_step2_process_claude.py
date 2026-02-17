@@ -532,7 +532,7 @@ def process_tickets_with_claude():
         if "deployment" in issue_type and "tracker" in issue_type:
             continue
 
-        fix_version = ticket.get("fix_version", "")
+        fix_version = ticket.get("fix_version") or ""
 
         # Skip tickets from Hotfix fix versions
         if "hotfix" in fix_version.lower():
