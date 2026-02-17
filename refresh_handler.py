@@ -768,7 +768,7 @@ def add_new_pls_to_google_doc(processed_data: Dict, release_date: str) -> bool:
             if new_pls:
                 updated_list = existing_pls + new_pls
                 new_key_line = f"Key Deployments: {_join_pl_names(updated_list)}\n"
-image.png                start_idx = _text_pos_to_doc_index(start_pos, segments)
+                start_idx = _text_pos_to_doc_index(start_pos, segments)
                 end_idx = _text_pos_to_doc_index(end_pos, segments)
                 jobs.append((
                     start_idx,

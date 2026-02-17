@@ -1086,13 +1086,22 @@ def handle_edit_modal_submission(ack, body, view):
 
     fix_version_urls = processed_data.get('fix_version_urls', {})
     epic_urls_by_pl = processed_data.get('epic_urls_by_pl', {})
+    epic_urls_flat = processed_data.get('epic_urls', {})
+
+    def _normalize_epic_key(text: str) -> str:
+        text = re.sub(r'\s+', ' ', text.strip().lower())
+        text = re.sub(r'\s*:\s*', ':', text)
+        return text
 
     # Flatten epic URLs for easier lookup
     all_epic_urls = {}
     for _, epics in epic_urls_by_pl.items():
         if epics:
             for epic_name, epic_url in epics.items():
-                all_epic_urls[epic_name.lower()] = (epic_name, epic_url)
+                all_epic_urls[_normalize_epic_key(epic_name)] = (epic_name, epic_url)
+    if epic_urls_flat:
+        for epic_name, epic_url in epic_urls_flat.items():
+            all_epic_urls[_normalize_epic_key(epic_name)] = (epic_name, epic_url)
 
     def auto_format_text(text: str) -> str:
         lines = text.split('\n')
@@ -1100,36 +1109,60 @@ def handle_edit_modal_submission(ack, body, view):
 
         def strip_formatting(s: str) -> str:
             s = s.strip('*')
+            s = re.sub(r'^\s*#{2,}\s*', '', s)
             link_match = re.match(r'^<[^|]+\|(.+)>$', s)
             if link_match:
                 s = link_match.group(1).strip('*')
             return s.strip()
 
-        def is_already_formatted(s: str) -> bool:
-            return s.startswith('<') and '|' in s and s.endswith('>')
+        def _parse_slack_link(s: str):
+            match = re.match(r'^<([^|>]+)\|(.+)>$', s)
+            if not match:
+                return None
+            return match.group(1), match.group(2)
 
+        in_value_add = False
+        in_bug_fixes = False
         for line in lines:
             stripped = line.strip()
             if not stripped:
                 formatted_lines.append('')
+                in_value_add = False
+                in_bug_fixes = False
                 continue
 
-            if is_already_formatted(stripped):
-                formatted_lines.append(stripped)
+            parsed_link = _parse_slack_link(stripped)
+            if parsed_link:
+                url, link_text = parsed_link
+                link_clean = strip_formatting(link_text)
+                if link_clean.startswith("Release "):
+                    formatted_lines.append(stripped)
+                else:
+                    formatted_lines.append(f"<{url}|*{link_clean}*>")
+                in_value_add = False
+                in_bug_fixes = False
                 continue
 
-            clean_text = strip_formatting(stripped)
-            clean_lower = clean_text.lower()
+            stripped = re.sub(r'^\s*#{2,}\s*', '', stripped)
+            bullet_stripped = re.sub(r'^[●•\*\-]\s*', '', stripped)
+            clean_text = strip_formatting(bullet_stripped)
+            clean_lower = _normalize_epic_key(clean_text)
 
             if clean_lower in ('value add:', 'value add') and not stripped.startswith('*'):
                 formatted_lines.append('*Value Add:*')
+                in_value_add = True
+                in_bug_fixes = False
                 continue
             if clean_lower in ('bug fixes:', 'bug fixes') and not stripped.startswith('*'):
                 formatted_lines.append('*Bug Fixes:*')
+                in_bug_fixes = True
+                in_value_add = False
                 continue
 
             if clean_text in ('General Availability', 'Feature Flag', 'Beta') and not stripped.startswith('`'):
                 formatted_lines.append(f'`{clean_text}`')
+                in_value_add = False
+                in_bug_fixes = False
                 continue
 
             release_match = re.match(r'^\*?([^*:]+)\*?:\s*(Release\s+\d+\.\d+)$', stripped)
@@ -1150,11 +1183,15 @@ def handle_edit_modal_submission(ack, body, view):
                         break
                 if url:
                     formatted_lines.append(f"*{pl_name}*: <{url}|{release_ver}>")
+                    in_value_add = False
+                    in_bug_fixes = False
                     continue
 
-            # Skip bullets/prose from epic matching
-            if '<' in stripped or stripped.startswith(('●', '•', '-', '*', '`')):
-                formatted_lines.append(stripped)
+            md_link = re.match(r'^\[([^\]]+)\]\(([^)]+)\)$', clean_text)
+            if md_link:
+                md_text = md_link.group(1).strip()
+                md_url = md_link.group(2).strip()
+                formatted_lines.append(f"<{md_url}|*{md_text}*>")
                 continue
 
             clean_words = set(clean_lower.split())
@@ -1179,9 +1216,18 @@ def handle_edit_modal_submission(ack, body, view):
                         break
 
             if found_epic:
+                in_value_add = False
+                in_bug_fixes = False
                 continue
 
-            formatted_lines.append(stripped)
+            # Skip bullets/prose from epic matching
+            if '<' in stripped or stripped.startswith(('●', '•', '-', '*', '`')):
+                formatted_lines.append(stripped)
+                continue
+            if in_value_add or in_bug_fixes:
+                formatted_lines.append(f"• {stripped}")
+            else:
+                formatted_lines.append(stripped)
 
         return '\n'.join(formatted_lines)
 
