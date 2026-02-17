@@ -34,8 +34,8 @@ from collections import defaultdict
 
 
 # Color definitions (RGB values 0-1 scale for Google Docs API)
-BLUE_COLOR = {"red": 0.06, "green": 0.36, "blue": 0.7}  # Link blue
-GREEN_COLOR = {"red": 0.13, "green": 0.55, "blue": 0.13}  # Dark green for status tags
+BLUE_COLOR = {"red": 0.06, "green": 0.36, "blue": 0.7}  # Link blue - also used for "General Availability" label
+GREEN_COLOR = {"red": 0.13, "green": 0.55, "blue": 0.13}  # Dark green for "Feature Flag" and epic names
 GRAY_COLOR = {"red": 0.5, "green": 0.5, "blue": 0.5}  # Gray for section headers
 
 # Product Line order - grouped by category for consistent display
@@ -73,13 +73,26 @@ PRODUCT_LINE_ORDER = [
 
 
 def get_ordered_pls(pl_list: list) -> list:
-    """Sort product lines according to PRODUCT_LINE_ORDER."""
+    """Sort product lines according to PRODUCT_LINE_ORDER.
+
+    Handles year variants by matching base PL name (e.g., "Media PL1 2026" matches "Media PL1").
+    """
     ordered = []
-    # First add PLs that are in the preferred order
-    for pl in PRODUCT_LINE_ORDER:
-        if pl in pl_list:
-            ordered.append(pl)
-    # Then add any PLs not in the preferred order (at the end)
+
+    def get_base_pl_name(pl_name: str) -> str:
+        """Remove year suffix from PL name for matching."""
+        return re.sub(r'\s+20\d{2}$', '', pl_name)
+
+    # First add PLs that match the preferred order (considering year variants)
+    for preferred_pl in PRODUCT_LINE_ORDER:
+        for pl in pl_list:
+            if pl in ordered:
+                continue
+            # Match exact or base name (without year)
+            if pl == preferred_pl or get_base_pl_name(pl) == preferred_pl:
+                ordered.append(pl)
+
+    # Then add any PLs not matched (at the end)
     for pl in pl_list:
         if pl not in ordered:
             ordered.append(pl)
@@ -103,6 +116,7 @@ class GoogleDocsFormatter:
             "bold": [],      # [(start, end), ...]
             "links": [],     # [(start, end, url), ...]
             "green": [],     # [(start, end), ...]
+            "blue": [],      # [(start, end), ...] - for General Availability status
             "gray": [],      # [(start, end), ...]
             "heading": [],   # [(start, end, level), ...]
         }
@@ -116,6 +130,7 @@ class GoogleDocsFormatter:
             "bold": [],
             "links": [],
             "green": [],
+            "blue": [],
             "gray": [],
             "heading": [],
         }
@@ -149,8 +164,12 @@ class GoogleDocsFormatter:
         self.formatting_positions["links"].append((start, end, url))
 
     def _mark_green(self, start: int, end: int):
-        """Mark text range as green (status tags)."""
+        """Mark text range as green (Feature Flag status and epic names)."""
         self.formatting_positions["green"].append((start, end))
+
+    def _mark_blue(self, start: int, end: int):
+        """Mark text range as blue (General Availability status)."""
+        self.formatting_positions["blue"].append((start, end))
 
     def _mark_gray(self, start: int, end: int):
         """Mark text range as gray."""
@@ -345,7 +364,7 @@ class GoogleDocsFormatter:
                 elements.append({
                     "type": "status",
                     "text": stripped + "\n",
-                    "color": "green"
+                    "color": "blue"  # General Availability uses blue color
                 })
                 in_value_section = False
                 continue
@@ -354,7 +373,7 @@ class GoogleDocsFormatter:
                 elements.append({
                     "type": "status",
                     "text": stripped + "\n",
-                    "color": "green"
+                    "color": "green"  # Feature Flag uses green color
                 })
                 in_value_section = False
                 continue
@@ -447,7 +466,7 @@ class GoogleDocsFormatter:
         key_deploy_start = self._insert_text(key_deploy_header)
         self._mark_bold(key_deploy_start, key_deploy_start + len("Key Deployments:"))
 
-        # TL;DR items per PL (prose format, no bullets)
+        # TL;DR items per PL (bullet point format)
         # Skip "Other" category as it's a catch-all for unclassified tickets
         # Sort PLs according to PRODUCT_LINE_ORDER for consistent display
         sorted_product_lines = get_ordered_pls(product_lines)
@@ -464,13 +483,14 @@ class GoogleDocsFormatter:
             if summary:
                 summary = summary[0].upper() + summary[1:] if len(summary) > 1 else summary.upper()
 
-            # Insert PL name (bold, NO hyperlink - black text) - NO bullet
+            # Insert bullet point
+            self._insert_text("• ")
+
+            # Insert PL name (bold, NO hyperlink - black text)
             pl_start = self.current_index
             self._insert_text(pl_clean)
             pl_end = self.current_index
             self._mark_bold(pl_start, pl_end)
-
-            # NOTE: Removed hyperlink from PL name in TLDR - should be plain black bold text
 
             # Insert separator and summary
             rest_of_line = f" - {summary}\n"
@@ -509,10 +529,12 @@ class GoogleDocsFormatter:
 
             # Process each PL in this category
             for pl in sorted_category_pls:
-                pl_clean = self._clean_pl_name(pl)
+                # For body section headers, preserve the year (e.g., "Media PL1 2026")
+                # Only clean for display in TL;DR
+                pl_display = pl  # Keep the full PL name with year for body sections
 
                 # PL name and release version line
-                pl_name_text = f"{pl_clean}: "
+                pl_name_text = f"{pl_display}: "
                 self._insert_text(pl_name_text)
 
                 # Release version (with link)
@@ -545,8 +567,10 @@ class GoogleDocsFormatter:
                             if element.get("bold"):
                                 # Bold the epic name (excluding newline)
                                 self._mark_bold(elem_start, elem_end - 1)
+                            # Epic names are green colored
+                            self._mark_green(elem_start, elem_end - 1)
                             if element.get("url"):
-                                # Add hyperlink
+                                # Add hyperlink (will override green with blue link color)
                                 self._mark_link(elem_start, elem_end - 1, element["url"])
 
                         elif element["type"] in ("value_add_header", "bug_fixes_header"):
@@ -556,9 +580,11 @@ class GoogleDocsFormatter:
                                 self._mark_bold(elem_start + bold_start, elem_start + bold_end)
 
                         elif element["type"] == "status":
-                            # Green color for status tags
+                            # Color based on status type
                             if element.get("color") == "green":
                                 self._mark_green(elem_start, elem_end - 1)
+                            elif element.get("color") == "blue":
+                                self._mark_blue(elem_start, elem_end - 1)
 
                         # "prose" type has no special formatting - just regular text
 
@@ -643,7 +669,7 @@ class GoogleDocsFormatter:
                 }
             })
 
-        # Green text (status tags)
+        # Green text (Feature Flag status tags and epic names)
         for start, end in self.formatting_positions["green"]:
             if end > start:
                 self.format_requests.append({
@@ -651,6 +677,19 @@ class GoogleDocsFormatter:
                         "range": {"startIndex": start, "endIndex": end},
                         "textStyle": {
                             "foregroundColor": {"color": {"rgbColor": GREEN_COLOR}}
+                        },
+                        "fields": "foregroundColor"
+                    }
+                })
+
+        # Blue text (General Availability status tags)
+        for start, end in self.formatting_positions["blue"]:
+            if end > start:
+                self.format_requests.append({
+                    "updateTextStyle": {
+                        "range": {"startIndex": start, "endIndex": end},
+                        "textStyle": {
+                            "foregroundColor": {"color": {"rgbColor": BLUE_COLOR}}
                         },
                         "fields": "foregroundColor"
                     }

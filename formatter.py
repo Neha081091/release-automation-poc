@@ -90,10 +90,10 @@ PRODUCT_LINE_ORDER = [
 
 def parse_pl_from_fix_version(fix_version: str) -> str:
     """
-    Extract product line name from fix version string.
+    Extract product line name from fix version string, preserving year if present.
 
     Examples:
-        "DSP Core PL3 2026: Release 4.0" -> "DSP Core PL3"
+        "DSP Core PL3 2026: Release 4.0" -> "DSP Core PL3 2026"
         "DSP Core PL1: Release 3.0" -> "DSP Core PL1"
         "Developer Experience: Release 6.0" -> "Developer Experience"
         "Audiences PL2: Release 4.0" -> "Audiences PL2"
@@ -102,13 +102,14 @@ def parse_pl_from_fix_version(fix_version: str) -> str:
         fix_version: Fix version string from Jira
 
     Returns:
-        Product line name
+        Product line name (with year if present)
     """
     if not fix_version:
         return "Other"
 
     # Try to match pattern with year: "DSP Core PL3 2026: Release 4.0"
-    match = re.match(r'^(.+?)\s*\d{4}:\s*Release', fix_version)
+    # Preserve the year in the PL name
+    match = re.match(r'^(.+?\s*\d{4}):\s*Release', fix_version)
     if match:
         return match.group(1).strip()
 
@@ -182,25 +183,33 @@ Raw Summaries:
 {summaries_text}
 
 Rules:
-1. Group related items conceptually (by feature area, not by change type)
-2. Use flowing narrative with semicolons separating major sections
-3. NO category labels like "usability improvements with", "data capabilities with"
-4. NO bullet points or lists
-5. Use natural connectors: "with", "including", "featuring", "spanning"
-6. Should read smoothly when spoken aloud
-7. Focus on feature areas and user impact
-8. Keep to ONE sentence (no paragraph breaks)
-9. Output ONLY the consolidated prose (no product name prefix)
+1. Write ONE flowing prose sentence (NOT bullet points or technical jargon dumps)
+2. Start with the main feature/improvement name, then use "with" to connect specific details
+3. Use natural connectors: "with", "including", "enabling", "along with"
+4. Use commas to list related items, semicolons only for truly separate feature areas
+5. Should read smoothly when spoken aloud - like a natural summary
+6. Keep technical names but explain them in context
+7. Be SPECIFIC with details (file sizes, button names, field names, etc.)
+8. Explain the PURPOSE/BENEFIT after changes using "enabling...", "for better...", "to ensure..."
+9. For bug fixes, each fix MUST start with "Fixed" - e.g., "Fixed [issue] ensuring [benefit]"
+10. Output ONLY the consolidated prose (no product name prefix)
+11. ELIMINATE REPETITIVE items - if multiple summaries describe the same feature (same component + same context like "ACBA goals" or "campaign group level"), mention it ONCE only
 
 Example input:
-- Open Orders page with the last applied Status column filter
-- Deselect Order Selections when user Archives Order
-- Allow Multi-select Option for Status Column Filter on Order Listing
-- Add Channel, Device, Inventory Filter Extraction Logic
-- Fix di-creative-service critical vulnerability
+- Add restart chat button to Sales Planning Copilot
+- Update placeholder text to "How can I help?"
+- Enhanced welcome message for uploading briefs
 
 Example output:
-Order listing usability improvements with multi-select status filtering, persistent filter preferences across sessions, automatic selection clearing on archive; forecasting enhancements with Deal/Exchange-derived filter logic and validation; critical security vulnerability patched in di-creative-service
+Sales Planning Copilot UX improvements with restart chat button, updated placeholders ("How can I help?"), and enhanced welcome messaging for better user guidance on uploading HCP or DTC RFP briefs
+
+Example input (bug fixes):
+- Fix HCP Planner target list upload for files >3.5 MB
+- Fix patient age calculation hardcoded year
+- Fix audience token mapping for multiple token types
+
+Example output:
+Fixed HCP Planner target list upload issue enabling support for files >3.5 MB; fixed patient age calculation issue removing hardcoded year values for accurate age computation; fixed audience token mapping ensuring correct handling of multiple token types
 
 Now consolidate for {product}:"""
                 }]
@@ -269,7 +278,7 @@ def consolidate_body_sections_with_claude(product: str, release: str, sections: 
             max_tokens=2000,
             messages=[{
                 "role": "user",
-                "content": f"""Consolidate these raw feature sections into polished, flowing prose bullet points.
+                "content": f"""Transform these raw Jira sections into polished deployment value-add summaries.
 
 Product: {product}
 Release: {release}
@@ -277,42 +286,100 @@ Release: {release}
 Raw Sections:
 {sections_text}
 
-Rules for consolidation:
-1. Keep the original section structure (one section per heading)
-2. Convert raw Jira summaries into flowing, descriptive prose bullets
-3. Each bullet should be a complete, well-written sentence
-4. Use natural language that reads smoothly and explains user value
-5. Do NOT group sections together - keep them separate with their original titles
-6. Include the status flag at the end of each section (General Availability, Feature Flag, etc.)
-7. Format output as:
-   __Section Title__
+CRITICAL FORMAT RULES:
+1. NO markdown formatting (no **, no __, no backticks)
+2. Use PLAIN TEXT only
+3. Epic names as headers on their own line
+4. Include "Value Add:" header followed by the description
+5. For SINGLE item: Write inline after "Value Add:" as one sentence
+6. For MULTIPLE items: Use bullet points with ● (filled circle) on separate lines
+7. Each bullet should start with action verb (Updated, Added, Improved, Included, Removed, Fixed, Enhanced)
+8. Explain WHAT the change does and WHY it matters (e.g., "enabling...", "to ensure...", "for better...")
+9. End each epic section with status tag on its own line: General Availability OR Feature Flag
+10. ONE blank line between epic sections
 
-   Value Add:
-
-   * Polished prose bullet point 1 explaining the feature and its impact
-   * Polished prose bullet point 2 with more context and details
-   * Polished prose bullet point 3 connecting to user value
-
-   Status Flag (if applicable)
-
-8. Do NOT abbreviate or use technical jargon - explain clearly for stakeholders
-9. Each bullet should be 1-2 complete sentences
+CRITICAL BUG FIX FORMAT - THIS IS MANDATORY:
+- Group all bug fixes under "Bug Fixes:" header (plural)
+- EVERY bug fix bullet MUST start with the word "Fixed" - NO EXCEPTIONS
+- Format: "Fixed [what was broken] issue ensuring [explanation of benefit]"
+- WRONG: "● Package deals now target correctly as unified packages"
+- CORRECT: "● Fixed package deal targeting issue ensuring deals are targeted as part of the package rather than individually"
+- Use "ensuring", "enabling", "allowing" to explain the benefit of the fix
 
 Example input:
-__Forecasting in Ad Groups__
-- Add Channel , Device , Inventory , Creative Unit Length Filter Extraction & Validation Logic based on Deals / Exchanges
-- One time Pixel Audience Data in DCR Clickhouse
+__Campaigns List Page V3__ (General Availability)
+- Allow top bar metrics selection independently from listing columns
+- Enhanced audit log for PG Ad Groups by removing inapplicable bid fields
 
 Example output:
-__Forecasting in Ad Groups__
-
+Campaigns List Page V3
 Value Add:
+● Improved campaign listing by allowing top bar metrics selection independently from listing columns
+● Enhanced audit log for PG Ad Groups by removing inapplicable bid fields for improved clarity
+General Availability
 
-* Enhanced forecasting filter logic now accurately derives Channel, Device, Inventory Type, and Creative Unit Length from attached Deals and Exchanges.
-* Validation errors now alert users when targeting configurations conflict (e.g., CTV deals attached to Banner ad groups or audio ad groups).
-* Pixel audience data is now available in DCR Clickhouse to support complex audience size calculations spanning HCP and patient campaigns.
+Example input (bug fixes):
+__Bug Fixes__ (General Availability)
+- Fix Add frequency button disappears when directly deleting existing frequency
+- Fix null date display in tooltip when hovering on graph datapoints
+- Package deals now target correctly as unified packages
 
-Feature Flag
+Example output:
+Bug Fixes:
+● Fixed Add frequency button issue ensuring the button remains visible when directly deleting existing frequency on ad-group quickview
+● Fixed null date display issue in tooltip ensuring correct date formatting when hovering on graph datapoints in Goal Widget
+● Fixed package deal targeting issue ensuring deals are targeted as part of the package rather than individually when new packages are created
+General Availability
+
+KEY PRINCIPLES:
+- Be CONCISE and DIRECT - short sentences, no verbose marketing language
+- KEEP TECHNICAL TERMS - preserve specific names like "ainvoke", "Redis checkpointer", "thread_id"
+- State the ACTUAL PROBLEM SOLVED, not vague improvements
+- COMBINE related functionality - fewer bullets is better
+- DROP low-value items that don't add meaningful information
+- AVOID redundant words: "simultaneously", "directly", "immediately", "dedicated", "individual"
+- AVOID padding phrases: "enhanced performance", "streamlined navigation", "information access"
+- Use simple phrases: "migrated to", "added to", "via bulk action"
+
+STYLE COMPARISON - BAD vs GOOD:
+
+BAD (verbose):
+* Users can now retrieve their complete conversation history through improved Redis checkpointer integration
+* Chat interface operates with enhanced performance through asynchronous LLM processing
+
+GOOD (concise, technical):
+* Users can now retrieve full conversation history from Redis checkpointer for any thread
+* LLM invoke calls converted to async (ainvoke) to resolve sync client unavailable errors in async environments
+
+BAD (too wordy):
+* Organization details page includes a dedicated tab component for streamlined navigation and information access
+* Existing ticker functionality from the previous Account Manager version now appears in the revamped interface
+
+GOOD (simple, direct):
+* New tab navigation component added to organization details page for improved user experience
+* Existing ticker migrated to the revamped Account Manager UI for consistency
+
+CONSOLIDATION - Combine related items into one bullet:
+Raw items:
+- Conversions widget displays ACBA-related conversions selected at campaign group level
+- Ad group creation and editing flows now show mandatory conversion selections
+
+CORRECT OUTPUT:
+* ACBA-related conversions selected at Campaign Group level now display in the Ad Group builder conversions widget with appropriate enabled/disabled states
+
+DETECTING REPETITIVE ITEMS - Items that describe the SAME feature from different angles MUST be merged:
+Raw items (REPETITIVE - same feature, different wording):
+- Ad Group Builder displays conversions selected at campaign group level with ACBA goals, showing mandatory CPA goal conversions in a disabled state during create and edit flows
+- Conversions widget provides clear visibility into campaign group level conversion requirements when ACBA goals are active
+
+CORRECT OUTPUT (merged into ONE bullet):
+* Ad Group Builder displays campaign group level ACBA conversions with mandatory CPA goal conversions shown in a disabled state during create and edit flows
+
+Signs of repetitive items to merge:
+- Same feature name mentioned (e.g., "conversions widget", "Ad Group Builder")
+- Same context (e.g., "ACBA goals", "campaign group level")
+- One describes WHAT it does, another describes the BENEFIT - combine them
+- Items that would make a reader say "didn't you already say that?"
 
 Now consolidate for {product}:"""
             }]
@@ -781,16 +848,12 @@ class ReleaseNotesFormatter:
         })
         current_index += len(key_deploy_header)
 
-        # TL;DR content - Key Deployments per PL
+        # TL;DR content - Key Deployments per PL (bullet point format)
         for deployment in tldr.get("key_deployments", []):
             pl_name = deployment["pl"]
-            version = deployment.get("version", "")
             summary = deployment.get("summary", "")
 
-            if version:
-                deploy_line = f"   * {pl_name} ({version}): {summary}\n"
-            else:
-                deploy_line = f"   * {pl_name}: {summary}\n"
+            deploy_line = f"• {pl_name} - {summary}\n"
 
             requests.append({
                 "insertText": {
@@ -1050,12 +1113,8 @@ class ReleaseNotesFormatter:
 
         for deployment in tldr.get("key_deployments", []):
             pl_name = deployment["pl"]
-            version = deployment.get("version", "")
             summary = deployment.get("summary", "")
-            if version:
-                lines.append(f"   • {pl_name} ({version}): {summary}")
-            else:
-                lines.append(f"   • {pl_name}: {summary}")
+            lines.append(f"• {pl_name} - {summary}")
 
         lines.append("")
 
@@ -1114,12 +1173,8 @@ class ReleaseNotesFormatter:
         lines = ["*Key Deployments:*"]
         for deployment in tldr.get("key_deployments", []):
             pl_name = deployment["pl"]
-            version = deployment.get("version", "")
             summary = deployment.get("summary", "")
-            if version:
-                lines.append(f"   • {pl_name} ({version}): {summary}")
-            else:
-                lines.append(f"   • {pl_name}: {summary}")
+            lines.append(f"• {pl_name} - {summary}")
 
         return "\n".join(lines)
 

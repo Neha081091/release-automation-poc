@@ -62,55 +62,77 @@ PRODUCT_LINE_ORDER = [
 
 
 def get_ordered_pls(pl_list: list) -> list:
-    """Sort product lines according to PRODUCT_LINE_ORDER."""
+    """Sort product lines according to PRODUCT_LINE_ORDER.
+
+    Handles year variants by matching base PL name (e.g., "Media PL1 2026" matches "Media PL1").
+    """
     ordered = []
-    # First add PLs that are in the preferred order
-    for pl in PRODUCT_LINE_ORDER:
-        if pl in pl_list:
-            ordered.append(pl)
-    # Then add any PLs not in the preferred order (at the end)
+
+    def get_base_pl_name(pl_name: str) -> str:
+        """Remove year suffix from PL name for matching."""
+        return re.sub(r'\s+20\d{2}$', '', pl_name)
+
+    # First add PLs that match the preferred order (considering year variants)
+    for preferred_pl in PRODUCT_LINE_ORDER:
+        for pl in pl_list:
+            if pl in ordered:
+                continue
+            # Match exact or base name (without year)
+            if pl == preferred_pl or get_base_pl_name(pl) == preferred_pl:
+                ordered.append(pl)
+
+    # Then add any PLs not matched (at the end)
     for pl in pl_list:
         if pl not in ordered:
             ordered.append(pl)
     return ordered
 
 
-def consolidate_with_claude(client, product: str, summaries: list) -> str:
-    """Consolidate summaries into polished TL;DR prose using Claude."""
+def consolidate_with_claude(client, product: str, summaries: list, statuses: list = None) -> str:
+    """Consolidate summaries into flowing prose TL;DR summary using Claude."""
     summaries_text = "\n".join([f"- {s}" for s in summaries])
+
+    # Check if any items are feature flagged
+    has_feature_flag = False
+    if statuses:
+        has_feature_flag = any("feature flag" in str(s).lower() for s in statuses if s)
 
     message = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=500,
         messages=[{
             "role": "user",
-            "content": f"""Write a 1-2 sentence TL;DR summary for executive review.
+            "content": f"""Write a flowing prose TL;DR summary for this deployment.
 
 Product: {product}
-Raw Items:
+Raw Jira Items:
 {summaries_text}
 
-STRICT FORMAT RULES:
-1. Write 1-2 flowing SENTENCES (not a list of items separated by semicolons)
-2. Describe the IMPORTANT deployments and their PURPOSE/BENEFIT
-3. Use past tense verbs: "updated", "added", "implemented", "integrated", "fixed"
-4. Name SPECIFIC components, services, or features that were changed
-5. NO bullet points, NO semicolons as separators
-6. If multiple items, weave them into cohesive sentences
-7. Keep it concise but descriptive - max 50 words
-8. NEVER just list ticket titles - transform them into meaningful descriptions
+CRITICAL FORMAT RULES - Follow this EXACT style:
+1. Write ONE flowing prose sentence (NOT bullet points or technical jargon dumps)
+2. Start with the main feature/improvement name, then use "with" to connect specific details
+3. Use natural connectors: "with", "including", "enabling", "along with"
+4. Use commas to list related items, semicolons only for truly separate feature areas
+5. Should read smoothly when spoken aloud - like a natural summary
+6. Keep technical names but explain them in context
+7. Be SPECIFIC with details (file sizes, button names, field names, etc.)
+8. Explain the PURPOSE/BENEFIT after changes using "enabling...", "for better...", "to ensure..."
+9. For bug fixes, start with "Critical bug fixes including" then list all fixes with their benefits
+10. Use active voice and present tense: "enables", "supports", "provides"
+{"11. Mention that features are available via feature flag at the end of the summary" if has_feature_flag else ""}
 
-BAD EXAMPLES (semicolon-separated list - DO NOT DO THIS):
-- "InventoryTier dimension in Reporting; OA Enablement Flag for Deal IDs; Add Negotiated Bid Floor Value"
-- "Integrating saarthi into di-agentic-service repo; Integrating saarthi into common-graphql repo"
+BAD EXAMPLES (too terse/technical - DO NOT DO THIS):
+- "Data pipeline migration (job1, job2, job3) from Spring Batch to Airflow, tier display N/A vs Unknown, package deal targeting fix"
+- "Redis checkpointer, async ainvoke, session list, title search"
+- "Restart button, placeholder update, welcome message"
 
-GOOD EXAMPLES (prose sentences - DO THIS):
-- "InventoryTier dimension now visible in Reporting for seats with enabled priority tiers; Open Auction enablement flag added for Deal IDs with new Negotiated Bid Floor field for internal auction dynamics"
-- "Saarthi AI code reviewer integrated into di-agentic-service and common-graphql repos; Airflow upgrade compatibility with logical_date parameter support across 5 services"
-- "Channel chart scale updated to use 4MM HCP Universe for better visualization of reach differences between EHR and other channels; improved scale readability when filters are applied"
-- "Household frequency and recency capping support at Seat, Order, Campaign, and AdGroup levels with updated scheduling chart visualization; GraphQL schema and API updates for householding"
+GOOD EXAMPLES (flowing prose - DO THIS):
+- "Sales Planning Copilot UX improvements with restart chat button, updated placeholders ("How can I help?"), and enhanced welcome messaging for better user guidance on uploading HCP or DTC RFP briefs"
+- "Removed prebaked query requirement for HCP + DTC audience exports, enabling custom query-based audience creation with automatic type detection, validation, and permission-based export controls"
+- "Critical bug fixes including HCP Planner target list upload support for files >3.5 MB, corrected patient age calculation removing hardcoded year values, fixed audience token mapping for multiple token types, and enhanced data ingestion pipeline reliability for IQVIA and SYMPHONY"
+- "Account Manager experience improved with tab-based navigation on organization pages, modernized ticker components, bulk user assignment across advertisers, and current user role visibility"
 
-Output ONLY the 1-2 sentence summary:"""
+Output ONLY the flowing prose summary (no prefix, no product name):"""
         }]
     )
 
@@ -120,6 +142,8 @@ Output ONLY the 1-2 sentence summary:"""
         result = result[1:-1]
     if result.lower().startswith(product.lower()):
         result = result[len(product):].lstrip(" -:")
+    # Remove leading bullet characters if present
+    result = result.lstrip('*•-● ')
     # Capitalize the first letter of the summary
     if result:
         result = result[0].upper() + result[1:]
@@ -127,7 +151,7 @@ Output ONLY the 1-2 sentence summary:"""
 
 
 def consolidate_body_with_claude(client, product: str, sections: list, release_version: str) -> str:
-    """Consolidate body sections into executive-style prose release notes using Claude."""
+    """Consolidate body sections into flowing prose release notes using Claude."""
     sections_text = ""
     for section in sections:
         items_list = "\n".join([f"- {item}" for item in section.get("items", [])])
@@ -139,7 +163,7 @@ def consolidate_body_with_claude(client, product: str, sections: list, release_v
         max_tokens=2000,
         messages=[{
             "role": "user",
-            "content": f"""Transform these raw Jira sections into PROSE-STYLE executive release notes.
+            "content": f"""Transform these raw Jira sections into polished deployment value-add summaries.
 
 Product: {product}
 Release Version: {release_version}
@@ -147,65 +171,141 @@ Release Version: {release_version}
 Raw Sections:
 {sections_text}
 
-STRICT FORMAT RULES:
+CRITICAL FORMAT RULES - Follow this EXACT style:
 1. NO markdown formatting (no **, no __, no backticks)
 2. Use PLAIN TEXT only
-3. Epic names as simple headers on their own line
-4. For regular epics: include "Value Add:" header followed by a SINGLE PROSE SENTENCE
-5. For "Bug Fixes" sections: use "Bug Fixes:" header followed by prose description
-6. NO bullet points - write flowing prose sentences instead
-7. Consolidate all items under an epic into ONE descriptive sentence
-8. The sentence should explain WHAT was done and WHERE (name specific components/repos)
+3. Epic names as headers on their own line
+4. Include "Value Add:" header followed by the description
+5. For SINGLE item: Write inline after "Value Add:" as one sentence
+6. For MULTIPLE items: Use bullet points with ● (filled circle) on separate lines
+7. Each bullet should start with action verb (Updated, Added, Improved, Included, Removed, Fixed, Enhanced)
+8. Explain WHAT the change does and WHY it matters (e.g., "enabling...", "to ensure...", "for better...")
 9. End each epic section with status tag on its own line: General Availability OR Feature Flag
-10. ONE blank line ONLY between epic sections (not within a section)
-11. NO blank lines between Epic Name, Value Add:, prose, and status tag - keep them tight together
+10. ONE blank line between epic sections
 
-TRANSFORMATION EXAMPLE:
+CRITICAL BUG FIX FORMAT - THIS IS MANDATORY:
+- Group all bug fixes under "Bug Fixes:" header (plural)
+- EVERY bug fix bullet MUST start with the word "Fixed" - NO EXCEPTIONS
+- Format: "Fixed [what was broken] issue ensuring [explanation of benefit]"
+- WRONG: "● Package deals now target correctly as unified packages"
+- CORRECT: "● Fixed package deal targeting issue ensuring deals are targeted as part of the package rather than individually"
+- Use "ensuring", "enabling", "allowing" to explain the benefit of the fix
+- Put the status tag after all bug fixes
+
+TRANSFORMATION EXAMPLES:
+
 Raw Input:
-Epic: Saarthi Code Reviewer integration across major repositories
+Epic: Home Dashboard V2
+Status: General Availability
 Items:
-- Integrating saarthi into di-agentic-service repo
-- Integrating saarthi into common-graphql repo
+- Update copy for Goals Widget grammar
 
-WRONG OUTPUT (bullet format - DO NOT DO THIS):
-Saarthi Code Reviewer integration across major repositories
-Value Add:
-● Integrating saarthi into di-agentic-service repo
-● Integrating saarthi into common-graphql repo
+CORRECT OUTPUT:
+Home Dashboard V2
+Value Add: Updated copy for Goals Widget to ensure correct grammar and improved user experience.
 General Availability
 
-CORRECT OUTPUT (prose format - DO THIS - notice NO blank lines within section):
-Saarthi Code Reviewer integration across major repositories
-Value Add:
-Saarthi AI code reviewer is now integrated into di-agentic-service and common-graphql repositories, enabling automated code review across more codebases.
+Raw Input:
+Epic: DSP PL3 - General Enhancements
+Status: General Availability
+Items:
+- Add click interactions for top bar metrics customization
+
+CORRECT OUTPUT:
+DSP PL3 - General Enhancements
+Value Add: Added click interactions for top bar metrics customization, enabling easier metric selection alongside drag-drop functionality.
 General Availability
 
-MORE EXAMPLES OF CORRECT PROSE FORMAT (tight spacing within each section):
+Raw Input:
+Epic: Campaigns List Page V3
+Status: General Availability
+Items:
+- Allow top bar metrics selection independently from listing columns
+- Enhanced audit log for PG Ad Groups by removing inapplicable bid fields
 
-Migration of data pipelines from spring batch to airflow
+CORRECT OUTPUT:
+Campaigns List Page V3
 Value Add:
-REST API changes have been evaluated and prepared for Airflow upgrade across planner-service, patient-planner-service, event-consumer-service, di-match-service, and account-manager-service.
+● Improved campaign listing by allowing top bar metrics selection independently from listing columns
+● Enhanced audit log for PG Ad Groups by removing inapplicable bid fields for improved clarity
 General Availability
 
-Inventory Priority Tiers - Reporting
-Value Add:
-InventoryTier dimension is now available in Reporting for seats that have enabled priority tiers, providing visibility into inventory tier performance.
-General Availability
-
-IMPORTANT FOR BUG FIXES SECTIONS:
-- When the epic name is "Bug Fixes", do NOT repeat "Bug Fixes" as a header
-- Just use "Bug Fixes:" directly (no epic name above it)
-
+Raw Input:
 Epic: Bug Fixes
-WRONG OUTPUT (duplicated header - DO NOT DO THIS):
-Bug Fixes
-Bug Fixes:
-Fixed alignment issues...
+Status: General Availability
+Items:
+- Fix Add frequency button disappears when directly deleting existing frequency on ad-group quickview
+- Fix null date display in tooltip when hovering on graph datapoints in Goal Widget
+- Fix issue preventing users from changing ad group status from preview on campaign dashboard
+- Package deals now target correctly as unified packages
 
-CORRECT OUTPUT (no duplication):
+CORRECT OUTPUT:
 Bug Fixes:
-Fixed alignment issues with save draft button in HCP planner and resolved query returning empty results when This Month date range was selected.
+● Fixed Add frequency button issue ensuring the button remains visible when directly deleting existing frequency on ad-group quickview
+● Fixed null date display issue ensuring correct date formatting when hovering on graph datapoints in Goal Widget
+● Fixed ad group status change issue enabling users to change status from preview on campaign dashboard
+● Fixed package deal targeting issue ensuring deals are targeted as part of the package rather than individually when new packages are created
 General Availability
+
+Raw Input:
+Epic: 2FA and Passwordless support for Platform
+Status: Feature Flag
+Items:
+- Rename TOTP to Authenticator on Account Manager MFA slider
+- Add ability to choose between EOTP and Authenticator Code on SSO UI
+
+CORRECT OUTPUT:
+2FA and Passwordless support for Platform
+Value Add:
+● Renamed TOTP to "Authenticator" on Account Manager MFA slider for improved clarity and user understanding
+● Added ability to choose between EOTP and Authenticator Code on SSO UI to provide flexibility in authentication methods
+Feature Flag
+
+KEY PRINCIPLES:
+- Be CONCISE and DIRECT - short sentences, no verbose marketing language
+- KEEP TECHNICAL TERMS - preserve specific names like "ainvoke", "Redis checkpointer", "thread_id"
+- State the ACTUAL PROBLEM SOLVED, not vague improvements
+- COMBINE related functionality into single bullets - fewer bullets is better
+- DROP low-value items that don't add meaningful information
+- Use ● (filled circle) for bullet points
+- Start with simple verbs: Added, Fixed, Migrated, Converted, Updated
+- FOR BUG FIXES: ALWAYS start with "Fixed" - this is mandatory
+- AVOID redundant words: "simultaneously", "directly", "immediately", "dedicated", "individual"
+- AVOID padding phrases: "enhanced performance", "improved experience", "streamlined navigation", "information access"
+- Use simple phrases: "migrated to", "added to", "via bulk action" NOT "now appears in the revamped interface"
+
+STYLE COMPARISON - BAD vs GOOD:
+
+BAD (too verbose, marketing fluff):
+● Users can now retrieve their complete conversation history through improved Redis checkpointer integration for each thread_id
+● Chat interface operates with enhanced performance through asynchronous LLM processing that eliminates sync client errors
+● Session management displays all user sessions in an organized sidebar with backend integration
+● Search functionality allows users to quickly locate specific conversations by searching session titles
+
+GOOD (concise, technical, direct):
+● Users can now retrieve full conversation history from Redis checkpointer for any thread
+● LLM invoke calls converted to async (ainvoke) to resolve sync client unavailable errors in async environments
+● Session list now fetched from backend and displayed in sidebar with search functionality
+● Users can search sessions by title to quickly find and return to relevant conversations
+
+BAD (too wordy, redundant):
+● Users can now add individual users to multiple advertisers simultaneously through bulk actions in the revamped Account Manager
+● Account Manager displays current user role tags directly on the organization details page for immediate role identification
+● Organization details page includes a dedicated tab component for streamlined navigation and information access
+● Existing ticker functionality from the previous Account Manager version now appears in the revamped interface
+
+GOOD (simple, direct, fewer bullets):
+● New tab navigation component added to organization details page for improved user experience
+● Existing ticker migrated to the revamped Account Manager UI for consistency
+● Users can now add a user to multiple advertisers via bulk action for streamlined user management
+
+CONSOLIDATION - Combine related items:
+Raw items about same feature:
+- Conversions widget displays ACBA-related conversions selected at campaign group level
+- Ad group creation and editing flows now show mandatory conversion selections that align with campaign group level ACBA configurations
+
+CORRECT OUTPUT (consolidated):
+● ACBA-related conversions selected at Campaign Group level now display in the Ad Group builder conversions widget with appropriate enabled/disabled states for clearer visibility
 
 Transform sections for {product}:"""
         }]
@@ -213,20 +313,20 @@ Transform sections for {product}:"""
 
     result = message.content[0].text.strip()
 
-    # Post-process: Remove any bullet characters that Claude might have added
+    # Post-process: Normalize bullet characters to ● (filled circle)
     lines = result.split('\n')
     processed_lines = []
     for line in lines:
         stripped = line.lstrip()
-        # Remove bullet characters at start of line (convert to prose)
-        if stripped.startswith('● '):
-            line = line.replace('● ', '', 1)
+        # Convert various bullet characters to ● format
+        if stripped.startswith('* '):
+            line = line.replace('* ', '● ', 1)
         elif stripped.startswith('• '):
-            line = line.replace('• ', '', 1)
-        elif stripped.startswith('* '):
-            line = line.replace('* ', '', 1)
-        elif stripped.startswith('- '):
-            line = line.replace('- ', '', 1)
+            line = line.replace('• ', '● ', 1)
+        elif stripped.startswith('- ') and not stripped.lower().startswith('- media') and not stripped.lower().startswith('- dsp'):
+            # Convert dash bullets to ● (but not if it's part of a PL name)
+            if len(stripped) > 2 and stripped[2].isupper():
+                line = line.replace('- ', '● ', 1)
         processed_lines.append(line)
 
     return '\n'.join(processed_lines)
@@ -266,11 +366,12 @@ def process_tickets_with_claude():
 
     for ticket in tickets:
         fix_version = ticket.get("fix_version", "")
-        # Parse PL from fix version
-        match = re.match(r'^(.+?)\s*\d{4}:\s*Release', fix_version)
+        # Parse PL from fix version - preserve year if present (e.g., "Media PL1 2026")
+        match = re.match(r'^(.+?\s*\d{4}):\s*Release', fix_version)
         if match:
             pl = match.group(1).strip()
         else:
+            # Try without year
             match = re.match(r'^(.+?):\s*Release', fix_version)
             pl = match.group(1).strip() if match else "Other"
 
@@ -293,15 +394,18 @@ def process_tickets_with_claude():
     tldr_by_pl = {}
     for pl, epics in grouped.items():
         summaries = []
+        statuses = []
         for epic_name, epic_tickets in epics.items():
             for t in epic_tickets:
                 if t.get("summary"):
                     summaries.append(t["summary"])
+                if t.get("release_type"):
+                    statuses.append(t["release_type"])
 
         if summaries:
             print(f"  Processing {pl}...")
             try:
-                tldr_by_pl[pl] = consolidate_with_claude(client, pl, summaries)
+                tldr_by_pl[pl] = consolidate_with_claude(client, pl, summaries, statuses)
                 print(f"  ✅ {pl} - consolidated")
             except Exception as e:
                 print(f"  ❌ {pl} - error: {e}")
@@ -372,7 +476,7 @@ def process_tickets_with_claude():
                 for s in sections:
                     body_text += f"{s['title']}\n\nValue Add:\n"
                     for item in s['items']:
-                        body_text += f"• {item}\n"
+                        body_text += f"● {item}\n"
                     status = s.get('status', 'General Availability')
                     body_text += f"\n{status}\n\n"
                 body_by_pl[pl] = body_text
