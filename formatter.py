@@ -293,12 +293,14 @@ CRITICAL FORMAT RULES:
 2. Use PLAIN TEXT only
 3. Epic names as headers on their own line
 4. Include "Value Add:" header followed by the description
-5. For SINGLE item: Write inline after "Value Add:" as one sentence
-6. For MULTIPLE items: Use bullet points with ● (filled circle) on separate lines
-7. Each bullet should start with action verb (Updated, Added, Improved, Included, Removed, Fixed, Enhanced)
-8. Explain WHAT the change does and WHY it matters (e.g., "enabling...", "to ensure...", "for better...")
-9. End each epic section with status tag on its own line: General Availability OR Feature Flag
-10. ONE blank line between epic sections
+5. List each value-add as a SEPARATE bullet point using ● (filled circle)
+6. Keep FLAT structure - no sub-bullets, no nesting
+7. Focus on BUSINESS VALUE and USER BENEFITS in each bullet
+8. Each bullet should start with action verb (Updated, Added, Improved, Included, Removed, Fixed, Enhanced)
+9. Explain WHAT the change does and WHY it benefits users (e.g., "enabling...", "to ensure...", "for better...")
+10. End each epic section with status tag on its own line: General Availability OR Feature Flag
+11. ONE blank line between epic sections
+12. Exclude the release ticket itself from the summary
 
 CRITICAL BUG FIX FORMAT - THIS IS MANDATORY:
 - Group all bug fixes under "Bug Fixes:" header (plural)
@@ -307,6 +309,7 @@ CRITICAL BUG FIX FORMAT - THIS IS MANDATORY:
 - WRONG: "● Package deals now target correctly as unified packages"
 - CORRECT: "● Fixed package deal targeting issue ensuring deals are targeted as part of the package rather than individually"
 - Use "ensuring", "enabling", "allowing" to explain the benefit of the fix
+- Put the status tag after all bug fixes
 
 Example input:
 __Campaigns List Page V3__ (General Availability)
@@ -334,54 +337,13 @@ Bug Fixes:
 General Availability
 
 KEY PRINCIPLES:
+- Generate professional, concise summaries emphasizing user benefits
+- Keep bullet points simple and flat (no nested bullets)
 - Be CONCISE and DIRECT - short sentences, no verbose marketing language
 - KEEP TECHNICAL TERMS - preserve specific names like "ainvoke", "Redis checkpointer", "thread_id"
 - State the ACTUAL PROBLEM SOLVED, not vague improvements
 - COMBINE related functionality - fewer bullets is better
 - DROP low-value items that don't add meaningful information
-- AVOID redundant words: "simultaneously", "directly", "immediately", "dedicated", "individual"
-- AVOID padding phrases: "enhanced performance", "streamlined navigation", "information access"
-- Use simple phrases: "migrated to", "added to", "via bulk action"
-
-STYLE COMPARISON - BAD vs GOOD:
-
-BAD (verbose):
-* Users can now retrieve their complete conversation history through improved Redis checkpointer integration
-* Chat interface operates with enhanced performance through asynchronous LLM processing
-
-GOOD (concise, technical):
-* Users can now retrieve full conversation history from Redis checkpointer for any thread
-* LLM invoke calls converted to async (ainvoke) to resolve sync client unavailable errors in async environments
-
-BAD (too wordy):
-* Organization details page includes a dedicated tab component for streamlined navigation and information access
-* Existing ticker functionality from the previous Account Manager version now appears in the revamped interface
-
-GOOD (simple, direct):
-* New tab navigation component added to organization details page for improved user experience
-* Existing ticker migrated to the revamped Account Manager UI for consistency
-
-CONSOLIDATION - Combine related items into one bullet:
-Raw items:
-- Conversions widget displays ACBA-related conversions selected at campaign group level
-- Ad group creation and editing flows now show mandatory conversion selections
-
-CORRECT OUTPUT:
-* ACBA-related conversions selected at Campaign Group level now display in the Ad Group builder conversions widget with appropriate enabled/disabled states
-
-DETECTING REPETITIVE ITEMS - Items that describe the SAME feature from different angles MUST be merged:
-Raw items (REPETITIVE - same feature, different wording):
-- Ad Group Builder displays conversions selected at campaign group level with ACBA goals, showing mandatory CPA goal conversions in a disabled state during create and edit flows
-- Conversions widget provides clear visibility into campaign group level conversion requirements when ACBA goals are active
-
-CORRECT OUTPUT (merged into ONE bullet):
-* Ad Group Builder displays campaign group level ACBA conversions with mandatory CPA goal conversions shown in a disabled state during create and edit flows
-
-Signs of repetitive items to merge:
-- Same feature name mentioned (e.g., "conversions widget", "Ad Group Builder")
-- Same context (e.g., "ACBA goals", "campaign group level")
-- One describes WHAT it does, another describes the BENEFIT - combine them
-- Items that would make a reader say "didn't you already say that?"
 
 Now consolidate for {product}:"""
             }]
@@ -778,6 +740,20 @@ class ReleaseNotesFormatter:
                     release_type = story_tickets[0].get("release_type", "")
                     if release_type:
                         status = release_type
+
+                # If no explicit release_type, check labels for GA/FF on stories (not bugs)
+                if not status:
+                    for item in items:
+                        ticket = item["ticket"]
+                        if ticket.get("issue_type", "").lower() != "bug":
+                            labels = ticket.get("labels", [])
+                            for label in labels:
+                                label_lower = label.lower()
+                                if "feature flag" in label_lower or label_lower == "ff":
+                                    status = "Feature Flag"
+                                    break
+                            if status:
+                                break
 
                 if epic_summaries:
                     sections.append({

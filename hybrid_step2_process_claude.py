@@ -178,12 +178,14 @@ CRITICAL FORMAT RULES - Follow this EXACT style:
 2. Use PLAIN TEXT only
 3. Epic names as headers on their own line
 4. Include "Value Add:" header followed by the description
-5. For SINGLE item: Write inline after "Value Add:" as one sentence
-6. For MULTIPLE items: Use bullet points with ● (filled circle) on separate lines
-7. Each bullet should start with action verb (Updated, Added, Improved, Included, Removed, Fixed, Enhanced)
-8. Explain WHAT the change does and WHY it matters (e.g., "enabling...", "to ensure...", "for better...")
-9. End each epic section with status tag on its own line: General Availability OR Feature Flag
-10. ONE blank line between epic sections
+5. List each value-add as a SEPARATE bullet point using ● (filled circle)
+6. Keep FLAT structure - no sub-bullets, no nesting
+7. Focus on BUSINESS VALUE and USER BENEFITS in each bullet
+8. Each bullet should start with action verb (Updated, Added, Improved, Included, Removed, Fixed, Enhanced)
+9. Explain WHAT the change does and WHY it benefits users (e.g., "enabling...", "to ensure...", "for better...")
+10. End each epic section with status tag on its own line: General Availability OR Feature Flag
+11. ONE blank line between epic sections
+12. Exclude the release ticket itself from the summary
 
 CRITICAL BUG FIX FORMAT - THIS IS MANDATORY:
 - Group all bug fixes under "Bug Fixes:" header (plural)
@@ -264,6 +266,8 @@ Value Add:
 Feature Flag
 
 KEY PRINCIPLES:
+- Generate professional, concise summaries emphasizing user benefits
+- Keep bullet points simple and flat (no nested bullets)
 - Be CONCISE and DIRECT - short sentences, no verbose marketing language
 - KEEP TECHNICAL TERMS - preserve specific names like "ainvoke", "Redis checkpointer", "thread_id"
 - State the ACTUAL PROBLEM SOLVED, not vague improvements
@@ -272,42 +276,6 @@ KEY PRINCIPLES:
 - Use ● (filled circle) for bullet points
 - Start with simple verbs: Added, Fixed, Migrated, Converted, Updated
 - FOR BUG FIXES: ALWAYS start with "Fixed" - this is mandatory
-- AVOID redundant words: "simultaneously", "directly", "immediately", "dedicated", "individual"
-- AVOID padding phrases: "enhanced performance", "improved experience", "streamlined navigation", "information access"
-- Use simple phrases: "migrated to", "added to", "via bulk action" NOT "now appears in the revamped interface"
-
-STYLE COMPARISON - BAD vs GOOD:
-
-BAD (too verbose, marketing fluff):
-● Users can now retrieve their complete conversation history through improved Redis checkpointer integration for each thread_id
-● Chat interface operates with enhanced performance through asynchronous LLM processing that eliminates sync client errors
-● Session management displays all user sessions in an organized sidebar with backend integration
-● Search functionality allows users to quickly locate specific conversations by searching session titles
-
-GOOD (concise, technical, direct):
-● Users can now retrieve full conversation history from Redis checkpointer for any thread
-● LLM invoke calls converted to async (ainvoke) to resolve sync client unavailable errors in async environments
-● Session list now fetched from backend and displayed in sidebar with search functionality
-● Users can search sessions by title to quickly find and return to relevant conversations
-
-BAD (too wordy, redundant):
-● Users can now add individual users to multiple advertisers simultaneously through bulk actions in the revamped Account Manager
-● Account Manager displays current user role tags directly on the organization details page for immediate role identification
-● Organization details page includes a dedicated tab component for streamlined navigation and information access
-● Existing ticker functionality from the previous Account Manager version now appears in the revamped interface
-
-GOOD (simple, direct, fewer bullets):
-● New tab navigation component added to organization details page for improved user experience
-● Existing ticker migrated to the revamped Account Manager UI for consistency
-● Users can now add a user to multiple advertisers via bulk action for streamlined user management
-
-CONSOLIDATION - Combine related items:
-Raw items about same feature:
-- Conversions widget displays ACBA-related conversions selected at campaign group level
-- Ad group creation and editing flows now show mandatory conversion selections that align with campaign group level ACBA configurations
-
-CORRECT OUTPUT (consolidated):
-● ACBA-related conversions selected at Campaign Group level now display in the Ad Group builder conversions widget with appropriate enabled/disabled states for clearer visibility
 
 Transform sections for {product}:"""
         }]
@@ -455,6 +423,19 @@ def process_tickets_with_claude():
                 if t.get("release_type"):
                     status = t["release_type"]
                     break
+            # If no explicit release_type, check labels for GA/FF on stories (not bugs)
+            if status == "General Availability":
+                for t in epic_tickets:
+                    if t.get("issue_type", "").lower() != "bug":
+                        labels = t.get("labels", [])
+                        for label in labels:
+                            label_lower = label.lower()
+                            if "feature flag" in label_lower or label_lower == "ff":
+                                status = "Feature Flag"
+                                break
+                        if status == "Feature Flag":
+                            break
+
             if items:
                 sections.append({
                     "title": epic_name,
