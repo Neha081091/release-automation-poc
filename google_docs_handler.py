@@ -11,6 +11,9 @@ This module handles all Google Docs operations:
 import os
 import json
 import pickle
+import ssl
+import certifi
+import httplib2
 from typing import List, Dict, Optional, Tuple
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -18,6 +21,12 @@ from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow, Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from google_auth_httplib2 import AuthorizedHttp
+
+# Disable SSL verification for corporate proxy environments
+ssl._create_default_https_context = ssl._create_unverified_context
+os.environ['REQUESTS_CA_BUNDLE'] = ''
+os.environ['CURL_CA_BUNDLE'] = ''
 
 
 # OAuth scopes required for Google Docs
@@ -66,7 +75,10 @@ class GoogleDocsHandler:
                 print("[Google Docs] Using service account authentication...")
                 self.creds = service_account.Credentials.from_service_account_file(
                     self.service_account_path, scopes=SCOPES)
-                self.service = build('docs', 'v1', credentials=self.creds)
+                # Create http object with SSL verification disabled for corporate proxy
+                http = httplib2.Http(disable_ssl_certificate_validation=True)
+                authed_http = AuthorizedHttp(self.creds, http=http)
+                self.service = build('docs', 'v1', http=authed_http)
                 print("[Google Docs] Service account authentication successful")
                 return True
 
@@ -116,8 +128,10 @@ class GoogleDocsHandler:
                     pickle.dump(self.creds, token)
                 print("[Google Docs] Saved new token")
 
-            # Build the service
-            self.service = build('docs', 'v1', credentials=self.creds)
+            # Build the service with SSL verification disabled for corporate proxy
+            http = httplib2.Http(disable_ssl_certificate_validation=True)
+            authed_http = AuthorizedHttp(self.creds, http=http)
+            self.service = build('docs', 'v1', http=authed_http)
             print("[Google Docs] Authentication successful")
             return True
 
@@ -297,6 +311,438 @@ class GoogleDocsHandler:
 
         except HttpError as e:
             print(f"[Google Docs] Connection test failed: {e}")
+            return False
+
+    def find_release_section_range(self, release_date: str) -> Optional[Tuple[int, int]]:
+        """
+        Find the start and end indices of an entire daily release section.
+
+        Looks for "Daily Deployment Summary: {release_date}" and finds the section
+        until the next release header or separator.
+
+        Args:
+            release_date: Date string to find (e.g., "6th February 2026")
+
+        Returns:
+            Tuple of (start_index, end_index) or None if not found
+        """
+        try:
+            doc = self.service.documents().get(documentId=self.document_id).execute()
+            content = doc.get('body', {}).get('content', [])
+
+            import re
+
+            # Build text with document index tracking
+            text_segments = []
+            full_text = ""
+
+            for element in content:
+                if 'paragraph' in element:
+                    for text_run in element['paragraph'].get('elements', []):
+                        if 'textRun' in text_run:
+                            text_content = text_run['textRun'].get('content', '')
+                            run_start = text_run.get('startIndex', 0)
+                            run_end = text_run.get('endIndex', run_start + len(text_content))
+                            text_segments.append((text_content, run_start, run_end))
+                            full_text += text_content
+
+            # Find the release header
+            header_pattern = rf'Daily Deployment Summary:\s*{re.escape(release_date)}'
+            match = re.search(header_pattern, full_text, re.IGNORECASE)
+
+            if not match:
+                print(f"[Google Docs] Could not find release section for date: {release_date}")
+                return None
+
+            print(f"[Google Docs] Found release header: {match.group()}")
+
+            # Convert text position to document index
+            def text_pos_to_doc_index(text_pos: int) -> int:
+                current_pos = 0
+                for text, doc_start, doc_end in text_segments:
+                    if current_pos + len(text) > text_pos:
+                        offset = text_pos - current_pos
+                        return doc_start + offset
+                    current_pos += len(text)
+                return text_segments[-1][2] if text_segments else 1
+
+            # Section starts at the header
+            section_text_start = match.start()
+
+            # Look for end of section - next release header or document end
+            rest_text = full_text[match.end():]
+            next_patterns = [
+                r'\nDaily Deployment Summary:',  # Next day's release
+                r'\n═{20,}\n+Daily Deployment Summary:',  # Separator then next release
+            ]
+
+            section_text_end = None
+            for pattern in next_patterns:
+                next_match = re.search(pattern, rest_text)
+                if next_match:
+                    if section_text_end is None or next_match.start() < section_text_end - match.end():
+                        section_text_end = match.end() + next_match.start()
+
+            # If found separator line before next release, include it
+            if section_text_end is None:
+                # Check for just the separator at the end
+                separator_match = re.search(r'\n═{20,}\n*$', rest_text)
+                if separator_match:
+                    section_text_end = match.end() + separator_match.end()
+                else:
+                    # This is the only release in the document
+                    section_text_end = len(full_text)
+
+            # Convert to document indices
+            doc_start = text_pos_to_doc_index(section_text_start)
+            doc_end = text_pos_to_doc_index(section_text_end)
+
+            print(f"[Google Docs] Release section range: text={section_text_start}-{section_text_end}, doc={doc_start}-{doc_end}")
+            return (doc_start, doc_end)
+
+        except HttpError as e:
+            print(f"[Google Docs] Error finding release section: {e}")
+            return None
+
+    def remove_release_section(self, release_date: str) -> bool:
+        """
+        Remove an entire daily release section from the document.
+
+        Args:
+            release_date: Date string of the release to remove
+
+        Returns:
+            True if successful, False otherwise
+        """
+        print(f"[Google Docs] Removing release section for date: {release_date}")
+
+        section_range = self.find_release_section_range(release_date)
+        if not section_range:
+            print(f"[Google Docs] Could not find release section to remove")
+            return False
+
+        try:
+            start_idx, end_idx = section_range
+            requests = [{
+                'deleteContentRange': {
+                    'range': {
+                        'startIndex': start_idx,
+                        'endIndex': end_idx
+                    }
+                }
+            }]
+
+            self.service.documents().batchUpdate(
+                documentId=self.document_id,
+                body={'requests': requests}
+            ).execute()
+
+            print(f"[Google Docs] Successfully removed release section for: {release_date}")
+            return True
+
+        except HttpError as e:
+            print(f"[Google Docs] Error removing release section: {e}")
+            return False
+
+    def find_pl_section_range(self, pl_name: str) -> Optional[Tuple[int, int]]:
+        """
+        Find the start and end indices of a PL section in the document.
+
+        Looks for patterns like "PL Name: Release X.X" and finds the section
+        until the next PL header or separator.
+
+        Args:
+            pl_name: Name of the product line to find
+
+        Returns:
+            Tuple of (start_index, end_index) or None if not found
+        """
+        try:
+            doc = self.service.documents().get(documentId=self.document_id).execute()
+            content = doc.get('body', {}).get('content', [])
+
+            import re
+            # Clean PL name for matching (remove year suffix)
+            pl_clean = re.sub(r'\s+20\d{2}$', '', pl_name)
+
+            # Build text with document index tracking
+            # Each entry: (text, doc_start_index, doc_end_index)
+            text_segments = []
+            full_text = ""
+
+            for element in content:
+                elem_start = element.get('startIndex', 0)
+                elem_end = element.get('endIndex', elem_start)
+
+                if 'paragraph' in element:
+                    for text_run in element['paragraph'].get('elements', []):
+                        if 'textRun' in text_run:
+                            text_content = text_run['textRun'].get('content', '')
+                            run_start = text_run.get('startIndex', elem_start)
+                            run_end = text_run.get('endIndex', run_start + len(text_content))
+                            text_segments.append((text_content, run_start, run_end))
+                            full_text += text_content
+
+            print(f"[Google Docs] Document text length: {len(full_text)}, segments: {len(text_segments)}")
+
+            # Pattern to find the PL header line
+            pattern = rf'{re.escape(pl_clean)}(?:\s+20\d{{2}})?:\s*Release\s+\d+\.\d+'
+            match = re.search(pattern, full_text, re.IGNORECASE)
+
+            if not match:
+                pattern2 = rf'{re.escape(pl_clean)}[^:\n]*:\s*Release'
+                match = re.search(pattern2, full_text, re.IGNORECASE)
+
+            if not match:
+                print(f"[Google Docs] Could not find section for PL: {pl_name}")
+                if pl_clean.lower() in full_text.lower():
+                    idx = full_text.lower().find(pl_clean.lower())
+                    print(f"[Google Docs] Found '{pl_clean}' at text index {idx}: '{full_text[idx:idx+100]}'")
+                return None
+
+            print(f"[Google Docs] Found main section: {match.group()}")
+
+            # Convert text position to document index
+            def text_pos_to_doc_index(text_pos: int) -> int:
+                """Convert text position to Google Docs document index."""
+                current_pos = 0
+                for text, doc_start, doc_end in text_segments:
+                    if current_pos + len(text) > text_pos:
+                        offset = text_pos - current_pos
+                        return doc_start + offset
+                    current_pos += len(text)
+                # If past all segments, return last index
+                return text_segments[-1][2] if text_segments else 1
+
+            # Find section boundaries
+            section_text_start = match.start()
+            section_text_end = match.end()
+
+            # Look back for section header (dashes)
+            prev_text = full_text[:section_text_start]
+            header_pos = prev_text.rfind('------------------')
+            if header_pos != -1:
+                # Start from after the header line
+                header_end = full_text.find('\n', header_pos)
+                if header_end != -1 and header_end < section_text_start:
+                    section_text_start = header_end + 1
+
+            # Look forward for next section
+            rest_text = full_text[match.end():]
+            next_patterns = [
+                r'\n[A-Za-z][\w\s]+:\s*Release\s+\d+\.\d+',  # Next PL
+                r'\n------------------[^-]+------------------',  # Category header
+                r'\n═{20,}',  # Release separator
+                r'\nDaily Deployment Summary:',  # Next day's release header
+            ]
+
+            boundaries = []
+            for pattern in next_patterns:
+                next_match = re.search(pattern, rest_text)
+                if next_match:
+                    boundaries.append(next_match.start())
+
+            if boundaries:
+                section_text_end = match.end() + min(boundaries)
+            else:
+                # SAFETY: If no boundary found, only delete up to next double newline
+                # or a maximum of 2000 characters to prevent deleting too much
+                next_blank = rest_text.find('\n\n\n')  # Triple newline often separates sections
+                if next_blank != -1 and next_blank < 2000:
+                    section_text_end = match.end() + next_blank
+                else:
+                    # Find double newline as fallback
+                    double_newline = rest_text.find('\n\n')
+                    if double_newline != -1:
+                        # Look for next paragraph after this blank
+                        after_blank = rest_text[double_newline+2:]
+                        next_content = after_blank.find('\n')
+                        if next_content != -1:
+                            section_text_end = match.end() + double_newline + 2 + next_content
+                        else:
+                            section_text_end = match.end() + double_newline + 2
+                    else:
+                        # Last resort: limit to 2000 chars to prevent disaster
+                        section_text_end = min(match.end() + len(rest_text), match.end() + 2000)
+                print(f"[Google Docs] Warning: No clear section boundary found, using safe fallback")
+
+            # Convert to document indices
+            doc_start = text_pos_to_doc_index(section_text_start)
+            doc_end = text_pos_to_doc_index(section_text_end)
+
+            print(f"[Google Docs] Section range: text={section_text_start}-{section_text_end}, doc={doc_start}-{doc_end}")
+            return (doc_start, doc_end)
+
+        except HttpError as e:
+            print(f"[Google Docs] Error finding PL section: {e}")
+            return None
+
+    def find_tldr_line_range(self, pl_name: str) -> Optional[Tuple[int, int]]:
+        """
+        Find the TL;DR bullet line for a specific PL.
+
+        Looks for patterns like "• Audiences PL1 - description..." in the TL;DR section.
+
+        Args:
+            pl_name: Name of the product line to find
+
+        Returns:
+            Tuple of (start_index, end_index) or None if not found
+        """
+        try:
+            doc = self.service.documents().get(documentId=self.document_id).execute()
+            content = doc.get('body', {}).get('content', [])
+
+            import re
+            # Clean PL name for matching (remove year suffix)
+            pl_clean = re.sub(r'\s+20\d{2}$', '', pl_name)
+
+            # Build text with document index tracking
+            text_segments = []
+            full_text = ""
+
+            for element in content:
+                if 'paragraph' in element:
+                    for text_run in element['paragraph'].get('elements', []):
+                        if 'textRun' in text_run:
+                            text_content = text_run['textRun'].get('content', '')
+                            run_start = text_run.get('startIndex', 0)
+                            run_end = text_run.get('endIndex', run_start + len(text_content))
+                            text_segments.append((text_content, run_start, run_end))
+                            full_text += text_content
+
+            # Find the TL;DR section boundaries
+            tldr_start = full_text.find('TL;DR')
+            if tldr_start == -1:
+                print(f"[Google Docs] Could not find TL;DR section")
+                return None
+
+            # Find end of TL;DR header line
+            tldr_header_end = full_text.find('\n', tldr_start)
+            if tldr_header_end == -1:
+                tldr_header_end = tldr_start + 50
+
+            # Find end of TL;DR section (next major section with dashes)
+            tldr_section_end = full_text.find('------------------', tldr_header_end)
+            if tldr_section_end == -1:
+                tldr_section_end = len(full_text)
+
+            tldr_section = full_text[tldr_header_end:tldr_section_end]
+            print(f"[Google Docs] TL;DR section preview: {tldr_section[:300]}...")
+
+            # Patterns to find the TL;DR bullet line
+            # Try multiple patterns from strict to flexible
+            patterns = [
+                rf'[•●]\s*{re.escape(pl_clean)}(?:\s+20\d{{2}})?\s*[-–—]\s*[^\n]+\n?',  # Unicode bullet
+                rf'[•●\*\-]\s*\*?{re.escape(pl_clean)}(?:\s+20\d{{2}})?\*?\s*[-–—]\s*[^\n]+\n?',  # With bold
+                rf'{re.escape(pl_clean)}(?:\s+20\d{{2}})?\s*[-–—]\s*[^\n]+\n?',  # No bullet
+            ]
+
+            match = None
+            for i, pattern in enumerate(patterns):
+                match = re.search(pattern, tldr_section, re.IGNORECASE)
+                if match:
+                    print(f"[Google Docs] Found TL;DR with pattern {i+1}: '{match.group()[:60]}...'")
+                    break
+
+            if not match:
+                print(f"[Google Docs] Could not find TL;DR line for PL: {pl_name}")
+                print(f"[Google Docs] PL clean name: '{pl_clean}'")
+                return None
+
+            # Find the full line (from line start to line end)
+            line_start_in_section = tldr_section.rfind('\n', 0, match.start())
+            if line_start_in_section == -1:
+                line_start_in_section = 0
+            else:
+                line_start_in_section += 1  # Skip the newline
+
+            line_end_in_section = match.end()
+
+            # Convert to full text positions
+            text_start = tldr_header_end + line_start_in_section
+            text_end = tldr_header_end + line_end_in_section
+
+            # Convert text position to document index
+            def text_pos_to_doc_index(text_pos: int) -> int:
+                current_pos = 0
+                for text, doc_start, doc_end in text_segments:
+                    if current_pos + len(text) > text_pos:
+                        offset = text_pos - current_pos
+                        return doc_start + offset
+                    current_pos += len(text)
+                return text_segments[-1][2] if text_segments else 1
+
+            doc_start = text_pos_to_doc_index(text_start)
+            doc_end = text_pos_to_doc_index(text_end)
+
+            print(f"[Google Docs] TL;DR line range: text={text_start}-{text_end}, doc={doc_start}-{doc_end}")
+            return (doc_start, doc_end)
+
+        except HttpError as e:
+            print(f"[Google Docs] Error finding TL;DR line: {e}")
+            return None
+
+    def remove_pl_section(self, pl_name: str) -> bool:
+        """
+        Remove a PL's section AND its TL;DR entry from the document.
+
+        Args:
+            pl_name: Name of the product line to remove
+
+        Returns:
+            True if successful, False otherwise
+        """
+        print(f"[Google Docs] Removing section for PL: {pl_name}")
+
+        # Find the main section range
+        section_range = self.find_pl_section_range(pl_name)
+
+        # Find the TL;DR line range
+        tldr_range = self.find_tldr_line_range(pl_name)
+
+        if not section_range and not tldr_range:
+            print(f"[Google Docs] Could not find any content to remove for PL: {pl_name}")
+            return False
+
+        try:
+            requests = []
+
+            # IMPORTANT: Delete in reverse order (higher indices first)
+            # to avoid index shifting issues
+            ranges_to_delete = []
+
+            if section_range:
+                ranges_to_delete.append(section_range)
+                print(f"[Google Docs] Found main section at indices {section_range[0]} to {section_range[1]}")
+
+            if tldr_range:
+                ranges_to_delete.append(tldr_range)
+                print(f"[Google Docs] Found TL;DR line at indices {tldr_range[0]} to {tldr_range[1]}")
+
+            # Sort by start index in descending order (delete from end first)
+            ranges_to_delete.sort(key=lambda x: x[0], reverse=True)
+
+            for start_idx, end_idx in ranges_to_delete:
+                requests.append({
+                    'deleteContentRange': {
+                        'range': {
+                            'startIndex': start_idx,
+                            'endIndex': end_idx
+                        }
+                    }
+                })
+
+            self.service.documents().batchUpdate(
+                documentId=self.document_id,
+                body={'requests': requests}
+            ).execute()
+
+            print(f"[Google Docs] Successfully removed {len(requests)} section(s) for PL: {pl_name}")
+            return True
+
+        except HttpError as e:
+            print(f"[Google Docs] Error removing PL section: {e}")
             return False
 
 

@@ -51,3 +51,12 @@ logs/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Generated output files
+tickets_export.json
+processed_notes.json
+
+# Slack state files (shared between processes)
+approval_states.json
+message_metadata.json
+deferred_pls.json

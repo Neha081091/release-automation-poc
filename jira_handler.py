@@ -27,9 +27,9 @@ class JiraHandler:
             email: User email for authentication
             token: API token for authentication
         """
-        self.base_url = base_url or os.getenv('JIRA_BASE_URL', 'https://deepintent.atlassian.net')
+        self.base_url = base_url or os.getenv('JIRA_BASE_URL') or os.getenv('JIRA_URL', 'https://deepintent.atlassian.net')
         self.email = email or os.getenv('JIRA_EMAIL')
-        self.token = token or os.getenv('JIRA_TOKEN')
+        self.token = token or os.getenv('JIRA_TOKEN') or os.getenv('JIRA_API_TOKEN')
 
         if not self.email or not self.token:
             raise ValueError("JIRA_EMAIL and JIRA_TOKEN must be provided")
@@ -174,8 +174,14 @@ class JiraHandler:
         if not linked_keys:
             fix_versions = result.get("fields", {}).get("fixVersions", [])
             if fix_versions:
-                # Get all fix version names
-                fix_version_names = [fv.get("name") for fv in fix_versions if fv.get("name")]
+                # Get all fix version names, excluding Hotfix versions
+                fix_version_names = [
+                    fv.get("name") for fv in fix_versions
+                    if fv.get("name") and "hotfix" not in fv.get("name", "").lower()
+                ]
+                excluded = [fv.get("name") for fv in fix_versions if fv.get("name") and "hotfix" in fv.get("name", "").lower()]
+                if excluded:
+                    print(f"[Jira] Excluding Hotfix versions: {excluded}")
                 print(f"[Jira] No links found. Searching by {len(fix_version_names)} Fix Versions: {fix_version_names}")
                 return self.get_tickets_by_fix_versions(fix_version_names, issue_key)
             else:
@@ -191,6 +197,32 @@ class JiraHandler:
                 linked_tickets.append(ticket)
 
         return linked_tickets
+
+    def get_fix_versions_for_ticket(self, issue_key: str) -> List[str]:
+        """
+        Fetch the current fix version names from a Jira ticket.
+
+        Used by refresh to detect newly added fix versions on the release ticket.
+
+        Args:
+            issue_key: The Jira issue key (e.g., DI-12345)
+
+        Returns:
+            List of fix version name strings (excluding Hotfix versions)
+        """
+        endpoint = f"issue/{issue_key}"
+        params = {"fields": "fixVersions"}
+
+        result = self._make_request("GET", endpoint, params=params)
+        if not result:
+            return []
+
+        fix_versions = result.get("fields", {}).get("fixVersions", [])
+        names = [
+            fv.get("name") for fv in fix_versions
+            if fv.get("name") and "hotfix" not in fv.get("name", "").lower()
+        ]
+        return names
 
     def get_tickets_by_fix_versions(self, fix_versions: List[str], exclude_key: str = None) -> List[Dict]:
         """

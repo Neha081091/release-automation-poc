@@ -304,8 +304,9 @@ View logs:
     # Create scheduler
     scheduler = BlockingScheduler()
 
-    # Add the daily job
+    # Add the weekday-only job (Monday-Friday)
     trigger = CronTrigger(
+        day_of_week='mon-fri',
         hour=Config.SCHEDULE_HOUR,
         minute=Config.SCHEDULE_MINUTE,
         timezone=Config.TIMEZONE
@@ -321,11 +322,20 @@ View logs:
 
     # Log startup
     logger.info("Scheduler started successfully")
-    logger.info(f"Next run: {scheduler.get_job('release_automation').next_run_time}")
 
-    print(f"\n[INFO] Scheduler is running...")
-    print(f"[INFO] Next execution: {scheduler.get_job('release_automation').next_run_time}")
-    print(f"[INFO] Press Ctrl+C to stop\n")
+    # Get next run time (handle different APScheduler versions)
+    try:
+        job = scheduler.get_job('release_automation')
+        next_run = getattr(job, 'next_run_time', None) or "Check scheduler logs"
+        logger.info(f"Next run: {next_run}")
+        print(f"\n[INFO] Scheduler is running...")
+        print(f"[INFO] Scheduled for: {Config.SCHEDULE_HOUR}:{Config.SCHEDULE_MINUTE:02d} {Config.TIMEZONE}")
+        print(f"[INFO] Press Ctrl+C to stop\n")
+    except Exception as e:
+        logger.info(f"Scheduler configured for {Config.SCHEDULE_HOUR}:{Config.SCHEDULE_MINUTE:02d}")
+        print(f"\n[INFO] Scheduler is running...")
+        print(f"[INFO] Scheduled for: {Config.SCHEDULE_HOUR}:{Config.SCHEDULE_MINUTE:02d} {Config.TIMEZONE}")
+        print(f"[INFO] Press Ctrl+C to stop\n")
 
     try:
         # Start the scheduler
