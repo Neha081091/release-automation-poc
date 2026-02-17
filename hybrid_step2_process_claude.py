@@ -98,8 +98,10 @@ def consolidate_with_claude(client, product: str, summaries: list, statuses: lis
         has_feature_flag = any("feature flag" in str(s).lower() for s in statuses if s)
 
     message = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-opus-4-5-20250918",
         max_tokens=500,
+        temperature=0,
+        system="You are a professional technical writer at a healthcare ad-tech company. Write concise, polished deployment summaries.",
         messages=[{
             "role": "user",
             "content": f"""Write a flowing prose TL;DR summary for this deployment.
@@ -159,8 +161,10 @@ def consolidate_body_with_claude(client, product: str, sections: list, release_v
         sections_text += f"\nEpic: {section['title']}\nStatus: {status}\nItems:\n{items_list}\n"
 
     message = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-opus-4-5-20250918",
         max_tokens=2000,
+        temperature=0,
+        system="You are a professional technical writer at a healthcare ad-tech company. Write concise, polished deployment summaries.",
         messages=[{
             "role": "user",
             "content": f"""Transform these raw Jira sections into polished deployment value-add summaries.

@@ -364,7 +364,7 @@ class GoogleDocsFormatter:
                 elements.append({
                     "type": "status",
                     "text": stripped + "\n",
-                    "color": "blue"  # General Availability uses blue color
+                    "color": "green"  # General Availability uses green color
                 })
                 in_value_section = False
                 continue
@@ -382,7 +382,7 @@ class GoogleDocsFormatter:
             if in_value_section:
                 # This is the prose description - just regular text
                 # Remove any accidental bullet characters
-                clean_text = re.sub(r'^[●•\*\-]\s*', '', stripped)
+                clean_text = re.sub(r'^[\*\-]\s*', '', stripped)
                 elements.append({
                     "type": "prose",
                     "text": clean_text + "\n"
@@ -567,8 +567,8 @@ class GoogleDocsFormatter:
                             if element.get("bold"):
                                 # Bold the epic name (excluding newline)
                                 self._mark_bold(elem_start, elem_end - 1)
-                            # Epic names are green colored
-                            self._mark_green(elem_start, elem_end - 1)
+                            # Epic names are blue colored
+                            self._mark_blue(elem_start, elem_end - 1)
                             if element.get("url"):
                                 # Add hyperlink (will override green with blue link color)
                                 self._mark_link(elem_start, elem_end - 1, element["url"])
