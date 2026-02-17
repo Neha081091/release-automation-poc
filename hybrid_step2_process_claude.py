@@ -369,7 +369,17 @@ def process_tickets_with_claude():
     grouped = defaultdict(lambda: defaultdict(list))
 
     for ticket in tickets:
+        # Skip Deployment Tracker tickets — they are internal and should not appear in release notes
+        issue_type_check = ticket.get("issue_type", "").lower()
+        if "deployment" in issue_type_check and "tracker" in issue_type_check:
+            continue
+
         fix_version = ticket.get("fix_version") or ""
+
+        # Skip tickets from Hotfix fix versions
+        if "hotfix" in fix_version.lower():
+            continue
+
         # Parse PL from fix version - preserve year if present (e.g., "Media PL1 2026")
         match = re.match(r'^(.+?\s*\d{4}):\s*Release', fix_version)
         if match:
