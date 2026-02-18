@@ -29,6 +29,7 @@ Usage:
 """
 
 import re
+import json
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
 
@@ -184,6 +185,162 @@ class GoogleDocsFormatter:
             "DSP Core PL1" -> "DSP Core PL1"
         """
         return re.sub(r'\s+20\d{2}$', '', pl_name)
+
+    def _join_pl_names(self, pl_names: List[str]) -> str:
+        """Join PL names using commas and 'and'."""
+        if not pl_names:
+            return ""
+        if len(pl_names) == 1:
+            return pl_names[0]
+        if len(pl_names) == 2:
+            return f"{pl_names[0]} and {pl_names[1]}"
+        return f"{', '.join(pl_names[:-1])} and {pl_names[-1]}"
+
+    def _normalize_bug_fix_bullet(self, text: str) -> str:
+        """Ensure bug fix bullets start with 'Fixed'."""
+        trimmed = text.strip()
+        if not trimmed:
+            return text
+        if re.match(r'(?i)^fixed\b', trimmed):
+            return trimmed
+        if re.match(r'(?i)^fix\b', trimmed):
+            return re.sub(r'(?i)^fix\b', 'Fixed', trimmed, count=1)
+        return f"Fixed {trimmed[0].lower() + trimmed[1:] if trimmed else trimmed}"
+
+    def _parse_body_sections(self, body_text: str) -> List[Dict]:
+        """Parse body text into epic sections with value-adds, bugs, availability."""
+        sections: List[Dict] = []
+        current = None
+        mode = None  # "value" or "bug"
+
+        def start_section(title: str):
+            nonlocal current
+            if current:
+                sections.append(current)
+            current = {
+                "epic": title,
+                "value_add": [],
+                "bug_fixes": [],
+                "availability": ""
+            }
+
+        if not body_text:
+            return sections
+
+        for raw in body_text.split("\n"):
+            line = raw.strip().replace("**", "")
+            if not line:
+                continue
+
+            # Normalize markdown epic heading
+            if line.startswith("#### "):
+                line = line[5:].strip()
+
+            # Normalize markdown epic link [Epic](url)
+            link_match = re.match(r'^\[([^\]]+)\]\([^)]+\)$', line)
+            if link_match:
+                line = link_match.group(1).strip()
+
+            lower = line.lower()
+            if lower.startswith("value add"):
+                mode = "value"
+                continue
+            if lower.startswith("bug fix"):
+                mode = "bug"
+                continue
+            if line in ("General Availability", "Feature Flag"):
+                if current:
+                    current["availability"] = line
+                mode = None
+                continue
+
+            if mode is None:
+                start_section(line)
+                continue
+
+            clean = re.sub(r'^[●•\*\-]\s*', '', line).strip()
+            if not clean:
+                continue
+            if current is None:
+                start_section("Other")
+            if mode == "value":
+                current["value_add"].append(clean)
+            elif mode == "bug":
+                current["bug_fixes"].append(clean)
+
+        if current:
+            sections.append(current)
+        return sections
+
+    def _extract_value_add_summaries(self, body_text: str) -> Dict[str, str]:
+        """Extract first value-add sentence per epic from Claude body text."""
+        summaries: Dict[str, str] = {}
+        if not body_text:
+            return summaries
+        lines = body_text.split('\n')
+        current_epic = None
+        in_value = False
+        for raw in lines:
+            line = raw.strip()
+            if not line:
+                continue
+            lower = line.lower()
+            if lower.startswith("#### "):
+                line = line[5:].strip()
+                lower = line.lower()
+            if lower.startswith("value add"):
+                in_value = True
+                continue
+            if lower.startswith("bug fix"):
+                in_value = False
+                continue
+            if lower in ("general availability", "feature flag"):
+                continue
+            if not in_value:
+                # treat as epic heading
+                if not line.startswith(("●", "•", "-", "*")):
+                    current_epic = line
+                continue
+            # Capture the first value-add line under this epic
+            if current_epic and current_epic not in summaries:
+                clean = re.sub(r'^[●•\*\-]\s*', '', line).strip()
+                if clean:
+                    summaries[current_epic] = clean
+        return summaries
+
+    def _availability_tag(self, ticket: Dict) -> str:
+        """Return availability tag string for a ticket."""
+        labels = ticket.get("labels") or []
+        release_type = (ticket.get("release_type") or "").strip().lower()
+
+        for label in labels:
+            label_lower = label.lower()
+            if label_lower.startswith(("ff:", "feature_flag:", "feature-flag:", "featureflag:")):
+                name = label.split(":", 1)[1].strip()
+                if name:
+                    return f"[FF: {name}]"
+            if label_lower.startswith(("ff-", "feature-flag-")):
+                name = label.split("-", 1)[1].strip()
+                if name:
+                    return f"[FF: {name}]"
+
+        if release_type in ("ga", "general availability"):
+            return "[GA]"
+        if "feature flag" in release_type or release_type == "ff":
+            return "[FF]"
+
+        for label in labels:
+            label_lower = label.lower()
+            if label_lower in ("ga", "general_availability") or "general availability" in label_lower:
+                return "[GA]"
+            if label_lower in ("ff", "feature_flag", "featureflag") or "feature flag" in label_lower:
+                return "[FF]"
+
+        issue_type = (ticket.get("issue_type") or "").lower()
+        if issue_type in ("story", "task"):
+            return "[GA]"
+
+        return ""
 
     def _get_pl_category(self, pl_name: str) -> str:
         """Determine the category header for a product line."""
@@ -382,7 +539,7 @@ class GoogleDocsFormatter:
             if in_value_section:
                 # This is the prose description - just regular text
                 # Remove any accidental bullet characters
-                clean_text = re.sub(r'^[\*\-]\s*', '', stripped)
+                clean_text = re.sub(r'^[●•\*\-]\s*', '', stripped)
                 elements.append({
                     "type": "prose",
                     "text": clean_text + "\n"
@@ -430,7 +587,9 @@ class GoogleDocsFormatter:
         product_lines: List[str],
         release_versions: Dict[str, str],
         fix_version_urls: Dict[str, str],
-        epic_urls_by_pl: Dict[str, Dict[str, str]]
+        epic_urls_by_pl: Dict[str, Dict[str, str]],
+        grouped_data: Optional[Dict[str, Dict[str, List[str]]]] = None,
+        ticket_map: Optional[Dict[str, Dict]] = None
     ) -> Tuple[List[Dict], List[Dict]]:
         """
         Format release notes into Google Docs API requests.
@@ -461,40 +620,28 @@ class GoogleDocsFormatter:
         tldr_header = "------------------TL;DR:------------------\n\n"
         tldr_header_start = self._insert_text(tldr_header)
 
-        # Key Deployments header (bold)
-        key_deploy_header = "Key Deployments:\n"
-        key_deploy_start = self._insert_text(key_deploy_header)
-        self._mark_bold(key_deploy_start, key_deploy_start + len("Key Deployments:"))
-
-        # TL;DR items per PL (bullet point format)
-        # Skip "Other" category as it's a catch-all for unclassified tickets
-        # Sort PLs according to PRODUCT_LINE_ORDER for consistent display
+        # Key Deployments line with PL list
         sorted_product_lines = get_ordered_pls(product_lines)
-        for pl in sorted_product_lines:
-            if pl not in tldr_by_pl:
-                continue
-            if pl.lower() == "other":
-                continue  # Skip "Other" in TL;DR
+        tldr_pls = [self._clean_pl_name(pl) for pl in sorted_product_lines if pl in tldr_by_pl and pl.lower() != "other"]
+        if tldr_pls:
+            key_deploy_line = f"Key Deployments: {self._join_pl_names(tldr_pls)}\n"
+            key_deploy_start = self._insert_text(key_deploy_line)
+            self._mark_bold(key_deploy_start, key_deploy_start + len("Key Deployments:"))
 
+        # TL;DR items per PL (sub-bullets)
+        for pl in sorted_product_lines:
+            if pl not in tldr_by_pl or pl.lower() == "other":
+                continue
             summary = tldr_by_pl[pl]
             pl_clean = self._clean_pl_name(pl)
-
-            # Capitalize first letter of summary after the dash
             if summary:
                 summary = summary[0].upper() + summary[1:] if len(summary) > 1 else summary.upper()
-
-            # Insert bullet point
-            self._insert_text("• ")
-
-            # Insert PL name (bold, NO hyperlink - black text)
-            pl_start = self.current_index
-            self._insert_text(pl_clean)
-            pl_end = self.current_index
+            bullet_text = f"• {pl_clean} - {summary}\n"
+            bullet_start = self.current_index
+            self._insert_text(bullet_text)
+            pl_start = bullet_start + len("• ")
+            pl_end = pl_start + len(pl_clean)
             self._mark_bold(pl_start, pl_end)
-
-            # Insert separator and summary
-            rest_of_line = f" - {summary}\n"
-            self._insert_text(rest_of_line)
 
         # Blank line after TL;DR
         self._insert_text("\n")
@@ -550,45 +697,61 @@ class GoogleDocsFormatter:
                 # Get epic URLs for this PL
                 epic_urls = epic_urls_by_pl.get(pl, {})
 
-                # Parse and format body content
-                if pl in body_by_pl:
-                    body_text = body_by_pl[pl]
+                # Parse and format body content from Claude output
+                body_text = body_by_pl.get(pl, "")
+                sections = self._parse_body_sections(body_text)
+
+                if sections:
+                    for section in sections:
+                        epic_title = section["epic"]
+                        epic_url = self._find_epic_url(epic_title, epic_urls) if epic_urls else ""
+
+                        epic_start = self.current_index
+                        self._insert_text(f"{epic_title}\n")
+                        epic_end = self.current_index
+                        self._mark_bold(epic_start, epic_end - 1)
+                        if epic_url:
+                            self._mark_link(epic_start, epic_end - 1, epic_url)
+
+                        if section["value_add"]:
+                            value_start = self.current_index
+                            self._insert_text("Value Add:\n")
+                            self._mark_bold(value_start, value_start + len("Value Add:"))
+                            for item in section["value_add"]:
+                                self._insert_text(f"• {item}\n")
+
+                        if section["availability"]:
+                            avail_start = self.current_index
+                            self._insert_text(f"{section['availability']}\n")
+                            self._mark_green(avail_start, self.current_index - 1)
+
+                        if section["bug_fixes"]:
+                            bug_start = self.current_index
+                            self._insert_text("Bug Fixes:\n")
+                            self._mark_bold(bug_start, bug_start + len("Bug Fixes:"))
+                            for item in section["bug_fixes"]:
+                                bug_text = self._normalize_bug_fix_bullet(item)
+                                self._insert_text(f"• {bug_text}\n")
+
+                        self._insert_text("\n")
+                elif body_text:
+                    # Fallback to existing Claude body parsing
                     elements = self._parse_body_content(
                         body_text, epic_urls, pl_clean, release_ver
                     )
-
-                    # Insert each element with appropriate formatting
                     for element in elements:
                         elem_start = self.current_index
                         self._insert_text(element["text"])
                         elem_end = self.current_index
-
                         if element["type"] == "epic":
                             if element.get("bold"):
-                                # Bold the epic name (excluding newline)
                                 self._mark_bold(elem_start, elem_end - 1)
-                            # Epic names are blue colored
-                            self._mark_blue(elem_start, elem_end - 1)
                             if element.get("url"):
-                                # Add hyperlink (will override green with blue link color)
                                 self._mark_link(elem_start, elem_end - 1, element["url"])
-
                         elif element["type"] in ("value_add_header", "bug_fixes_header"):
-                            # Bold the header portion
                             bold_start, bold_end = element.get("bold_range", (0, 0))
                             if bold_end > bold_start:
                                 self._mark_bold(elem_start + bold_start, elem_start + bold_end)
-
-                        elif element["type"] == "status":
-                            # Color based on status type
-                            if element.get("color") == "green":
-                                self._mark_green(elem_start, elem_end - 1)
-                            elif element.get("color") == "blue":
-                                self._mark_blue(elem_start, elem_end - 1)
-
-                        # "prose" type has no special formatting - just regular text
-
-                    # Add spacing after body
                     self._insert_text("\n")
 
                 # Spacing between PLs

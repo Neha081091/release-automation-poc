@@ -51,6 +51,43 @@ def clean_pl_name(pl_name: str) -> str:
     return re.sub(r'\s+20\d{2}$', '', pl_name)
 
 
+def _join_pl_names(pl_names: List[str]) -> str:
+    """Join PL names using commas and 'and'."""
+    if not pl_names:
+        return ""
+    if len(pl_names) == 1:
+        return pl_names[0]
+    if len(pl_names) == 2:
+        return f"{pl_names[0]} and {pl_names[1]}"
+    return f"{', '.join(pl_names[:-1])} and {pl_names[-1]}"
+
+
+def _parse_key_deployments_pls(line_text: str) -> List[str]:
+    """Parse PL list from a Key Deployments line."""
+    if ":" not in line_text:
+        return []
+    _, rhs = line_text.split(":", 1)
+    parts = [p.strip() for p in re.split(r',|\band\b', rhs) if p.strip()]
+    return parts
+
+
+def _find_key_deployments_line_range(content: str) -> Optional[Tuple[int, int]]:
+    """Find the start/end positions of the Key Deployments line."""
+    bounds = _find_tldr_section_bounds(content)
+    if not bounds:
+        return None
+    _, section_end, section_start = bounds
+    section_text = content[section_start:section_end]
+    line_match = re.search(r'^Key Deployments:\s*.+$', section_text, re.MULTILINE)
+    if not line_match:
+        return None
+    line_start = section_start + line_match.start()
+    line_end = section_start + line_match.end()
+    if line_end < len(content) and content[line_end:line_end + 1] == "\n":
+        line_end += 1
+    return line_start, line_end
+
+
 def _get_pl_category(pl_name: str) -> str:
     """Determine the category header for a product line."""
     pl_lower = pl_name.lower()
@@ -197,7 +234,7 @@ def _find_tldr_line_range(content: str, pl_name: str) -> Optional[Tuple[int, int
     _, section_end, section_start = bounds
     section_text = content[section_start:section_end]
     pl_clean = clean_pl_name(pl_name)
-    line_match = re.search(rf'^{re.escape(pl_clean)}\s*-\s*.+$', section_text, re.MULTILINE)
+    line_match = re.search(rf'^\s*•\s*{re.escape(pl_clean)}\s*-\s*.+$', section_text, re.MULTILINE)
     if not line_match:
         return None
     line_start = section_start + line_match.start()
@@ -236,7 +273,7 @@ def update_tldr_lines_for_existing_pls(tldr_updates: Dict[str, str], release_dat
             if not summary:
                 continue
             pl_clean = clean_pl_name(pl)
-            new_line = f"{pl_clean} - {summary}\n"
+            new_line = f"• {pl_clean} - {summary}\n"
             line_range = _find_tldr_line_range(content, pl_clean)
             if line_range:
                 start_pos, end_pos = line_range
@@ -246,7 +283,7 @@ def update_tldr_lines_for_existing_pls(tldr_updates: Dict[str, str], release_dat
                 insert_req = {"insertText": {"location": {"index": start_idx}, "text": new_line}}
                 format_reqs = [
                     {"updateTextStyle": {"range": {"startIndex": start_idx, "endIndex": start_idx + len(new_line)}, "textStyle": {"bold": False}, "fields": "bold"}},
-                    {"updateTextStyle": {"range": {"startIndex": start_idx, "endIndex": start_idx + len(pl_clean)}, "textStyle": {"bold": True}, "fields": "bold"}}
+                    {"updateTextStyle": {"range": {"startIndex": start_idx + len("• "), "endIndex": start_idx + len("• ") + len(pl_clean)}, "textStyle": {"bold": True}, "fields": "bold"}}
                 ]
                 jobs.append((start_idx, [delete_req, insert_req], format_reqs))
             else:
@@ -258,7 +295,7 @@ def update_tldr_lines_for_existing_pls(tldr_updates: Dict[str, str], release_dat
                 insert_req = {"insertText": {"location": {"index": insert_idx}, "text": new_line}}
                 format_reqs = [
                     {"updateTextStyle": {"range": {"startIndex": insert_idx, "endIndex": insert_idx + len(new_line)}, "textStyle": {"bold": False}, "fields": "bold"}},
-                    {"updateTextStyle": {"range": {"startIndex": insert_idx, "endIndex": insert_idx + len(pl_clean)}, "textStyle": {"bold": True}, "fields": "bold"}}
+                    {"updateTextStyle": {"range": {"startIndex": insert_idx + len("• "), "endIndex": insert_idx + len("• ") + len(pl_clean)}, "textStyle": {"bold": True}, "fields": "bold"}}
                 ]
                 jobs.append((insert_idx, [insert_req], format_reqs))
 
@@ -434,7 +471,9 @@ def process_new_tickets(new_tickets_by_pl: Dict[str, List]) -> Dict:
         "body_by_pl": {},
         "release_versions": {},
         "fix_version_urls": {},
-        "epic_urls_by_pl": {}
+        "epic_urls_by_pl": {},
+        "grouped_data": {},
+        "ticket_map": {}
     }
 
     def _normalize_bug_fix_bullet(text: str) -> str:
@@ -464,6 +503,7 @@ def process_new_tickets(new_tickets_by_pl: Dict[str, List]) -> Dict:
 
         # Group tickets by epic
         epics = {}
+        grouped_keys = {}
         for ticket in tickets:
             epic_name = ticket.get('epic_name', 'Other')
             if not epic_name:
@@ -474,7 +514,13 @@ def process_new_tickets(new_tickets_by_pl: Dict[str, List]) -> Dict:
                     "tickets": [],
                     "url": ticket.get('epic_url', '')
                 }
+                grouped_keys[epic_name] = []
             epics[epic_name]["tickets"].append(ticket)
+            key = ticket.get("key")
+            if key:
+                grouped_keys[epic_name].append(key)
+                processed["ticket_map"][key] = ticket
+        processed["grouped_data"][pl_name] = grouped_keys
 
         # Store epic URLs
         epic_urls = {}
@@ -647,8 +693,6 @@ def add_new_pls_to_google_doc(processed_data: Dict, release_date: str) -> bool:
         # Insert TL;DR entries under Key Deployments
         tldr_by_pl = processed_data.get('tldr_by_pl', {})
         tldr_lines = []
-        tldr_bold_ranges = []
-        tldr_offset = 0
 
         for pl in get_ordered_pls(product_lines):
             if pl.lower() == "other":
@@ -657,10 +701,8 @@ def add_new_pls_to_google_doc(processed_data: Dict, release_date: str) -> bool:
             if not summary:
                 continue
             pl_clean = clean_pl_name(pl)
-            line = f"{pl_clean} - {summary}\n"
+            line = f"• {pl_clean} - {summary}\n"
             tldr_lines.append(line)
-            tldr_bold_ranges.append((tldr_offset, tldr_offset + len(pl_clean)))
-            tldr_offset += len(line)
 
         tldr_insert_index = None
         if tldr_lines:
@@ -683,28 +725,71 @@ def add_new_pls_to_google_doc(processed_data: Dict, release_date: str) -> bool:
                     "text": "".join(tldr_lines)
                 }
             }]
-            format_reqs = []
-            for start, end in tldr_bold_ranges:
+            format_reqs = [{
+                "updateTextStyle": {
+                    "range": {
+                        "startIndex": tldr_insert_index,
+                        "endIndex": tldr_insert_index + len("".join(tldr_lines))
+                    },
+                    "textStyle": {"bold": False},
+                    "fields": "bold"
+                }
+            }]
+            # Bold PL names within TL;DR bullets
+            offset = 0
+            for pl in get_ordered_pls(product_lines):
+                if pl.lower() == "other":
+                    continue
+                summary = tldr_by_pl.get(pl, "")
+                if not summary:
+                    continue
+                pl_clean = clean_pl_name(pl)
+                line_len = len(f"• {pl_clean} - {summary}\n")
                 format_reqs.append({
                     "updateTextStyle": {
                         "range": {
-                            "startIndex": tldr_insert_index + start,
-                            "endIndex": tldr_insert_index + end
+                            "startIndex": tldr_insert_index + offset + len("• "),
+                            "endIndex": tldr_insert_index + offset + len("• ") + len(pl_clean)
                         },
                         "textStyle": {"bold": True},
                         "fields": "bold"
                     }
                 })
+                offset += line_len
             jobs.append((tldr_insert_index, insert_reqs, format_reqs))
+
+        # Update Key Deployments line to include new PLs
+        key_line_range = _find_key_deployments_line_range(content)
+        if key_line_range:
+            start_pos, end_pos = key_line_range
+            key_line_text = content[start_pos:end_pos].strip()
+            existing_pls = _parse_key_deployments_pls(key_line_text)
+            new_pls = [clean_pl_name(pl) for pl in product_lines if clean_pl_name(pl) not in existing_pls]
+            if new_pls:
+                updated_list = existing_pls + new_pls
+                new_key_line = f"Key Deployments: {_join_pl_names(updated_list)}\n"
+                start_idx = _text_pos_to_doc_index(start_pos, segments)
+                end_idx = _text_pos_to_doc_index(end_pos, segments)
+                jobs.append((
+                    start_idx,
+                    [
+                        {"deleteContentRange": {"range": {"startIndex": start_idx, "endIndex": end_idx}}},
+                        {"insertText": {"location": {"index": start_idx}, "text": new_key_line}}
+                    ],
+                    [
+                        {"updateTextStyle": {"range": {"startIndex": start_idx, "endIndex": start_idx + len(new_key_line)}, "textStyle": {"bold": False}, "fields": "bold"}},
+                        {"updateTextStyle": {"range": {"startIndex": start_idx, "endIndex": start_idx + len("Key Deployments:")}, "textStyle": {"bold": True}, "fields": "bold"}}
+                    ]
+                ))
 
         # Insert PL bodies in their category sections
         for pl in get_ordered_pls(product_lines)[::-1]:
             pl_clean = clean_pl_name(pl)
+            pl_display = pl
             release_ver = processed_data.get('release_versions', {}).get(pl, "Release 1.0")
             fix_version_url = processed_data.get('fix_version_urls', {}).get(pl, "")
             epic_urls = processed_data.get('epic_urls_by_pl', {}).get(pl, {})
             body_text = processed_data.get('body_by_pl', {}).get(pl, "")
-
             if not body_text:
                 continue
 
@@ -722,34 +807,60 @@ def add_new_pls_to_google_doc(processed_data: Dict, release_date: str) -> bool:
             formatter._insert_text("\n")
 
             # PL header with release version (hyperlinked)
-            formatter._insert_text(f"{pl_clean}: ")
+            formatter._insert_text(f"{pl_display}: ")
             ver_start = formatter.current_index
             formatter._insert_text(f"{release_ver}\n")
             ver_end = ver_start + len(release_ver)
             if fix_version_url:
                 formatter._mark_link(ver_start, ver_end, fix_version_url)
 
-            elements = formatter._parse_body_content(body_text, epic_urls, pl_clean, release_ver)
-            for element in elements:
-                elem_start = formatter.current_index
-                if element["type"] == "bullet":
-                    formatter._insert_text(f"    ● {element['text']}")
-                else:
-                    formatter._insert_text(element["text"])
-                elem_end = formatter.current_index
+            sections = formatter._parse_body_sections(body_text)
+            if sections:
+                for section in sections:
+                    epic_title = section["epic"]
+                    epic_url = formatter._find_epic_url(epic_title, epic_urls) if epic_urls else ""
+                    epic_start = formatter.current_index
+                    formatter._insert_text(f"{epic_title}\n")
+                    epic_end = formatter.current_index
+                    if epic_url:
+                        formatter._mark_link(epic_start, epic_end - 1, epic_url)
 
-                if element["type"] == "epic":
-                    if element.get("bold"):
-                        formatter._mark_bold(elem_start, elem_end - 1)
-                    if element.get("url"):
-                        formatter._mark_link(elem_start, elem_end - 1, element["url"])
-                elif element["type"] in ("value_add_header", "bug_fixes_header"):
-                    bold_start, bold_end = element.get("bold_range", (0, 0))
-                    if bold_end > bold_start:
-                        formatter._mark_bold(elem_start + bold_start, elem_start + bold_end)
-                elif element["type"] == "status":
-                    if element.get("color") == "green":
-                        formatter._mark_green(elem_start, elem_end - 1)
+                    if section["value_add"]:
+                        value_start = formatter.current_index
+                        formatter._insert_text("Value Add:\n")
+                        formatter._mark_bold(value_start, value_start + len("Value Add:"))
+                        for item in section["value_add"]:
+                            formatter._insert_text(f"• {item}\n")
+
+                    if section["availability"]:
+                        avail_start = formatter.current_index
+                        formatter._insert_text(f"{section['availability']}\n")
+                        formatter._mark_green(avail_start, formatter.current_index - 1)
+
+                    if section["bug_fixes"]:
+                        bug_start = formatter.current_index
+                        formatter._insert_text("Bug Fixes:\n")
+                        formatter._mark_bold(bug_start, bug_start + len("Bug Fixes:"))
+                        for item in section["bug_fixes"]:
+                            bug_text = formatter._normalize_bug_fix_bullet(item)
+                            formatter._insert_text(f"• {bug_text}\n")
+
+                    formatter._insert_text("\n")
+            else:
+                elements = formatter._parse_body_content(body_text, epic_urls, pl_clean, release_ver)
+                for element in elements:
+                    elem_start = formatter.current_index
+                    formatter._insert_text(element["text"])
+                    elem_end = formatter.current_index
+                    if element["type"] == "epic":
+                        if element.get("bold"):
+                            formatter._mark_bold(elem_start, elem_end - 1)
+                        if element.get("url"):
+                            formatter._mark_link(elem_start, elem_end - 1, element["url"])
+                    elif element["type"] in ("value_add_header", "bug_fixes_header"):
+                        bold_start, bold_end = element.get("bold_range", (0, 0))
+                        if bold_end > bold_start:
+                            formatter._mark_bold(elem_start + bold_start, elem_start + bold_end)
 
             formatter._insert_text("\n")
             formatter._build_format_requests()
@@ -837,26 +948,54 @@ def add_new_tickets_to_existing_pls(processed_data: Dict, release_date: str) -> 
             formatter._insert_text("\n")
             epic_urls = processed_data.get('epic_urls_by_pl', {}).get(pl, {})
             release_ver = processed_data.get('release_versions', {}).get(pl, "Release 1.0")
-            elements = formatter._parse_body_content(body_text, epic_urls, clean_pl_name(pl), release_ver)
-            for element in elements:
-                elem_start = formatter.current_index
-                if element["type"] == "bullet":
-                    formatter._insert_text(f"    ● {element['text']}")
-                else:
+
+            sections = formatter._parse_body_sections(body_text)
+            if sections:
+                for section in sections:
+                    epic_title = section["epic"]
+                    epic_url = formatter._find_epic_url(epic_title, epic_urls) if epic_urls else ""
+                    epic_start = formatter.current_index
+                    formatter._insert_text(f"{epic_title}\n")
+                    epic_end = formatter.current_index
+                    if epic_url:
+                        formatter._mark_link(epic_start, epic_end - 1, epic_url)
+
+                    if section["value_add"]:
+                        value_start = formatter.current_index
+                        formatter._insert_text("Value Add:\n")
+                        formatter._mark_bold(value_start, value_start + len("Value Add:"))
+                        for item in section["value_add"]:
+                            formatter._insert_text(f"• {item}\n")
+
+                    if section["availability"]:
+                        avail_start = formatter.current_index
+                        formatter._insert_text(f"{section['availability']}\n")
+                        formatter._mark_green(avail_start, formatter.current_index - 1)
+
+                    if section["bug_fixes"]:
+                        bug_start = formatter.current_index
+                        formatter._insert_text("Bug Fixes:\n")
+                        formatter._mark_bold(bug_start, bug_start + len("Bug Fixes:"))
+                        for item in section["bug_fixes"]:
+                            bug_text = formatter._normalize_bug_fix_bullet(item)
+                            formatter._insert_text(f"• {bug_text}\n")
+
+                    formatter._insert_text("\n")
+            else:
+                elements = formatter._parse_body_content(body_text, epic_urls, clean_pl_name(pl), release_ver)
+                for element in elements:
+                    elem_start = formatter.current_index
                     formatter._insert_text(element["text"])
-                elem_end = formatter.current_index
-                if element["type"] == "epic":
-                    if element.get("bold"):
-                        formatter._mark_bold(elem_start, elem_end - 1)
-                    if element.get("url"):
-                        formatter._mark_link(elem_start, elem_end - 1, element["url"])
-                elif element["type"] in ("value_add_header", "bug_fixes_header"):
-                    bold_start, bold_end = element.get("bold_range", (0, 0))
-                    if bold_end > bold_start:
-                        formatter._mark_bold(elem_start + bold_start, elem_start + bold_end)
-                elif element["type"] == "status":
-                    if element.get("color") == "green":
-                        formatter._mark_green(elem_start, elem_end - 1)
+                    elem_end = formatter.current_index
+                    if element["type"] == "epic":
+                        if element.get("bold"):
+                            formatter._mark_bold(elem_start, elem_end - 1)
+                        if element.get("url"):
+                            formatter._mark_link(elem_start, elem_end - 1, element["url"])
+                    elif element["type"] in ("value_add_header", "bug_fixes_header"):
+                        bold_start, bold_end = element.get("bold_range", (0, 0))
+                        if bold_end > bold_start:
+                            formatter._mark_bold(elem_start + bold_start, elem_start + bold_end)
 
             formatter._insert_text("\n")
             formatter._build_format_requests()

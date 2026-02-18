@@ -23,6 +23,22 @@ load_dotenv()
 
 from jira_handler import JiraHandler
 
+# Files that should be cleaned up when no release is planned
+STALE_FILES = ['tickets_export.json', 'processed_notes.json']
+
+
+def is_weekday() -> bool:
+    """Return True if today is Monday-Friday."""
+    return datetime.now().weekday() < 5  # 0=Mon … 4=Fri
+
+
+def cleanup_stale_exports():
+    """Remove stale export files so previous day's notes don't leak through."""
+    for filepath in STALE_FILES:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            print(f"[Cleanup] Removed stale {filepath}")
+
 
 def get_day_suffix(day: int) -> str:
     """Get the ordinal suffix for a day (1st, 2nd, 3rd, 4th, etc.)."""
@@ -84,8 +100,9 @@ def export_jira_tickets(release_date_str: str = None):
     release_ticket = jira.find_release_ticket(release_summary, project_key)
 
     if not release_ticket:
-        print(f"[Step 1] ERROR: Release ticket not found: '{release_summary}'")
+        print(f"[Step 1] No release planned: '{release_summary}' not found in Jira")
         print(f"[Step 1] TIP: Check if the date format matches Jira (e.g., '5th February 2026')")
+        cleanup_stale_exports()
         return None
 
     release_key = release_ticket['key']
@@ -96,16 +113,21 @@ def export_jira_tickets(release_date_str: str = None):
 
     if not linked_tickets:
         print("[Step 1] WARNING: No linked tickets found")
+        cleanup_stale_exports()
         return None
 
     print(f"[Step 1] Found {len(linked_tickets)} tickets")
 
-    # Filter out hotfix tickets
+    # Filter out Hotfix tickets
+    original_count = len(linked_tickets)
     linked_tickets = [
         t for t in linked_tickets
         if "hotfix" not in (t.get("fix_version") or "").lower()
     ]
-    print(f"[Step 1] After filtering hotfixes: {len(linked_tickets)} tickets")
+    hotfix_count = original_count - len(linked_tickets)
+    if hotfix_count > 0:
+        print(f"[Step 1] Filtered out {hotfix_count} Hotfix ticket(s)")
+        print(f"[Step 1] Remaining: {len(linked_tickets)} tickets")
 
     # Export to JSON
     export_data = {
@@ -128,6 +150,98 @@ def export_jira_tickets(release_date_str: str = None):
     print("=" * 60)
 
     return output_file
+
+
+def refresh_tickets():
+    """Re-fetch tickets from Jira to pick up newly added fix versions or new tickets under existing fix versions.
+
+    Compares against the previous tickets_export.json to detect new tickets.
+
+    Returns:
+        output file path if new tickets found, None otherwise
+    """
+    print("=" * 60)
+    print("  REFRESH: Re-fetching Jira Tickets")
+    print("=" * 60)
+
+    # Load existing export to get release key and previous tickets
+    try:
+        with open("tickets_export.json", 'r') as f:
+            previous_export = json.load(f)
+    except FileNotFoundError:
+        print("[Refresh] ERROR: tickets_export.json not found. Run export first.")
+        return None
+
+    release_key = previous_export.get("release_key")
+    release_summary = previous_export.get("release_summary", "")
+    if not release_key:
+        print("[Refresh] ERROR: No release_key in tickets_export.json")
+        return None
+
+    previous_ticket_keys = {t.get("key") for t in previous_export.get("tickets", [])}
+    print(f"[Refresh] Release ticket: {release_key}")
+    print(f"[Refresh] Previously exported: {len(previous_ticket_keys)} tickets")
+
+    # Connect to Jira and fetch current fix versions
+    jira = JiraHandler()
+    if not jira.test_connection():
+        print("[Refresh] ERROR: Could not connect to Jira")
+        return None
+
+    current_fix_versions = jira.get_fix_versions_for_ticket(release_key)
+    if not current_fix_versions:
+        print("[Refresh] No fix versions found on release ticket")
+        return None
+
+    print(f"[Refresh] Current fix versions on {release_key}: {current_fix_versions}")
+
+    # Fetch all tickets across all current fix versions
+    all_tickets = jira.get_tickets_by_fix_versions(current_fix_versions, exclude_key=release_key)
+    if not all_tickets:
+        print("[Refresh] No tickets found across fix versions")
+        return None
+
+    # Filter out Hotfix tickets
+    original_count = len(all_tickets)
+    all_tickets = [
+        t for t in all_tickets
+        if "hotfix" not in (t.get("fix_version") or "").lower()
+    ]
+    hotfix_count = original_count - len(all_tickets)
+    if hotfix_count > 0:
+        print(f"[Refresh] Filtered out {hotfix_count} Hotfix ticket(s)")
+
+    # Detect new tickets
+    current_ticket_keys = {t.get("key") for t in all_tickets}
+    new_ticket_keys = current_ticket_keys - previous_ticket_keys
+    new_tickets = [t.get("key") for t in all_tickets if t.get("key") in new_ticket_keys]
+
+    print(f"[Refresh] Total tickets now: {len(all_tickets)}")
+    print(f"[Refresh] New tickets: {len(new_tickets)}")
+    if new_tickets:
+        print(f"[Refresh] New ticket keys: {new_tickets}")
+
+    # Save updated export
+    export_data = {
+        "exported_at": datetime.now().isoformat(),
+        "release_summary": release_summary,
+        "release_key": release_key,
+        "ticket_count": len(all_tickets),
+        "tickets": all_tickets,
+        "new_tickets": new_tickets,
+        "refreshed_at": datetime.now().isoformat()
+    }
+
+    output_file = "tickets_export.json"
+    with open(output_file, 'w') as f:
+        json.dump(export_data, f, indent=2, default=str)
+
+    if new_tickets:
+        print(f"\n[Refresh] UPDATED {output_file} with {len(new_tickets)} new ticket(s)")
+        return output_file
+    else:
+        print(f"\n[Refresh] No new tickets found. Export is up to date.")
+        return None
 
 
 if __name__ == "__main__":

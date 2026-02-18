@@ -1,308 +1,283 @@
 {
-  "exported_at": "2026-02-16T20:59:01.807313",
-  "release_summary": "Release 16th February 2026",
-  "release_key": "DI-90750",
-  "ticket_count": 14,
+  "exported_at": "2026-02-17T23:33:31.979124",
+  "release_summary": "Release 17th February 2026",
+  "release_key": "DI-90938",
+  "ticket_count": 13,
   "tickets": [
     {
-      "key": "DI-90939",
-      "url": "https://deepintent.atlassian.net/browse/DI-90939",
-      "summary": "UI | replace My Audiencess to My Audiences",
-      "description": " Observed Behaviour   Expected Results replace My Audiencess to My Audiences",
+      "key": "DI-90875",
+      "url": "https://deepintent.atlassian.net/browse/DI-90875",
+      "summary": "IQVIA ELAAD Plus Daily Pipeline: Process data with 1-day delay ( Day before yesterday ) ",
+      "description": "Background:  The IQVIA ELAAD Plus daily pipeline currently processes \u201cyesterday\u2019s\u201d delivery. Due to variable daily delivery arrival times (not fixed; typically ~07:00 UTC but can be later) and to avoid partial/no updates, we need to introduce a one-day delay so the daily run processes data for the day before yesterday. Change Requested:  Update the daily pipeline\u2019s date/partition selection logic (and any downstream dependencies) so that on each run it targets D-2 (day before yesterday) instead of D-1 (yesterday). Requirements / Scope: Daily pipeline should determine the processing date as current_run_date - 2 days (UTC) and use it consistently across all source pulls/partitions and downstream tables. Ensure scheduling/triggering aligns with the one-day delay and does not conflict with the monthly pipeline schedule. Update any configuration variables, DAG parameters, backfill logic, and monitoring/alerts that reference \u201cyesterday\u201d. Add/update documentation to reflect the 1-day delay. Acceptance Criteria: When triggered on date D, the pipeline ingests/refreshes data for D-2 (day before yesterday), not D-1. Validation confirms the loaded partitions/tables correspond to D-2 across all relevant datasets. No partial/no-update runs occur due to late-arriving daily deliveries. Existing 45-day rolling refresh strategy remains intact; only the anchor day shifts by one day. Run logs/metrics clearly show the effective processing date.",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Data Ingress 2026: Release 3.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17610/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-88119",
+      "epic_name": "IQVIA ELAAD Plus : Rolling Window Data Refresh",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-88119",
+      "components": [
+        "Data Ingress"
+      ],
+      "story_points": null,
+      "assignee": "Pushkar Lonkar"
+    },
+    {
+      "key": "DI-90873",
+      "url": "https://deepintent.atlassian.net/browse/DI-90873",
+      "summary": "Error Handling for Status Code in Rest Endpoints",
+      "description": " Malformed JSON in request body -  Getting 500 but should get 400 Send invalid JSON syntax: { query: \"{ user { name }\" } (missing closing brace) Missing quotes around query string Empty request body: {} Missing authentication token -  Getting 500 but should get 401 Remove Authorization header completely Request non-existent field: -  Getting 400 but should get 422 query { user { nonExistentField } } Use Wrong Method  - Directly Hitting api on /graphql then should get 404",
       "issue_type": "Bug",
       "status": "Done",
       "priority": "Normal",
-      "fix_version": "Audiences PL1 2026: Release 12.0",
-      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/18106/tab/release-report-all-issues",
+      "fix_version": "Developer Experience 2026 : Release 11.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17883/tab/release-report-all-issues",
       "labels": [],
       "release_type": null,
       "epic_key": null,
       "epic_name": null,
       "epic_url": null,
       "components": [
-        "Audiences PL1"
+        "Developer Experience"
       ],
       "story_points": null,
-      "assignee": "Yash Chaudhari"
+      "assignee": "Chirag Vohra"
     },
     {
-      "key": "DI-90934",
-      "url": "https://deepintent.atlassian.net/browse/DI-90934",
-      "summary": "Expand character limit for creative tracking URLs",
-      "description": "User should be able to add tracking url with upto 1024 characters. Update column size in database. Update UI validation.   ",
+      "key": "DI-90782",
+      "url": "https://deepintent.atlassian.net/browse/DI-90782",
+      "summary": "Application Gateway connection reuse",
+      "description": "Investigate connection reuse on application gateway. If not happening correct its implementation. Add monitoring so that exact cause can be provided to network team which can ease in debugging",
       "issue_type": "Story",
       "status": "Done",
       "priority": "Normal",
-      "fix_version": "DSP Core PL1 2026: Release 7.0",
-      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/18176/tab/release-report-all-issues",
+      "fix_version": "Developer Experience 2026 : Release 11.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17883/tab/release-report-all-issues",
       "labels": [],
       "release_type": null,
-      "epic_key": "DI-81496",
-      "epic_name": "DSP Core PL1 Enhancements Q1 2026",
-      "epic_url": "https://deepintent.atlassian.net/browse/DI-81496",
+      "epic_key": "DI-90341",
+      "epic_name": "Performace Optimisation in Microservices",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-90341",
       "components": [
-        "DSP Core PL1"
+        "Developer Experience"
       ],
       "story_points": null,
-      "assignee": "Ketan Zabak"
+      "assignee": "Vayuj Rajan"
     },
     {
-      "key": "DI-90863",
-      "url": "https://deepintent.atlassian.net/browse/DI-90863",
-      "summary": "The Save button should be enabled when \u201cNA\u201d creative weight value is attached with a valid weight.",
-      "description": "As a user, when I navigate to the Creative Edit tab of an Ad Group and add a creative with \u201cNA\u201d selected, the Save button should remain disabled.  If you\u2019d like, I can also format it in proper \u201cGiven\u2013When\u2013Then\u201d format. ",
-      "issue_type": "Bug",
-      "status": "Done",
-      "priority": "Normal",
-      "fix_version": "DSP Core PL1 2026: Hotfix 2.0",
-      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/15138/tab/release-report-all-issues",
-      "labels": [],
-      "release_type": null,
-      "epic_key": null,
-      "epic_name": null,
-      "epic_url": null,
-      "components": [
-        "DSP Core PL1"
-      ],
-      "story_points": null,
-      "assignee": "Shlok Hinge"
-    },
-    {
-      "key": "DI-90592",
-      "url": "https://deepintent.atlassian.net/browse/DI-90592",
-      "summary": "UI | Cleanup of Drop columns no longer required | Multi-Goal Prioritization GA",
-      "description": "In api  Drop column  goalId  from bidder.CAMPAIGN  Drop columns  goalTypeId  and  target  from bidder.CAMPAIGN_GROUP Remove  CampaignGoal  from  goalDetails  in CAMPAIGN_CUSTOM_TEMPLATE  Remove complete code dependency for the same  Remove  isOptimised  bidder.BUDGET column  Remove  isUniqueReachEnabled  bidder.CAMPAIGN_OPTIMIZER column  For UI We need to cleanup resolvers for old goalTypeId and target from following queries:  CAMPAIGN_GROUP_SEARCH_QUERY \u2013 via fragments.campaignGroup\nCAMPAIGN_GROUP_SEARCH_WITH_CAMPAIGNS_QUERY \u2013 via fragments.campaignGroupForMultiGoal\nCAMPAIGN_GROUP_LISTING_QUERY (schema) \u2013 via fragments.campaignGroup\nCampaignGroupQuery.CAMPAIGN_GROUP_LISTING_QUERY \u2013 inline selection\nCAMPAIGN_GROUP_ID_LIST \u2013 inline selection\nGET_CAMPAIGN_DETAILS_FOR_AD_GROUP \u2013 inline selection\ngetCampaignsWithGoalDetails \u2013 via campaignGroup { goalTypeId }\nNESTED_CG_AND_CLI_LIST \u2013 flat item structure including goalTypeId   Refer:           ",
-      "issue_type": "Story",
-      "status": "Done",
-      "priority": "Minor",
-      "fix_version": "DSP Core PL2 2026: Release 12.0",
-      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/18180/tab/release-report-all-issues",
-      "labels": [],
-      "release_type": null,
-      "epic_key": "DI-87361",
-      "epic_name": "Post-GA Release | Multi-Goal Improvements & Clean Up",
-      "epic_url": "https://deepintent.atlassian.net/browse/DI-87361",
-      "components": [
-        "DSP Core PL2"
-      ],
-      "story_points": null,
-      "assignee": "Adharsh Suresh"
-    },
-    {
-      "key": "DI-90216",
-      "url": "https://deepintent.atlassian.net/browse/DI-90216",
-      "summary": " UR migration APIs cleanup",
-      "description": " UR migration APIs cleanup Reference - Cleanup  com.deepintent.diadvertiserapi.campaigncustomtemplate.service.CampaignCustomTemplateService#migrateTemplateGoalForUniqueReach  which was used for uniqe reach migration. ref -    ",
+      "key": "DI-90434",
+      "url": "https://deepintent.atlassian.net/browse/DI-90434",
+      "summary": "Add ssm_config into MMR and inventory_tier to the MMR",
+      "description": "Hi    , can you add these two fields to the MMR? ssm_config: Note from Maks: We\u2019ve just added  ssmConfig  yesterday under impression proto across reporting,\u00a0 which includes both  bidFloor  and  negotiatedBidFloor . This will allow for more effective monitoring and historical troubleshooting. That will also get exact configuration even if the DEAL is paused/changed etc. Query from Vaso:  SELECT ssm_config FROM bidder.impression WHERE date='2026-02-06' AND ssm_config IS NOT NULL  Inventory Tier: Query from Zuba: select campaign_id, inventory_tier, sum(1)\nfrom bidder.impression where date = '2026-02-08' and inventory_tier is not null\ngroup by 1,2\norder by 1,2",
       "issue_type": "Story",
       "status": "Done",
       "priority": "Normal",
-      "fix_version": "DSP Core PL2 2026: Release 12.0",
-      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/18180/tab/release-report-all-issues",
+      "fix_version": "Data Governance 2026: Release 9.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17875/tab/release-report-all-issues",
       "labels": [],
       "release_type": null,
-      "epic_key": "DI-87361",
-      "epic_name": "Post-GA Release | Multi-Goal Improvements & Clean Up",
-      "epic_url": "https://deepintent.atlassian.net/browse/DI-87361",
+      "epic_key": "DI-90529",
+      "epic_name": "MMR Enhancements 2026",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-90529",
       "components": [
-        "DSP Core PL2"
+        "Data Governance"
       ],
       "story_points": null,
-      "assignee": "Sampada Deore"
+      "assignee": "Vivek Sahu"
     },
     {
-      "key": "DI-89946",
-      "url": "https://deepintent.atlassian.net/browse/DI-89946",
-      "summary": "Outcomes Export | Invalid eDt is passed in outcomes_report_processor_priority dag.",
-      "description": "Steps to Reproduce Outcomes Export | Invalid eDt is passed in outcomes_report_processor_priority dag.  Login to fusion and then open outcomes_report_processor_priority  here check the dag run parameters for completed dag here eDt is passed as None   Observed Behaviour - Invalid eDt is passed in outcomes_report_processor_priority dag. Expected Results - Valid eDt should be passed in outcomes_report_processor_priority dag.",
-      "issue_type": "Bug",
+      "key": "DI-90091",
+      "url": "https://deepintent.atlassian.net/browse/DI-90091",
+      "summary": "Rest Standard error code handling",
+      "description": "Rest Standard error code handling",
+      "issue_type": "Story",
       "status": "Done",
       "priority": "Normal",
-      "fix_version": "Helix PL3 2026: Release 10.0",
-      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17087/tab/release-report-all-issues",
+      "fix_version": "Developer Experience 2026 : Release 11.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17883/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-89831",
+      "epic_name": "GraphQL to Rest: Phase 2 Additional requirements",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-89831",
+      "components": [
+        "Developer Experience"
+      ],
+      "story_points": null,
+      "assignee": "Chirag Vohra"
+    },
+    {
+      "key": "DI-90090",
+      "url": "https://deepintent.atlassian.net/browse/DI-90090",
+      "summary": "Add programmatic header to identify public apis",
+      "description": "Add programmatic header to identify public apis. x-request-source  :  public-api",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Developer Experience 2026 : Release 11.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17883/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-89831",
+      "epic_name": "GraphQL to Rest: Phase 2 Additional requirements",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-89831",
+      "components": [
+        "Developer Experience"
+      ],
+      "story_points": null,
+      "assignee": "Sanket Mundada"
+    },
+    {
+      "key": "DI-89794",
+      "url": "https://deepintent.atlassian.net/browse/DI-89794",
+      "summary": "Update the IQVIA monthly dag to load daily data ",
+      "description": "Under the current loading strategy :  We insert new data for the monthly delivery from S3   We load the older data from previous version table to current version table ( before 2 years )   The daily data is being added into the previous tables  We would need to load this latest data too from previous version table to current version table   Update the Monthly dag to handle these changes  Types  :  RX  FACT  MX  FACT ",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Data Ingress 2026: Release 3.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17610/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-88119",
+      "epic_name": "IQVIA ELAAD Plus : Rolling Window Data Refresh",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-88119",
+      "components": [
+        "Data Ingress"
+      ],
+      "story_points": null,
+      "assignee": "Pushkar Lonkar"
+    },
+    {
+      "key": "DI-89321",
+      "url": "https://deepintent.atlassian.net/browse/DI-89321",
+      "summary": "Generate JAN 2026 Orion Discount qualification report for Finance Team",
+      "description": "Produce a report for the Finance team for January 2026 using the updated Orion ad group name qualification logic. Ensure the report accurately reflects all ad groups that qualify under the new rules and deliver it to the Finance team.",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Data Governance 2026: Release 9.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17875/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-89028",
+      "epic_name": "Update Ad Group Name Qualification for JBP Orion",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-89028",
+      "components": [
+        "Data Governance"
+      ],
+      "story_points": null,
+      "assignee": "Ketan Shailendra Patil"
+    },
+    {
+      "key": "DI-89314",
+      "url": "https://deepintent.atlassian.net/browse/DI-89314",
+      "summary": "Update MMR backfill pipeline to support new ori qualification logic for new data",
+      "description": "To enhance the Orion audit log table, separate the current table to include new ORI qualification logic starting in 2026. This will streamline processes while allowing the existing table to backfill older data. Modify the MMR backfill pipeline to read from the new Orion audit log table with updated ad group name qualification logic from January 2026, while still using the existing table for data prior to 2026.",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Data Governance 2026: Release 9.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17875/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-89028",
+      "epic_name": "Update Ad Group Name Qualification for JBP Orion",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-89028",
+      "components": [
+        "Data Governance"
+      ],
+      "story_points": null,
+      "assignee": "Ketan Shailendra Patil"
+    },
+    {
+      "key": "DI-89229",
+      "url": "https://deepintent.atlassian.net/browse/DI-89229",
+      "summary": "Backfill Data for Iqvia Elaad Plus daily ",
+      "description": "We need to backfill data for Iqvia Elaad plus  Date range  : 01 December \u2192 current date  The backfill should happen in a  sequential  manner",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Data Ingress 2026: Release 3.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17610/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-88119",
+      "epic_name": "IQVIA ELAAD Plus : Rolling Window Data Refresh",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-88119",
+      "components": [
+        "Data Ingress"
+      ],
+      "story_points": null,
+      "assignee": "Pushkar Lonkar"
+    },
+    {
+      "key": "DI-88996",
+      "url": "https://deepintent.atlassian.net/browse/DI-88996",
+      "summary": "Remove /rest support and add support for versioning",
+      "description": "Add No Router support and remove  /rest  prefix from rest apis.",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Developer Experience 2026 : Release 11.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17883/tab/release-report-all-issues",
+      "labels": [],
+      "release_type": null,
+      "epic_key": "DI-89831",
+      "epic_name": "GraphQL to Rest: Phase 2 Additional requirements",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-89831",
+      "components": [
+        "Developer Experience"
+      ],
+      "story_points": null,
+      "assignee": "Sanket Mundada"
+    },
+    {
+      "key": "DI-88079",
+      "url": "https://deepintent.atlassian.net/browse/DI-88079",
+      "summary": "Ingest Updated Creative ID Report",
+      "description": "User story As a data analyst, when I receive the Creative ID Report, I want to see updated fields so that I can analyze data accurately in the correct timezones. Context We are adding additional fields to the \u2018Campaign Creative Report - DeepIntent\u2019 that STAQ sends to us. This is to ensure we capture data in the correct timezones. Requirements The report must include the following updated headers: date Advertiser ID (DI) Advertiser Name (DI) Order ID (DI) Order Name (DI) Campaign ID DI Campaign Name DI Creative ID (DI) 1P Impressions 1P Clicks 1P Video Completions 3P Impressions 3P Impressions - Advertiser 3P Clicks 3P Clicks - Advertiser 3P Video Completions Previous report headers included: date  | Advertiser ID (DI) | Advertiser Name (DI) | Order ID (DI) | Order Name (DI) | Campaign ID DI | Campaign Name DI | Creative ID (DI) | 1P Impressions | 1P Clicks | 1P Video Completions | 3P Impressions | 3P Clicks | 3P Video Completions |",
+      "issue_type": "Story",
+      "status": "Done",
+      "priority": "Normal",
+      "fix_version": "Data Ingress 2026: Release 3.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17610/tab/release-report-all-issues",
       "labels": [
-        "Adhoc",
-        "adhoc",
-        "automation_not_feasible",
-        "qa_automation"
+        "Q1"
       ],
       "release_type": null,
-      "epic_key": null,
-      "epic_name": null,
-      "epic_url": null,
+      "epic_key": "DI-88078",
+      "epic_name": "STAQ 2026 Improvements ",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-88078",
       "components": [
-        "Helix PL3"
+        "Data Ingress"
       ],
       "story_points": null,
-      "assignee": "Sharayu Musale"
+      "assignee": "Pushkar Lonkar"
     },
     {
-      "key": "DI-89271",
-      "url": "https://deepintent.atlassian.net/browse/DI-89271",
-      "summary": "Fetch conversation history for a chat",
-      "description": "User story As a User, when I want to view my previous interactions, I want to fetch conversation history for my session so that I can review past discussions. Context This issue involves implementing a feature that allows users to access their conversation history during a session. This functionality is important for users to recall previous exchanges and maintain continuity in conversations. Acceptance criteria Users can successfully fetch their conversation history. The conversation history should display all interactions from the current session. The feature should be accessible from the user interface. Other information N/A",
+      "key": "DI-87413",
+      "url": "https://deepintent.atlassian.net/browse/DI-87413",
+      "summary": "Add support to use default variable value in gql to rest tool",
+      "description": "Add support to use default variable value in gql to rest tool.  Ability to save default value in each custom variable.  Auto use this default value when no custom value is passed via query params",
       "issue_type": "Story",
       "status": "Done",
       "priority": "Normal",
-      "fix_version": "DSP Core PL3 2026: Release 9.0",
-      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17994/tab/release-report-all-issues",
+      "fix_version": "Developer Experience 2026 : Release 11.0",
+      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17883/tab/release-report-all-issues",
       "labels": [],
       "release_type": null,
-      "epic_key": "DI-86848",
-      "epic_name": "Core Chat UI Shell (Cora Tab Only)",
-      "epic_url": "https://deepintent.atlassian.net/browse/DI-86848",
+      "epic_key": "DI-89831",
+      "epic_name": "GraphQL to Rest: Phase 2 Additional requirements",
+      "epic_url": "https://deepintent.atlassian.net/browse/DI-89831",
       "components": [
-        "DSP Core PL3"
+        "Developer Experience"
       ],
       "story_points": null,
-      "assignee": "Abhishek Mandilkar"
-    },
-    {
-      "key": "DI-88990",
-      "url": "https://deepintent.atlassian.net/browse/DI-88990",
-      "summary": "Implement Cleanroom-Specific Keytab Based Workbench Listing",
-      "description": "Description Currently, the listing on Workbench is powered by Redis and Spark, where Redis is refreshed daily using a single keytab, which is the DeepIntent cleanroom keytab on prod. The issue is that this keytab does not have access to databases and tables across all cleanrooms, due to which  columnData  is returned as null for tables that this keytab does not have access to. Proposed Solution We will move to a cleanroom-specific keytab based refresh mechanism. With this approach: Each cleanroom will use its own keytab to refresh the data sources associated with it Data sources and table information will be populated cleanroom-wise Queries will be executed using the corresponding DCR-specific keytab This will ensure correct access and non-null  columnData  for all tables across cleanrooms How database and dcr mapping works: Databases created via Workbench are registered in the  DATA_SOURCE_DATA_CLEAN_ROOM_MAPPING  table Databases created via backend are registered via the  refreshRedisCacheFromSpark  DAG, which inserts entries into the  DATA_SOURCE  table for the default cleanroom (10000 DCR) cc:    ",
-      "issue_type": "Story",
-      "status": "Done",
-      "priority": "Normal",
-      "fix_version": "Helix PL2 2026: Release 10.0",
-      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/18367/tab/release-report-all-issues",
-      "labels": [],
-      "release_type": null,
-      "epic_key": "DI-85787",
-      "epic_name": "Helix PL2: Product Improvements Q1 2026",
-      "epic_url": "https://deepintent.atlassian.net/browse/DI-85787",
-      "components": [
-        "Helix PL2"
-      ],
-      "story_points": null,
-      "assignee": "Aaditi Nirfarake"
-    },
-    {
-      "key": "DI-88644",
-      "url": "https://deepintent.atlassian.net/browse/DI-88644",
-      "summary": "Getting error in getAudienceReportStats while adding Segment Audience to Comparison",
-      "description": "Steps to Reproduce: Go to PP Compare tab> New Audience group. Add any segment and check the getAudienceReportStats call. Observed Behaviour: Getting error in response: { \"errors\": [ { \"message\": \"SERVER_ERROR\", \"locations\": [ { \"line\": 2, \"column\": 3 } ], \"path\": [ \"getAudienceReportStats\" ], \"extensions\": { \"errorCode\": \"3PA_REPORT_FETCH_EXCEPTION\", \"message\": \"3PA_REPORT_FETCH_EXCEPTION\", \"classification\": \"DataFetchingException\" } } ], \"data\": { \"getAudienceReportStats\": null } } curl: curl 'https://gateway-service-dev.deepintent.com/graphql?operation=getAudienceReportStats' \\ -H 'sec-ch-ua-platform: \"macOS\"' \\ -H 'X-OrganizationId: 10137' \\ -H 'Referer:    ' \\ -H 'sec-ch-ua: \"Google Chrome\";v=\"143\", \"Chromium\";v=\"143\", \"Not A(Brand\";v=\"24\"' \\ -H 'sec-ch-ua-mobile: ?0' \\ -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36' \\ -H 'accept: */*' \\ -H 'content-type: application/json' \\ -H 'X-ResourceId: 949' \\ -H 'X-ApplicationId: 2' \\ --data-raw '{\"operationName\":\"getAudienceReportStats\",\"variables\":{\"audienceReportInputConfig\":{\"primaryFilters\":[{\"name\":\"Criteria Set 1\",\"filterCriteria\":[{\"key\":\"PATIENT_GENDER\",\"value\":[\"MALE\"],\"operator\":\"IN\"},{\"key\":\"PATIENT_AGE\",\"value\":[25,85],\"operator\":\"RANGE\"}],\"conjunctionWithPrevious\":null}],\"audienceFilters\":{\"targetedGroup\":{\"operator\":\"OR\",\"groups\":[{\"operator\":\"OR\",\"value\":[{\"id\":\"QA_1p_LR_1025910040\",\"idType\":\"SEGMENT\",\"audienceCategory\":\"LIVERAMP\"}]}]}},\"isEligible\":true,\"dataSource\":\"DCR\",\"dataProvider\":\"SYMPHONY\"},\"useCache\":false},\"query\":\"query getAudienceReportStats($audienceReportInputConfig: AudienceReportInputConfig, $useCache: Boolean) {\\n getAudienceReportStats(\\n audienceReportInputConfig: $audienceReportInputConfig\\n useCache: $useCache\\n ) {\\n aggregatedMetrics {\\n ...AggregateMetrices\\n audienceQualityIndex\\n __typename\\n }\\n audienceMetrics {\\n ...AudienceMetrics\\n stats {\\n uniqueUsers\\n audienceQuality\\n audienceQualityThreshold\\n audienceQualityIndex\\n __typename\\n }\\n __typename\\n }\\n metadata {\\n ...Metadata\\n __typename\\n }\\n __typename\\n }\\n}\\n\\nfragment AggregateMetrices on AudienceStats {\\n uniqueUsers\\n audienceQuality\\n audienceQualityThreshold\\n dataCpm\\n __typename\\n}\\n\\nfragment AudienceMetrics on AudienceMetrics {\\n exclusiveReach\\n audience {\\n id\\n idType\\n audienceCategory\\n __typename\\n }\\n stats {\\n uniqueUsers\\n audienceQuality\\n audienceQualityThreshold\\n __typename\\n }\\n overlapViews {\\n audience {\\n id\\n idType\\n audienceCategory\\n __typename\\n }\\n viewName\\n value\\n __typename\\n }\\n __typename\\n}\\n\\nfragment Metadata on AudienceMetadata {\\n organizationId\\n advertiserId\\n audience {\\n id\\n idType\\n audienceCategory\\n __typename\\n }\\n name\\n dataCpm\\n logoUrl\\n hfaDataSource\\n dataProviderName\\n __typename\\n}\\n\"}' Expected Results: User should be able to get valid results on the call",
-      "issue_type": "Bug",
-      "status": "Done",
-      "priority": "Normal",
-      "fix_version": "Audiences PL1 2026: Release 12.0",
-      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/18106/tab/release-report-all-issues",
-      "labels": [],
-      "release_type": null,
-      "epic_key": "DI-87257",
-      "epic_name": "Dev/Integration/Prod/Demo Bug Fixes Q1 2026",
-      "epic_url": "https://deepintent.atlassian.net/browse/DI-87257",
-      "components": [
-        "Audiences PL1"
-      ],
-      "story_points": null,
-      "assignee": "Nikhil Gawande"
-    },
-    {
-      "key": "DI-88190",
-      "url": "https://deepintent.atlassian.net/browse/DI-88190",
-      "summary": "remove triggers for algoprioritysequence and remove it from campaign table",
-      "description": "Since, algoPrioritySequence is not getting we can remove trigger associated with it and remove this key from campaign table.",
-      "issue_type": "Story",
-      "status": "Done",
-      "priority": "Normal",
-      "fix_version": "DSP Core PL2 2026: Release 12.0",
-      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/18180/tab/release-report-all-issues",
-      "labels": [],
-      "release_type": null,
-      "epic_key": "DI-87361",
-      "epic_name": "Post-GA Release | Multi-Goal Improvements & Clean Up",
-      "epic_url": "https://deepintent.atlassian.net/browse/DI-87361",
-      "components": [
-        "Data Science",
-        "DSP Core PL2"
-      ],
-      "story_points": null,
-      "assignee": "Sampada Deore"
-    },
-    {
-      "key": "DI-88097",
-      "url": "https://deepintent.atlassian.net/browse/DI-88097",
-      "summary": "HFP Logic Updates",
-      "description": "Background We\u2019re running into an issue where users are targeting the endemic package but their ad group is spending on non-endemic app inventory due to app targeting being on by default. This is unexpected by users and has even caused DeepIntent to have to pay clients a make good to cover the spend that was spent on non-endemic inventory. Requirements We need to update the logic so that: Only a single package can be targeted in a single ad group Continue to allow users to add additional inventory to the ad group that the package is targeted to (everything excluding packages) When the Endemic package is selected, turn OFF app targeting and do NOT let a user turn this on manually. When the Spanish package is selected, only target the deal IDs included (do NOT include site or app inclusion lists and do NOT select All Exchanges.)",
-      "issue_type": "Story",
-      "status": "Done",
-      "priority": "Critical",
-      "fix_version": "Media PL1 2026: Release 7.0",
-      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17367/tab/release-report-all-issues",
-      "labels": [],
-      "release_type": null,
-      "epic_key": "DI-84803",
-      "epic_name": "HealthFirst Media Package Enhancements",
-      "epic_url": "https://deepintent.atlassian.net/browse/DI-84803",
-      "components": [
-        "Media PL1"
-      ],
-      "story_points": null,
-      "assignee": "Atharva Jangada"
-    },
-    {
-      "key": "DI-87456",
-      "url": "https://deepintent.atlassian.net/browse/DI-87456",
-      "summary": "General Code Quality & Reliability Improvements",
-      "description": "Several small but impactful issues reduce reliability and maintainability, especially around serialization, concurrency, and testing. Scope / Tasks Replace all manual JSON string escaping with  json.dumps() Remove remaining global mutable state (e.g., trackers, graphs) Improve concurrency safety for async streaming Add unit tests for: Serialization edge cases Concurrent request handling Minor refactors to improve readability and testability",
-      "issue_type": "Story",
-      "status": "Done",
-      "priority": "Normal",
-      "fix_version": "DSP Core PL3 2026: Release 9.0",
-      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17994/tab/release-report-all-issues",
-      "labels": [],
-      "release_type": null,
-      "epic_key": "DI-86848",
-      "epic_name": "Core Chat UI Shell (Cora Tab Only)",
-      "epic_url": "https://deepintent.atlassian.net/browse/DI-86848",
-      "components": [
-        "DSP Core PL3"
-      ],
-      "story_points": null,
-      "assignee": "Ankush Mehta"
-    },
-    {
-      "key": "DI-81294",
-      "url": "https://deepintent.atlassian.net/browse/DI-81294",
-      "summary": "Improve Code coverage - Outcomes/TargetList",
-      "description": "Cover components/Registration path -  client/app/js/components/Outcomes/TargetList/TargetListInfo/TargetListInfo.tsx client/app/js/components/Outcomes/TargetList/TargetListUploader/TargetListUploader.tsx client/app/js/components/Outcomes/TargetList/TargetListSlider.tsx   Improve the code coverage of above files above 80%.",
-      "issue_type": "Story",
-      "status": "Done",
-      "priority": "Normal",
-      "fix_version": "Helix PL3 2026: Release 10.0",
-      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/17087/tab/release-report-all-issues",
-      "labels": [],
-      "release_type": null,
-      "epic_key": "DI-75881",
-      "epic_name": "DSP UI | Outcomes - Improve unit test code coverage",
-      "epic_url": "https://deepintent.atlassian.net/browse/DI-75881",
-      "components": [
-        "Helix PL3"
-      ],
-      "story_points": null,
-      "assignee": "Vaibhav Nanne"
-    },
-    {
-      "key": "DI-72333",
-      "url": "https://deepintent.atlassian.net/browse/DI-72333",
-      "summary": "Drop columns no longer required | Multi-Goal Prioritization GA",
-      "description": "Drop column  goalId  from bidder.CAMPAIGN  Drop columns  goalTypeId  and  target  from bidder.CAMPAIGN_GROUP Remove  CampaignGoal  from  goalDetails  in CAMPAIGN_CUSTOM_TEMPLATE  Remove complete code dependency for the same  Remove  isOptimised  bidder.BUDGET column  Remove  isUniqueReachEnabled  bidder.CAMPAIGN_OPTIMIZER column   Refer:           ",
-      "issue_type": "Story",
-      "status": "Done",
-      "priority": "Minor",
-      "fix_version": "DSP Core PL2 2026: Release 12.0",
-      "fix_version_url": "https://deepintent.atlassian.net/projects/DI/versions/18180/tab/release-report-all-issues",
-      "labels": [],
-      "release_type": null,
-      "epic_key": "DI-87361",
-      "epic_name": "Post-GA Release | Multi-Goal Improvements & Clean Up",
-      "epic_url": "https://deepintent.atlassian.net/browse/DI-87361",
-      "components": [
-        "DSP Core PL2"
-      ],
-      "story_points": null,
-      "assignee": "Sampada Deore"
+      "assignee": "Chirag Vohra"
     }
   ]
 }

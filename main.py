@@ -30,6 +30,24 @@ from google_docs_handler import GoogleDocsHandler, create_formatted_requests
 from slack_handler import SlackHandler
 
 
+def _ordinal(day: int) -> str:
+    """Return day with ordinal suffix (1st, 2nd, 3rd, 4th, ...)."""
+    if 11 <= day <= 13:
+        return f"{day}th"
+    return f"{day}{['th','st','nd','rd','th','th','th','th','th','th'][day % 10]}"
+
+
+def _today_date_str() -> str:
+    """Return today's date formatted like '14th February 2026'."""
+    today = datetime.now()
+    return f"{_ordinal(today.day)} {today.strftime('%B %Y')}"
+
+
+def is_weekday() -> bool:
+    """Return True if today is Monday-Friday."""
+    return datetime.now().weekday() < 5  # 0=Mon … 4=Fri
+
+
 def print_banner():
     """Print application banner."""
     print("""
@@ -241,7 +259,8 @@ def step2_update_google_doc(formatter: ReleaseNotesFormatter) -> Tuple[bool, str
 
 
 def step3_send_slack_notification(release_date: str, doc_url: str,
-                                  tldr_summary: str) -> Tuple[bool, Optional[Dict]]:
+                                  tldr_summary: str,
+                                  pl_names: list = None) -> Tuple[bool, Optional[Dict]]:
     """
     STEP 3: Send Slack Notification to PMOs.
 
@@ -249,6 +268,7 @@ def step3_send_slack_notification(release_date: str, doc_url: str,
         release_date: Release date string
         doc_url: Google Doc URL
         tldr_summary: TL;DR summary text
+        pl_names: List of product line names for per-PL dropdowns
 
     Returns:
         Tuple of (success, message_info)
@@ -270,7 +290,8 @@ def step3_send_slack_notification(release_date: str, doc_url: str,
         result = slack.send_review_notification(
             release_date=release_date,
             doc_url=doc_url,
-            tldr_summary=tldr_summary
+            tldr_summary=tldr_summary,
+            pl_names=pl_names or []
         )
 
         if result:
@@ -431,6 +452,13 @@ def run_release_automation(release_date: str = None, skip_approval: bool = False
         "success": False
     }
 
+    # Weekend guard
+    if not is_weekday():
+        day_name = datetime.now().strftime('%A')
+        print(f"\n[WORKFLOW] Today is {day_name} — no releases on weekends. Exiting.")
+        results["error"] = "Weekend — no releases"
+        return results
+
     # STEP 1: Fetch Jira tickets
     release_ticket, linked_tickets = step1_fetch_jira_tickets()
     results["steps"]["1_jira"] = {
@@ -439,7 +467,13 @@ def run_release_automation(release_date: str = None, skip_approval: bool = False
     }
 
     if not linked_tickets:
-        print("\n[WORKFLOW] Cannot continue without tickets. Exiting.")
+        print("\n[WORKFLOW] No release found for today. Sending Slack notification...")
+        try:
+            slack = SlackHandler()
+            if slack.test_connection():
+                slack.send_no_release_notification(_today_date_str())
+        except Exception as e:
+            print(f"[WORKFLOW] Could not send no-release Slack notification: {e}")
         results["error"] = "No tickets found"
         return results
 
@@ -469,11 +503,12 @@ def run_release_automation(release_date: str = None, skip_approval: bool = False
             doc_url = f"https://docs.google.com/document/d/{doc_url}/edit"
 
     # STEP 3: Send Slack notification
-    tldr_summary = formatter.get_tldr_for_slack()
+    pl_names = list(formatter.grouped_data.keys()) if formatter.grouped_data else []
     slack_success, message_info = step3_send_slack_notification(
         release_date=formatter.release_date,
         doc_url=doc_url,
-        tldr_summary=tldr_summary
+        tldr_summary="",
+        pl_names=pl_names
     )
     results["steps"]["3_slack_notification"] = {
         "success": slack_success,
@@ -542,6 +577,7 @@ Examples:
   python main.py --step 1                 # Run only Step 1 (Jira)
   python main.py --step 2                 # Run Steps 1-2 (Jira + Format)
   python main.py --test-connections       # Test all API connections
+  python main.py --slack-only             # Send only the Slack approval message
         """
     )
 
@@ -551,6 +587,10 @@ Examples:
                        help='Run up to specific step only')
     parser.add_argument('--test-connections', action='store_true',
                        help='Test all API connections without running workflow')
+    parser.add_argument('--refresh', action='store_true',
+                       help='Refresh tickets from Jira (picks up newly added stories/bugs under existing fix versions)')
+    parser.add_argument('--slack-only', action='store_true',
+                       help='Send only the Slack approval message (uses existing tickets_export.json)')
 
     args = parser.parse_args()
 
@@ -585,6 +625,81 @@ Examples:
 
         return
 
+    # Slack-only mode: send just the Slack approval message
+    if args.slack_only:
+        print_banner()
+        print("Sending Slack approval message only...\n")
+
+        import json
+
+        # Load tickets from existing export
+        try:
+            with open("tickets_export.json", 'r') as f:
+                export_data = json.load(f)
+            tickets = export_data.get("tickets", [])
+        except FileNotFoundError:
+            print("[Slack-only] ERROR: tickets_export.json not found. Run the full workflow first.")
+            sys.exit(1)
+
+        if not tickets:
+            print("[Slack-only] ERROR: No tickets in tickets_export.json")
+            sys.exit(1)
+
+        # Build formatter to get TL;DR
+        release_summary = os.getenv('RELEASE_TICKET_SUMMARY', 'Release 2nd February 2026')
+        release_date = args.release_date
+        if not release_date:
+            if 'Release ' in release_summary:
+                release_date = release_summary.replace('Release ', '')
+            else:
+                release_date = datetime.now().strftime("%d %B %Y")
+
+        formatter = ReleaseNotesFormatter(release_date)
+        formatter.process_tickets(tickets)
+
+        # Extract PL names from grouped data
+        pl_names = list(formatter.grouped_data.keys()) if formatter.grouped_data else []
+
+        doc_id = os.getenv('GOOGLE_DOC_ID', '')
+        doc_url = f"https://docs.google.com/document/d/{doc_id}/edit" if doc_id else ""
+
+        # Send the Slack notification with per-PL dropdowns
+        success, result = step3_send_slack_notification(
+            release_date, doc_url, "", pl_names=pl_names
+        )
+        sys.exit(0 if success else 1)
+
+    # Refresh mode: re-fetch tickets from Jira under existing fix versions
+    if args.refresh:
+        print_banner()
+        print("Refreshing tickets from Jira...\n")
+        from hybrid_step1_export_jira import refresh_tickets
+        result = refresh_tickets()
+        if result:
+            print("\n[Refresh] Tickets refreshed. Re-running release notes generation...")
+            # Re-read refreshed tickets
+            import json
+            with open("tickets_export.json", 'r') as f:
+                export_data = json.load(f)
+            refreshed_tickets = export_data.get("tickets", [])
+            new_tickets = export_data.get("new_tickets", [])
+            if not new_tickets:
+                print("[Refresh] No new tickets found. Release notes are up to date.")
+                return
+            print(f"[Refresh] {len(new_tickets)} new ticket(s) found: {new_tickets}")
+            print("[Refresh] Re-generating release notes with updated tickets...")
+
+            # Re-run steps 2 and 2b with refreshed tickets
+            formatter, plain_text = step2_create_release_notes(refreshed_tickets, args.release_date)
+            if formatter:
+                step2_update_google_doc(formatter)
+                print("\n[Refresh] Release notes and Google Doc updated with new tickets.")
+            else:
+                print("[Refresh] ERROR: Failed to regenerate release notes.")
+        else:
+            print("[Refresh] No changes or refresh failed.")
+        return
+
     # Step-limited mode
     if args.step:
         print_banner()
@@ -603,10 +718,10 @@ Examples:
                 return
 
         if args.step >= 3 and formatter:
-            tldr_summary = formatter.get_tldr_for_slack()
+            pl_names = list(formatter.grouped_data.keys()) if formatter.grouped_data else []
             doc_id = os.getenv('GOOGLE_DOC_ID', '')
             doc_url = f"https://docs.google.com/document/d/{doc_id}/edit" if doc_id else ""
-            step3_send_slack_notification(formatter.release_date, doc_url, tldr_summary)
+            step3_send_slack_notification(formatter.release_date, doc_url, "", pl_names=pl_names)
             if args.step == 3:
                 return
 

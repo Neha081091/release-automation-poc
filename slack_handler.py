@@ -164,120 +164,179 @@ class SlackHandler:
             print(f"[Slack] Error sending message: {e.response['error']}")
             return None
 
-    def send_review_notification(self, release_date: str, doc_url: str,
-                                 tldr_summary: str, channel: str = None) -> Optional[Dict]:
+    def send_no_release_notification(self, today_date: str, channel: str = None) -> Optional[Dict]:
         """
-        Send release notes review notification to PMOs.
+        Send a 'No release planned for today' notification to Slack.
+
+        Args:
+            today_date: Today's date string (e.g., "13th February 2026")
+            channel: Target channel (uses default if not provided)
+
+        Returns:
+            API response or None on failure
+        """
+        print("[Slack] Sending 'no release planned' notification...")
+
+        blocks = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"No release planned for today ({today_date})."
+                }
+            }
+        ]
+
+        return self.send_message(
+            f"No release planned for today ({today_date}).",
+            channel, blocks
+        )
+
+    def send_review_notification(self, release_date: str, doc_url: str,
+                                 tldr_summary: str, channel: str = None,
+                                 pl_names: List[str] = None) -> Optional[Dict]:
+        """
+        Send release notes review notification with per-PL action dropdowns.
 
         Args:
             release_date: Release date string
             doc_url: Google Doc URL
-            tldr_summary: TL;DR summary text
+            tldr_summary: TL;DR summary text (unused in new format, kept for compat)
             channel: Target channel (uses default if not provided)
+            pl_names: List of product line names to show as individual rows
 
         Returns:
             API response or None on failure
         """
         print("[Slack] Sending review notification...")
 
-        # Create Block Kit message for rich formatting
+        pl_names = pl_names or []
+
+        # Build Block Kit message matching the per-PL dropdown design
         blocks = [
+            # Header
             {
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": "Release Notes Ready for Review",
+                    "text": "Release Notes Review",
                     "emoji": True
                 }
             },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": f"*Release Date:*\n{release_date}"
-                    }
-                ]
-            },
+            # Subtitle with date
             {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*Google Doc Link:*\n<{doc_url}|Click here to view release notes>"
+                    "text": f"Daily Consolidated Deployment Summary - {release_date}"
                 }
             },
-            {
-                "type": "divider"
-            },
+            # Google Doc link
             {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*TL;DR Summary:*\n{tldr_summary}"
+                    "text": f"<{doc_url}|View Release Notes>"
                 }
             },
-            {
-                "type": "divider"
-            },
+            {"type": "divider"},
+            # Refresh row
             {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "Please review and approve the release notes in the Google Doc above.\n*Awaiting your YES/NO vote.*"
-                }
-            },
-            {
-                "type": "actions",
-                "elements": [
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": "Approve (YES)",
-                            "emoji": True
-                        },
-                        "style": "primary",
-                        "action_id": "approve_release",
-                        "value": "approved"
+                    "text": "Refresh to check for new Jira versions or tickets"
+                },
+                "accessory": {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Refresh",
+                        "emoji": True
                     },
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": "Reject (NO)",
-                            "emoji": True
-                        },
-                        "style": "danger",
-                        "action_id": "reject_release",
-                        "value": "rejected"
-                    },
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": "Release Tomorrow",
-                            "emoji": True
-                        },
-                        "action_id": "defer_release",
-                        "value": "deferred"
-                    }
-                ]
-            }
+                    "action_id": "refresh_tickets",
+                    "value": "refresh"
+                }
+            },
+            {"type": "divider"},
         ]
 
-        fallback_text = f"""Release Notes Ready for Review
+        # Per-PL rows with "Choose action" dropdown
+        for i, pl in enumerate(pl_names):
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*{pl}*"
+                },
+                "accessory": {
+                    "type": "static_select",
+                    "placeholder": {
+                        "type": "plain_text",
+                        "text": "Choose action",
+                        "emoji": True
+                    },
+                    "options": [
+                        {
+                            "text": {"type": "plain_text", "text": "Approve"},
+                            "value": f"approve_{i}"
+                        },
+                        {
+                            "text": {"type": "plain_text", "text": "Reject"},
+                            "value": f"reject_{i}"
+                        },
+                        {
+                            "text": {"type": "plain_text", "text": "Release Tomorrow"},
+                            "value": f"defer_{i}"
+                        }
+                    ],
+                    "action_id": f"pl_action_{i}"
+                }
+            })
 
-Release Date: {release_date}
+        # Status + Good to Announce button
+        blocks.append({"type": "divider"})
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"_{len(pl_names)} PL(s) pending review_"
+            }
+        })
+        blocks.append({
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Good to Announce (review all PLs first)",
+                        "emoji": True
+                    },
+                    "style": "primary",
+                    "action_id": "good_to_announce",
+                    "value": "announce"
+                }
+            ]
+        })
 
-Google Doc Link: {doc_url}
+        # Footer
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": "Powered by Release Announcement Agent"
+                }
+            ]
+        })
 
-TL;DR Summary:
-{tldr_summary}
-
----
-
-Please review and approve the release notes in the Google Doc above.
-Awaiting your YES/NO vote."""
+        fallback_text = (
+            f"Release Notes Review\n"
+            f"Daily Consolidated Deployment Summary - {release_date}\n"
+            f"View Release Notes: {doc_url}\n"
+            f"{len(pl_names)} PL(s) pending review"
+        )
 
         return self.send_message(fallback_text, channel, blocks)
 

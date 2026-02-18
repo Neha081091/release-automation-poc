@@ -2,7 +2,7 @@
 """
 Daily Scheduler for Release Automation PoC
 
-This script runs the release automation workflow automatically every day at 12:00 PM IST.
+This script runs the release automation workflow automatically on weekdays at 12:00 PM IST.
 It handles:
 - Scheduled execution using APScheduler
 - Logging all operations
@@ -260,7 +260,7 @@ def main():
 ╔═══════════════════════════════════════════════════════════════════╗
 ║           RELEASE AUTOMATION SCHEDULER - DeepIntent               ║
 ║                                                                   ║
-║   Automated daily release notes at 12:00 PM IST                   ║
+║   Automated weekday release notes at 12:00 PM IST                 ║
 ╚═══════════════════════════════════════════════════════════════════╝
     """)
 
@@ -282,7 +282,7 @@ def main():
         elif sys.argv[1] == '--help':
             print("""
 Usage:
-    python scheduler.py              Start scheduler (runs at 12:00 PM IST daily)
+    python scheduler.py              Start scheduler (runs at 12:00 PM IST, Mon-Fri)
     python scheduler.py --run-now    Run automation immediately
     python scheduler.py --test       Run automation after 10 second delay
     python scheduler.py --help       Show this help message
@@ -304,8 +304,9 @@ View logs:
     # Create scheduler
     scheduler = BlockingScheduler()
 
-    # Add the daily job
+    # Add the weekday-only job (Monday-Friday)
     trigger = CronTrigger(
+        day_of_week='mon-fri',
         hour=Config.SCHEDULE_HOUR,
         minute=Config.SCHEDULE_MINUTE,
         timezone=Config.TIMEZONE
