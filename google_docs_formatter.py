@@ -40,33 +40,37 @@ GREEN_COLOR = {"red": 0.13, "green": 0.55, "blue": 0.13}  # Dark green for "Feat
 GRAY_COLOR = {"red": 0.5, "green": 0.5, "blue": 0.5}  # Gray for section headers
 
 # Product Line order - grouped by category for consistent display
+# Order: DSP -> Audiences -> Helix -> Media -> Developer Experience -> Data Ingress -> Data Governance
 PRODUCT_LINE_ORDER = [
-    # Media PLs
-    "Media PL1",
-    "Media PL2",
-    "Media",
-    # Audiences PLs
-    "Audiences PL1",
-    "Audiences PL2",
-    "Audiences",
     # DSP Core PLs
     "DSP Core PL1",
     "DSP Core PL2",
     "DSP Core PL3",
+    "DSP Core PL4",
     "DSP Core PL5",
     "DSP PL1",
     "DSP PL2",
     "DSP PL3",
     "DSP",
+    # Audiences PLs
+    "Audiences PL1",
+    "Audiences PL2",
+    "Audiences",
+    # Helix PLs
+    "Helix PL1",
+    "Helix PL2",
+    "Helix PL3",
+    "Helix",
+    # Media PLs
+    "Media PL1",
+    "Media PL2",
+    "Media",
     # Developer Experience
     "Developer Experience",
     "Developer Experience 2026",
     # Data Ingress
     "Data Ingress",
     "Data Ingress 2026",
-    # Helix PLs
-    "Helix PL3",
-    "Helix",
     # Data Governance
     "Data Governance",
     "Other"
@@ -656,10 +660,10 @@ class GoogleDocsFormatter:
             pl_by_category[category].append(pl)
 
         # Define category order (grouped similar PLs together)
-        # Order: Media -> Audiences -> DSP -> Developer Experience -> Data Ingress -> Helix -> Data Governance
+        # Order: DSP -> Audiences -> Helix -> Media -> Developer Experience -> Data Ingress -> Data Governance
         category_order = [
-            "Media", "Audiences", "DSP", "Developer Experience", "Data Ingress",
-            "Helix", "Data Governance"
+            "DSP", "Audiences", "Helix", "Media", "Developer Experience", "Data Ingress",
+            "Data Governance"
         ]
 
         # Process each category
