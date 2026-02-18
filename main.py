@@ -15,6 +15,7 @@ Author: DeepIntent Release Automation Team
 
 import os
 import sys
+import re
 import argparse
 from datetime import datetime
 from typing import Dict, Optional, Tuple
@@ -26,7 +27,8 @@ load_dotenv()
 # Import handlers
 from jira_handler import JiraHandler
 from formatter import ReleaseNotesFormatter
-from google_docs_handler import GoogleDocsHandler, create_formatted_requests
+from google_docs_handler import GoogleDocsHandler
+from google_docs_formatter import format_for_google_docs
 from slack_handler import SlackHandler
 
 
@@ -221,30 +223,56 @@ def step2_update_google_doc(formatter: ReleaseNotesFormatter) -> Tuple[bool, str
             print("[Step 2b] ERROR: Could not connect to Google Doc")
             return False, ""
 
-        # Generate formatted requests with LLM-consolidated body sections
-        print("[Step 2b] Generating formatted content...")
-        print("[Step 2b] Using LLM consolidation for polished prose...")
+        # Check if this release already exists in the document
+        existing_content = google_docs.get_document_content()
+        release_header = f"Daily Deployment Summary: {formatter.release_date}"
+        if existing_content and release_header in existing_content:
+            print(f"[Step 2b] WARNING: Release '{formatter.release_date}' already exists in document")
+            print("[Step 2b] Skipping to avoid duplicates.")
+            return True, google_docs.get_document_url()
 
-        # Generate LLM-consolidated body sections for each PL
+        # Build processed_data from formatter for google_docs_formatter
         consolidated_bodies = formatter.generate_consolidated_body_sections(use_llm=True)
+        tldr_data = formatter.generate_tldr()
 
-        formatted_requests = create_formatted_requests(
-            release_date=formatter.release_date,
-            grouped_data=formatter.grouped_data,
-            tldr=formatter.generate_tldr(),
-            extract_value_adds_func=formatter.extract_value_adds,
-            consolidated_bodies=consolidated_bodies
-        )
+        # Build release_versions and fix_version_urls from grouped_data
+        release_versions = {}
+        fix_version_urls = {}
+        epic_urls_by_pl = {}
+        for pl, epics in formatter.grouped_data.items():
+            first_ticket = list(epics.values())[0][0]["ticket"]
+            fv = first_ticket.get("fix_version", "")
+            ver_match = re.search(r'(Release\s*[\d.]+)', fv)
+            if ver_match:
+                release_versions[pl] = ver_match.group(1)
+            if first_ticket.get("fix_version_url"):
+                fix_version_urls[pl] = first_ticket["fix_version_url"]
+            epic_urls_by_pl[pl] = {}
+            for epic_name, items in epics.items():
+                for item in items:
+                    if item["epic_info"].get("url"):
+                        epic_urls_by_pl[pl][epic_name] = item["epic_info"]["url"]
+                        break
 
-        # Insert release notes
-        print(f"[Step 2b] Applying {len(formatted_requests)} formatting operations...")
-        if not google_docs.insert_release_notes(formatted_requests):
-            # Fallback to plain text if formatting fails
-            print("[Step 2b] Formatted insert failed, trying plain text...")
-            plain_text = formatter.get_plain_text_notes()
-            if not google_docs.insert_plain_text(plain_text):
-                print("[Step 2b] ERROR: Could not update Google Doc")
-                return False, ""
+        processed_data = {
+            "release_summary": formatter.release_date,
+            "product_lines": list(formatter.grouped_data.keys()),
+            "tldr_by_pl": {d["pl"]: d["summary"] for d in tldr_data.get("key_deployments", [])},
+            "body_by_pl": consolidated_bodies,
+            "release_versions": release_versions,
+            "fix_version_urls": fix_version_urls,
+            "epic_urls_by_pl": epic_urls_by_pl,
+        }
+
+        # Use the same formatter as hybrid step 3 (google_docs_formatter)
+        print("[Step 2b] Formatting content using Google Docs Formatter...")
+        insert_requests, format_requests = format_for_google_docs(processed_data, formatter.release_date)
+
+        # Prepend to document (DO NOT clear - preserve existing release notes)
+        print(f"[Step 2b] Applying {len(insert_requests)} insert + {len(format_requests)} format operations...")
+        google_docs.update_document(insert_requests)
+        if format_requests:
+            google_docs.update_document(format_requests)
 
         doc_url = google_docs.get_document_url()
         print(f"\n[Step 2b] COMPLETE: Google Doc updated successfully")

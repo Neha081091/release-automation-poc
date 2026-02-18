@@ -35,8 +35,8 @@ from collections import defaultdict
 
 
 # Color definitions (RGB values 0-1 scale for Google Docs API)
-BLUE_COLOR = {"red": 0.06, "green": 0.36, "blue": 0.7}  # Link blue - also used for "General Availability" label
-GREEN_COLOR = {"red": 0.13, "green": 0.55, "blue": 0.13}  # Dark green for "Feature Flag" and epic names
+BLUE_COLOR = {"red": 0.06, "green": 0.36, "blue": 0.7}  # Link blue (hyperlinks only)
+GREEN_COLOR = {"red": 0.13, "green": 0.55, "blue": 0.13}  # Dark green for status tags (GA, Feature Flag)
 GRAY_COLOR = {"red": 0.5, "green": 0.5, "blue": 0.5}  # Gray for section headers
 
 # Product Line order - alphabetical
