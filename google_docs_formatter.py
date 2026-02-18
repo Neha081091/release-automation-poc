@@ -622,7 +622,7 @@ class GoogleDocsFormatter:
         sorted_product_lines = get_ordered_pls(product_lines)
         tldr_pls = [self._clean_pl_name(pl) for pl in sorted_product_lines if pl in tldr_by_pl and pl.lower() != "other"]
         if tldr_pls:
-            key_deploy_line = f"Key Deployments: {self._join_pl_names(tldr_pls)}\n"
+            key_deploy_line = "Key Deployments:\n"
             key_deploy_start = self._insert_text(key_deploy_line)
             self._mark_bold(key_deploy_start, key_deploy_start + len("Key Deployments:"))
 
@@ -723,9 +723,9 @@ class GoogleDocsFormatter:
                                 text = item["text"]
                                 tag = item.get("tag", "")
                                 if tag:
-                                    bullet_line = f"- {text} {tag}\n"
+                                    bullet_line = f"• {text} {tag}\n"
                                 else:
-                                    bullet_line = f"- {text}\n"
+                                    bullet_line = f"• {text}\n"
                                 bullet_start = self.current_index
                                 self._insert_text(bullet_line)
                                 # Color the inline tag green
@@ -741,7 +741,7 @@ class GoogleDocsFormatter:
                             self._mark_bold(bug_start, bug_start + len("Bug Fixes:"))
                             for item in section["bug_fixes"]:
                                 bug_text = self._normalize_bug_fix_bullet(item)
-                                self._insert_text(f"- {bug_text}\n")
+                                self._insert_text(f"• {bug_text}\n")
 
                         self._insert_text("\n")
                 elif body_text:
