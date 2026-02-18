@@ -96,8 +96,13 @@ def export_jira_tickets(release_date_str: str = None):
         print("[Step 1] ERROR: Could not connect to Jira")
         return None
 
-    print(f"[Step 1] Searching for release ticket: '{release_summary}'")
-    release_ticket = jira.find_release_ticket(release_summary, project_key)
+    release_key_env = os.getenv('RELEASE_TICKET_KEY', '').strip()
+    if release_key_env:
+        print(f"[Step 1] Using release ticket key from env: {release_key_env}")
+        release_ticket = jira.get_ticket_details(release_key_env)
+    else:
+        print(f"[Step 1] Searching for release ticket: '{release_summary}'")
+        release_ticket = jira.find_release_ticket(release_summary, project_key)
 
     if not release_ticket:
         print(f"[Step 1] No release planned: '{release_summary}' not found in Jira")

@@ -111,7 +111,7 @@ class JiraHandler:
         jql = f'project = {project} AND summary ~ "{summary}"'
         json_data = {
             "jql": jql,
-            "fields": ["key", "summary", "description", "issuetype", "status", "priority", "fixVersions", "labels", "customfield_10014"],
+            "fields": ["key", "summary", "description", "issuetype", "status", "priority", "fixVersions", "labels", "customfield_10014", "created"],
             "maxResults": 10
         }
 
@@ -119,15 +119,31 @@ class JiraHandler:
 
         if result and result.get("issues"):
             issues = result["issues"]
-            # Find exact or closest match
-            for issue in issues:
-                if issue["fields"]["summary"].strip() == summary.strip():
-                    print(f"[Jira] Found release ticket: {issue['key']}")
-                    return issue
+            exact_matches = [
+                i for i in issues
+                if i.get("fields", {}).get("summary", "").strip() == summary.strip()
+            ]
+            candidates = exact_matches or issues
 
-            # Return first match if no exact match
-            print(f"[Jira] Found closest match: {issues[0]['key']}")
-            return issues[0]
+            # Exclude cancelled/canceled tickets
+            def is_cancelled(issue: Dict) -> bool:
+                status = issue.get("fields", {}).get("status", {}).get("name", "")
+                return status.strip().lower() in ("cancelled", "canceled")
+
+            non_cancelled = [i for i in candidates if not is_cancelled(i)]
+            if not non_cancelled:
+                non_cancelled = candidates
+
+            # Prefer tickets with Fix Versions, then most recently created
+            def sort_key(issue: Dict) -> tuple:
+                fix_versions = issue.get("fields", {}).get("fixVersions", [])
+                has_fix_versions = 1 if fix_versions else 0
+                created = issue.get("fields", {}).get("created", "")
+                return (has_fix_versions, created)
+
+            best = sorted(non_cancelled, key=sort_key, reverse=True)[0]
+            print(f"[Jira] Found release ticket: {best['key']}")
+            return best
 
         print(f"[Jira] No release ticket found with summary: '{summary}'")
         return None
