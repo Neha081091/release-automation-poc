@@ -249,14 +249,14 @@ Spring Batch to Python/Airflow for improved performance, maintainability, and be
 workflow visualization.
 
 Guidelines:
-- Write 2-4 SHORT sentences. Each sentence should cover one major theme/epic.
-- Maximum 60 words total. Be ruthlessly concise.
-- State WHAT shipped and WHY it matters — one sentence per theme.
-- Use plain language a PMO can scan in 5 seconds.
-- Do NOT use semicolons to chain multiple themes into one run-on sentence.
-- Do NOT include internal codenames, framework names, or repo details unless they are the product feature name.
+- Write 2-4 sentences. Each sentence covers one major epic/theme.
+- Draw from the ticket descriptions (Context field), not just the summaries — descriptions contain the real value.
+- State WHAT shipped and WHY it matters to users. One sentence per theme, 15-30 words each.
+- Use plain language a PMO can understand in 5 seconds.
+- Do NOT chain multiple themes with semicolons into one long run-on sentence — use separate sentences.
+- Do NOT include internal repo names or low-level implementation details.
 - Do NOT include the product name prefix — output ONLY the description part after the dash.
-- If there are bug fixes, mention them briefly (e.g., "Fixed Peer39 Usage Report category ID display").
+- If there are bug fixes, mention them briefly at the end (e.g., "Fixed Peer39 Usage Report to correctly display category IDs.").
 
 Output ONLY the summary description (without the product name prefix) — nothing else."""
         }]
@@ -303,59 +303,60 @@ def generate_body_with_claude(client, product: str, fix_version: str,
             "content": f"""Write the detailed body section for "{product}" ({fix_version}). \
 There are {total} tickets across {len(epics)} epics.
 
-Here is the FULL ticket data grouped by Epic:
+Here is the FULL ticket data grouped by Epic. Each section starts with "=== Epic: <name> ===" \
+or "=== Standalone Bug Fixes ===". Read BOTH the ticket summary AND the Context (description) \
+for every ticket — the Context field contains the real business value that must appear in the bullets.
 
 {epic_context}
 
-Output this EXACT structure for EACH epic:
+--- OUTPUT FORMAT ---
+
+For each FEATURE epic (NOT the Standalone Bug Fixes section), output:
 
 [Epic Name]
 Value Add:
-* One concise sentence about a shipped feature and its user benefit
-* Another bullet if the epic has multiple distinct deliverables
-General Availability
+* <Sentence drawn from ticket summary + description explaining what users gain>
+* <Another bullet for each distinct user benefit covered by this epic>
+General Availability   ← or "Feature Flag" based on Release Status field
 
-If the epic has Bug tickets mixed in, add a separate section AFTER value-adds:
-
+If the feature epic also contains Bug tickets, add AFTER the availability tag:
 Bug Fixes:
-* Fixed [what was broken] — [what users can now do]
+* Fixed [specific problem] — [what users can now do]
 
-If you see a "=== Standalone Bug Fixes (NOT a feature epic) ===" section in the data,
-output ONLY (no epic title, no Value Add, no availability tag):
-
+For the "=== Standalone Bug Fixes ===" section, output ONLY:
 Bug Fixes:
-* Fixed [what was broken] — [what users can now do]
+* Fixed [specific problem] — [what users can now do]
+(No epic title, no Value Add heading, no availability tag for this section.)
 
-EXAMPLE (note the concise, direct style — each bullet is ONE sentence, 15-25 words):
+--- EXAMPLE of the desired quality ---
 
-Cora Agent Dynamic Renderer Framework
+DSP | UI | DSP PL5 | Apollo V3 migration
 Value Add:
-* Enables dynamic, agent-driven UI rendering within the Cora Chat experience for adaptive layouts
-* Users can view conversational outputs in multiple formats including text, charts, cards, and tables
-* Templated components JSON maintained in catalog ensures consistency and accuracy in output
-Feature Flag
+* Improved application performance and data-fetching efficiency through Apollo V3 migration
+* Modernised codebase with class-based components converted to functional components, enhancing maintainability and developer experience
+General Availability
 
 Account Manager Revamp - Bulk Actions
 Value Add:
 * Super Admin users can now view detailed seat assignments for other Super Admin users
-* Enhanced user management capabilities with search functionality in seat assignment lists
+* Enhanced user management with search functionality across seat assignment lists
+* Enables Super Admin users to demote another Super Admin to a normal user role from the details page
 Feature Flag
-Bug Fixes:
-* Fixed Peer39 Usage Report to correctly display category IDs, enabling users to properly identify categories
 
-Critical rules:
-- Each bullet MUST be exactly ONE sentence, 15-25 words. No run-on sentences with em-dashes or subordinate clauses.
-- Write in active voice: "Users can now...", "Enables...", "Supports...", "Improved..."
-- State the WHAT and WHY in plain language. Do NOT explain HOW it works technically.
-- Consolidate tickets that describe the same work (e.g., across repos) into ONE bullet.
-- Keep each Epic as a SEPARATE section — do NOT merge epics together.
-- For story/task tickets (not bugs), check the Labels and Release Status fields for GA/FF.
-- Add the availability tag (General Availability or Feature Flag) on its own line after value-add bullets ONLY.
-- NEVER add availability tags to the Bug Fixes section.
-- For Bug Fixes: write "Fixed [problem]" — if the bug ticket has no meaningful description or summary is just a Jira tag like "DSP | UI | ...", SKIP that bug entirely.
-- Do NOT invent features or benefits not supported by the ticket data.
-- Do NOT add introductions, conclusions, or markdown formatting (no ####, no **, no []()).
-- Jump straight into the first epic section.
+Bug Fixes:
+* Fixed Peer39 Usage Report to correctly display category IDs — users can now properly identify categories within the report
+
+--- CRITICAL RULES ---
+1. CONTENT: Each Value Add bullet MUST be drawn from the ticket's Context (description) field, not just the summary.
+   Use 2-4 bullets per epic to capture the most important user-facing benefits.
+2. ISSUE TYPE: A ticket marked "(Bug)" must ONLY appear in a Bug Fixes section, never in Value Add.
+   A ticket marked "(Story)" or "(Task)" must ONLY appear in Value Add, never in Bug Fixes.
+3. EPIC ISOLATION: Keep each epic as its own separate section. NEVER mix content across epics.
+4. AVAILABILITY: Use the "Release Status" field for GA/FF. Add the tag after Value Add bullets only — NEVER after Bug Fixes.
+5. SKIP garbage bugs: If a bug ticket has no meaningful description and its summary is just a raw Jira tag \
+(e.g. "DSP | UI | ticket-123"), skip that bug entirely.
+6. NO MARKDOWN: No ####, no **, no []() links. Plain text only.
+7. START immediately with the first epic — no introduction or conclusion.
 
 Output the formatted sections now:"""
         }]
@@ -442,39 +443,45 @@ def review_and_polish_with_claude(client, product: str, body_text: str) -> str:
         messages=[
             {
                 "role": "user",
-                "content": f"""Edit these draft release notes for {product} to be more concise and polished:
+                "content": f"""Review and polish these draft release notes for {product}. \
+Your goal is QUALITY and CLARITY, not aggressive shortening.
 
 {body_text}
 
-Your job is to SHORTEN and TIGHTEN, not expand. Apply these edits:
+Apply only these edits:
 
-1. BREVITY: Any bullet longer than 25 words — rewrite it into one crisp sentence under 25 words.
-   BAD:  "Cora Agent responses now render dynamically in the chat interface using a new JSON-to-UI rendering framework, enabling the agent to control how information is presented — including cards, charts, tables, text blocks, and interactive calls-to-action — so that conversational outputs adapt their layout based on context rather than relying on static templates"
-   GOOD: "Enables dynamic, agent-driven UI rendering within the Cora Chat experience for adaptive layouts"
+1. READABILITY: If a bullet is vague or generic (e.g., "Improved performance"), expand it using \
+   context already implied by the epic name and other bullets — do NOT add invented facts. \
+   If a bullet is clear and meaningful at 30+ words, leave it as-is.
 
-2. GARBAGE REMOVAL: Delete ONLY bullet point lines (lines starting with * or •) that are just a raw
-   Jira tag with no meaningful content (e.g., "* Fixed --", "* Fixed DSP | UI | DSP-123").
-   NEVER delete or modify an Epic section title — epic names are always valid even if they contain
-   pipes or look like Jira tags (e.g., "DSP | UI | DSP PL5 | Apollo V3 migration" IS a valid epic title).
+2. GARBAGE REMOVAL: Delete ONLY bullet lines (starting with * or •) that contain ZERO user-facing \
+   information — e.g., "* Fixed --", "* Fixed DSP | UI | DSP-123 |" with no further description. \
+   NEVER delete or modify an epic section title. Epic titles are always valid even if they look like \
+   Jira tags (e.g., "DSP | UI | DSP PL5 | Apollo V3 migration" IS a valid epic title, keep it).
 
-3. CONSOLIDATION: Merge VALUE ADD bullets that describe the same feature from different angles into
-   ONE bullet. NEVER merge separate epics — keep each epic as its own distinct section.
+3. ISSUE TYPE ENFORCEMENT: If a Value Add bullet describes a bug fix (starts with "Fixed"), move it \
+   to the Bug Fixes section of that epic. If a Bug Fixes bullet is actually a feature, move it to \
+   Value Add. Do NOT invent a Bug Fixes section if none existed — only move existing bullets.
 
-4. STRUCTURE: Keep this exact format (no markdown, no #### headers, no ** bold markers):
+4. CONSOLIDATION: Merge Value Add bullets that describe the exact same user benefit from different \
+   angles into ONE bullet. NEVER merge bullets from separate epics.
+
+5. STRUCTURE: Preserve this exact format (no markdown, no #### headers, no ** bold markers):
    Epic Name
    Value Add:
-   * Concise bullet
-   * Another bullet
+   * Bullet explaining user benefit
+   * Another distinct bullet
    General Availability
 
    Bug Fixes:
-   * Fixed [problem] — [what users can now do]
+   * Fixed [specific problem] — [what users can now do]
 
-5. Availability tags (General Availability / Feature Flag) go on their own line after value-add bullets ONLY — NEVER after Bug Fixes.
+6. Availability tags (General Availability / Feature Flag) appear on their own line after Value Add \
+   bullets ONLY. NEVER place an availability tag after Bug Fixes.
 
-6. Do NOT add introductions, conclusions, or any text outside the epic sections.
+7. Do NOT add introductions, conclusions, or any text outside the epic sections.
 
-Output ONLY the final release notes."""
+Output ONLY the final polished release notes."""
             }
         ]
     )
