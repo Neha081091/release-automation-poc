@@ -651,18 +651,9 @@ class GoogleDocsFormatter:
                 sections = self._parse_body_sections(body_text)
 
                 if sections:
-                    all_bug_items = []
                     for section in sections:
                         epic_title = section["epic"]
                         epic_url = self._find_epic_url(epic_title, epic_urls) if epic_urls else ""
-
-                        # Collect bug fixes to render once at the end of the PL
-                        if section["bug_fixes"]:
-                            all_bug_items.extend(section["bug_fixes"])
-
-                        # Skip rendering epic headers for bug-only sections
-                        if not section["value_add"]:
-                            continue
 
                         epic_start = self.current_index
                         self._insert_text(f"{epic_title}\n")
@@ -683,15 +674,14 @@ class GoogleDocsFormatter:
                             self._insert_text(f"{section['availability']}\n")
                             self._mark_green(avail_start, self.current_index - 1)
 
-                        self._insert_text("\n")
+                        if section["bug_fixes"]:
+                            bug_start = self.current_index
+                            self._insert_text("Bug Fixes:\n")
+                            self._mark_bold(bug_start, bug_start + len("Bug Fixes:"))
+                            for item in section["bug_fixes"]:
+                                bug_text = self._normalize_bug_fix_bullet(item)
+                                self._insert_text(f"• {bug_text}\n")
 
-                    if all_bug_items:
-                        bug_start = self.current_index
-                        self._insert_text("Bug Fixes:\n")
-                        self._mark_bold(bug_start, bug_start + len("Bug Fixes:"))
-                        for item in all_bug_items:
-                            bug_text = self._normalize_bug_fix_bullet(item)
-                            self._insert_text(f"• {bug_text}\n")
                         self._insert_text("\n")
                 elif body_text:
                     # Fallback to existing Claude body parsing

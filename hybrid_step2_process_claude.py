@@ -41,34 +41,6 @@ from formatter import CLAUDE_MODEL, CLAUDE_TEMPERATURE, RELEASE_NOTES_SYSTEM_PRO
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _clean_description(raw: str, max_len: int = 300) -> str:
-    """
-    Clean a Jira description for LLM consumption.
-
-    Strips acceptance criteria, SQL queries, code blocks, and other noise
-    that causes the LLM to over-extract technical details.
-    """
-    if not raw:
-        return ""
-    desc = " ".join(raw.split())  # Normalize whitespace
-
-    # Remove common noise sections (Acceptance Criteria, SQL, code, etc.)
-    # Cut at the first occurrence of these markers
-    for marker in [
-        "Acceptance Criteria", "AC:", "Test Cases", "Test Plan",
-        "SELECT ", "FROM ", "WHERE ", "INSERT ", "UPDATE ",
-        "```", "query {", "Requirements / Scope",
-        "Steps to Reproduce", "Expected Result", "Actual Result",
-    ]:
-        idx = desc.find(marker)
-        if idx > 0:
-            desc = desc[:idx].rstrip(" .:;-")
-
-    if len(desc) > max_len:
-        desc = desc[:max_len] + "..."
-    return desc.strip()
-
-
 def _build_full_ticket_context(tickets: list) -> str:
     """
     Build a rich, human-readable context block from full ticket data.
@@ -98,9 +70,11 @@ def _build_full_ticket_context(tickets: list) -> str:
         if release_type:
             lines.append(f"  Release Type: {release_type}")
         if description and description.lower() != summary.lower():
-            desc_clean = _clean_description(description)
-            if desc_clean:
-                lines.append(f"  Description: {desc_clean}")
+            # Truncate very long descriptions but keep enough for context
+            desc_clean = " ".join(description.split())
+            if len(desc_clean) > 600:
+                desc_clean = desc_clean[:600] + "..."
+            lines.append(f"  Description: {desc_clean}")
         lines.append("")
 
     return "\n".join(lines)
@@ -166,9 +140,10 @@ def _build_epic_sections_context(epics: dict) -> str:
             sections.append(f"  [{key}] ({issue_type}) {summary}")
             sections.append(f"    Labels: {labels}")
             if description and description.lower() != summary.lower():
-                desc_clean = _clean_description(description)
-                if desc_clean:
-                    sections.append(f"    Context: {desc_clean}")
+                desc_clean = " ".join(description.split())
+                if len(desc_clean) > 500:
+                    desc_clean = desc_clean[:500] + "..."
+                sections.append(f"    Context: {desc_clean}")
 
         sections.append("")
 
@@ -206,7 +181,16 @@ def generate_tldr_with_claude(client, product: str, fix_version: str,
         system=RELEASE_NOTES_SYSTEM_PROMPT,
         messages=[{
             "role": "user",
-            "content": f"""Write a TL;DR summary for the "{product}" product line ({fix_version}).
+            "content": f"""Release Notes Prompt (with TLDR)
+
+Find today's release ticket with summary "Release [today's date]" (e.g., "Release 13th Oct 2025"). Create a Daily Deployment Summary with this EXACT formatting:
+
+Daily Deployment Summary: [Date in format "13th Oct 2025"]
+------------------TL;DR:------------------
+Key Deployments: [List deployments, e.g., "DSP PL2 and DSP PL4"]
+   * {product} - [brief description of what shipped, focusing on user/business value]
+
+Generate the TL;DR entry for the "{product}" product line ({fix_version}) using the ticket data below.
 
 This product line has {len(all_tickets)} tickets across these epics: {epic_list}
 
@@ -215,27 +199,22 @@ actually shipped, not just the Jira summary titles:
 
 {ticket_context}
 
-EXAMPLES of good TL;DR entries (note the concise, direct style):
-   * DSP Core PL3 - Implemented Cora Agent Dynamic Renderer Framework enabling dynamic, \
-agent-driven UI rendering within the Cora Chat experience. Users can now view conversational \
-outputs in multiple formats including text, charts, cards, and tables. Also implemented \
-advertiser-scoped conversation isolation to ensure data privacy when users switch between \
-different advertiser contexts.
+EXAMPLE format (from a real deployment summary):
    * Audiences PL1 - Channel chart scale updated to use 4MM HCP Universe for better \
-visualization of reach differences between EHR and other channels.
-   * Helix PL3 - Migrated STM impression and Outcomes tiered reporting data pipelines from \
-Spring Batch to Python/Airflow for improved performance, maintainability, and better \
-workflow visualization.
+visualization of reach differences between EHR and other channels; improved scale \
+readability when filters are applied
+   * DSP Core PL2 - Unique Reach now auto-enabled as default primary goal for new ad \
+groups and templates; Outcomes reports with 'REQUESTED' state ad groups now visible \
+(~50 analyses); SmartBid template added to Reporting Listing V2
 
 Guidelines:
-- Write 2-4 SHORT sentences. Each sentence should cover one major theme/epic.
-- Maximum 60 words total. Be ruthlessly concise.
-- State WHAT shipped and WHY it matters — one sentence per theme.
-- Use plain language a PMO can scan in 5 seconds.
-- Do NOT use semicolons to chain multiple themes into one run-on sentence.
-- Do NOT include internal codenames, framework names, or repo details unless they are the product feature name.
-- Do NOT include the product name prefix — output ONLY the description part after the dash.
-- If there are bug fixes, mention them briefly (e.g., "Fixed Peer39 Usage Report category ID display").
+- Read the descriptions to understand the real user impact — don't just rephrase the titles
+- Consolidate related tickets into coherent themes
+- Separate distinct themes with semicolons
+- Focus on what users and stakeholders gain, not what developers built
+- If there are security or vulnerability fixes, call them out explicitly
+- Keep it concise but informative — this is a quick-scan summary for leadership
+- Do NOT include the product name prefix — output ONLY the description part after the dash
 
 Output ONLY the summary description (without the product name prefix) — nothing else."""
         }]
@@ -279,56 +258,92 @@ def generate_body_with_claude(client, product: str, fix_version: str,
         system=RELEASE_NOTES_SYSTEM_PROMPT,
         messages=[{
             "role": "user",
-            "content": f"""Write the detailed body section for "{product}" ({fix_version}). \
-There are {total} tickets across {len(epics)} epics.
+            "content": f"""Release Notes Prompt (with TLDR)
 
-Here is the FULL ticket data grouped by Epic:
+Find today's release ticket with summary "Release [today's date]" (e.g., "Release 13th Oct 2025"). Create a Daily Deployment Summary with this EXACT formatting:
+
+Daily Deployment Summary: [Date in format "13th Oct 2025"]
+------------------TL;DR:------------------
+Key Deployments: [List deployments, e.g., "DSP PL2 and DSP PL4"]
+
+------------------DSP------------------
+For each Product Line:
+{product}: {fix_version} (Make "{fix_version}" a blue hyperlink to the fix version)
+#### [Epic Name](epic_url)
+**Value Add**:
+* List each value-add as a separate bullet point
+* Extract from ticket summaries and descriptions
+* Focus on business value and user benefits
+* No sub-bullets, keep flat structure
+After all value-adds for an epic, add availability tag: 'Feature Flag' or 'General Availability'
+
+Rules:
+* Use blue hyperlinks for Release versions and Epic names
+* "Value Add:" should be bold
+* Keep bullet points simple and flat (no nested bullets)
+* Add blank line between different PLs
+* Exclude the release ticket itself from the summary
+* For stories (not bugs), check labels field for GA/FF information
+
+Generate professional, concise summaries emphasizing user benefits.
+
+Now write the detailed body section for "{product}" ({fix_version}) using the ticket data below. There are {total} tickets across {len(epics)} epics.
+
+Here is the FULL ticket data grouped by Epic. Read the descriptions carefully — they \
+contain the user stories, acceptance criteria, and business rationale that you should \
+reflect in the release notes:
 
 {epic_context}
 
-Output this EXACT structure for EACH epic:
+Write polished, stakeholder-ready release notes following this EXACT structure for EACH epic:
 
-[Epic Name]
-Value Add:
-* One concise sentence about a shipped feature and its user benefit
-* Another bullet if the epic has multiple distinct deliverables
+#### [Epic Name](epic_url)
+**Value Add**:
+* A clear, stakeholder-friendly sentence explaining what shipped and why it matters.
+* Another bullet if the epic has multiple distinct deliverables.
 General Availability
 
-If the epic has Bug tickets, add a separate section AFTER value-adds:
+OR for multiple value-adds:
 
-Bug Fixes:
-* Fixed [what was broken] — [what users can now do]
-
-EXAMPLE (note the concise, direct style — each bullet is ONE sentence, 15-25 words):
-
-Cora Agent Dynamic Renderer Framework
-Value Add:
-* Enables dynamic, agent-driven UI rendering within the Cora Chat experience for adaptive layouts
-* Users can view conversational outputs in multiple formats including text, charts, cards, and tables
-* Templated components JSON maintained in catalog ensures consistency and accuracy in output
+#### [Epic Name](epic_url)
+**Value Add**:
+* First value-add bullet explaining user benefit
+* Second value-add bullet explaining user benefit
 Feature Flag
 
-Account Manager Revamp - Bulk Actions
-Value Add:
-* Super Admin users can now view detailed seat assignments for other Super Admin users
-* Enhanced user management capabilities with search functionality in seat assignment lists
-Feature Flag
-Bug Fixes:
-* Fixed Peer39 Usage Report to correctly display category IDs, enabling users to properly identify categories
+If the epic has Bug tickets, add them in a separate section AFTER the value-adds:
+
+**Bug Fixes:**
+* Fixed issue where [description of what was broken and what was fixed]
+* Fixed [another bug description]
+
+EXAMPLE of a complete epic section:
+
+#### [Campaigns List Page V3](https://deepintent.atlassian.net/browse/DI-12345)
+**Value Add**:
+* Improved campaign listing by allowing top bar metrics selection independently from listing columns
+* Enhanced audit log for PG Ad Groups by removing inapplicable bid fields for improved clarity
+General Availability
+
+**Bug Fixes:**
+* Fixed issue where Add frequency button disappears when directly deleting existing frequency on ad-group quickview
+* Fixed null date display in tooltip when hovering on graph datapoints in Goal Widget
 
 Critical rules:
-- Each bullet MUST be exactly ONE sentence, 15-25 words. No run-on sentences with em-dashes or subordinate clauses.
-- Write in active voice: "Users can now...", "Enables...", "Supports...", "Improved..."
-- State the WHAT and WHY in plain language. Do NOT explain HOW it works technically.
-- Consolidate tickets that describe the same work (e.g., across repos) into ONE bullet.
-- Keep each Epic as a SEPARATE section — do NOT merge epics together.
-- For story/task tickets (not bugs), check the Labels and Release Status fields for GA/FF.
-- Add the availability tag (General Availability or Feature Flag) on its own line after value-add bullets ONLY.
-- NEVER add availability tags to the Bug Fixes section.
-- For Bug Fixes: write "Fixed [problem]" — if the bug ticket has no meaningful description or summary is just a Jira tag like "DSP | UI | ...", SKIP that bug entirely.
-- Do NOT invent features or benefits not supported by the ticket data.
-- Do NOT add introductions, conclusions, or markdown formatting (no ####, no **, no []()).
-- Jump straight into the first epic section.
+- Use the Epic URL provided in the data to create markdown hyperlinks: [Epic Name](epic_url)
+- "**Value Add**:" must be bold (use ** markdown) followed by a colon
+- Keep bullet points simple and FLAT — no sub-bullets or nested lists
+- Separate Bug tickets (issue_type=Bug) into a "**Bug Fixes:**" section after value-adds
+- For story/task tickets (not bugs), check the Labels field for GA/FF information
+- Add the availability tag (General Availability or Feature Flag) on its own line after value-add bullets ONLY for stories/tasks
+- NEVER add availability tags (General Availability or Feature Flag) to the Bug Fixes section
+- If multiple tickets in an epic describe the same work across different repos, consolidate into ONE bullet
+- Keep each Epic as a SEPARATE section — do NOT merge epics together
+- Draw from ticket descriptions to explain WHY the change matters, not just WHAT changed
+- Translate developer jargon into language a PMO or executive would understand
+- Do NOT invent features or benefits not supported by the ticket data
+- Do NOT add an introduction or conclusion — jump straight into the first epic section
+- Exclude the release ticket itself from the summary
 
 Output the formatted sections now:"""
         }]
@@ -407,23 +422,6 @@ def review_and_polish_with_claude(client, product: str, body_text: str) -> str:
     - Separate Bug Fixes section
     - GA/FF availability tags
     """
-    def _extract_epic_titles(text: str) -> list:
-        titles = []
-        for line in text.split("\n"):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if stripped.lower().startswith(("value add", "bug fixes")):
-                continue
-            if stripped in ("General Availability", "Feature Flag"):
-                continue
-            titles.append(stripped)
-        seen = set()
-        return [t for t in titles if not (t in seen or seen.add(t))]
-
-    epic_titles = _extract_epic_titles(body_text)
-    epic_title_block = "\n".join(f"- {t}" for t in epic_titles) if epic_titles else "(none)"
-
     message = client.messages.create(
         model=CLAUDE_MODEL,
         max_tokens=4096,
@@ -432,54 +430,38 @@ def review_and_polish_with_claude(client, product: str, body_text: str) -> str:
         messages=[
             {
                 "role": "user",
-                "content": f"""Edit these draft release notes for {product} to be more concise and polished:
+                "content": f"""Here are the draft release notes I wrote for {product}:
 
 {body_text}
 
-Your job is to SHORTEN and TIGHTEN, not expand. Apply these edits:
+Review and fix ONLY if there are actual issues. The format must match this exact structure:
 
-1. BREVITY: Any bullet longer than 25 words — rewrite it into one crisp sentence under 25 words.
-   BAD:  "Cora Agent responses now render dynamically in the chat interface using a new JSON-to-UI rendering framework, enabling the agent to control how information is presented — including cards, charts, tables, text blocks, and interactive calls-to-action — so that conversational outputs adapt their layout based on context rather than relying on static templates"
-   GOOD: "Enables dynamic, agent-driven UI rendering within the Cora Chat experience for adaptive layouts"
+#### [Epic Name](url)
+**Value Add**:
+* Flat bullet describing user value
+* Another flat bullet if needed
+General Availability
 
-2. GARBAGE REMOVAL: Delete any bullet that is just a Jira tag (e.g., "Fixed --") or has no meaningful content.
-   IMPORTANT: NEVER delete or rename an Epic section title. Pipe-separated names like
-   "DSP | UI | DSP PL5 | Apollo V3 migration" are valid Epic titles and must be preserved.
-   These exact epic titles MUST remain as-is:
-{epic_title_block}
+**Bug Fixes:**
+* Fixed issue where [description]
 
-3. CONSOLIDATION: Merge bullets that describe the same feature ONLY within the same epic.
-   NEVER merge separate epics or move bullets between epics.
+Validation checklist:
+1. Formatting: Every epic must use #### [Epic Name](url) as the heading
+2. "**Value Add**:" must be bold (wrapped in **) followed by a colon
+3. Bullet points must be flat — NO sub-bullets or nested lists
+4. Bug tickets must be in a separate "**Bug Fixes:**" section (not mixed with value-adds)
+5. Availability tags (General Availability / Feature Flag) must be on their own line after value-add bullets ONLY — NEVER after Bug Fixes
+6. Clarity: Each bullet should be a complete sentence a PMO can understand
+7. Accuracy: Bullets should not claim features or benefits not supported by the ticket data
+8. Consolidation: Repetitive items (e.g., same integration across repos) should be one bullet
+9. No extra sections, introductions, or conclusions
 
-4. STRUCTURE: Keep this exact format (no markdown, no #### headers, no ** bold markers):
-   Epic Name
-   Value Add:
-   * Concise bullet
-   * Another bullet
-   General Availability
-
-   Bug Fixes:
-   * Fixed [problem] — [what users can now do]
-
-5. Availability tags (General Availability / Feature Flag) go on their own line after value-add bullets ONLY — NEVER after Bug Fixes.
-
-6. Do NOT add introductions, conclusions, or any text outside the epic sections.
-   Do NOT rename Epic titles. Do NOT convert Epic titles into Bug Fixes.
-
-Output ONLY the final release notes."""
+If the draft is already good, return it unchanged. Output ONLY the final release notes."""
             }
         ]
     )
 
-    polished = message.content[0].text.strip()
-    polished_titles = _extract_epic_titles(polished)
-
-    # Guard: if polish pass drops/renames any epic titles, keep original
-    missing = [t for t in epic_titles if t not in polished_titles]
-    if missing:
-        return body_text
-
-    return polished
+    return message.content[0].text.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -563,12 +545,7 @@ def process_tickets_with_claude():
             match = re.match(r'^(.+?):\s*Release', fix_version)
             pl = match.group(1).strip() if match else "Other"
 
-        epic_name = (
-            ticket.get("epic_name")
-            or ticket.get("summary", "").strip()
-            or ", ".join(ticket.get("components", []))
-            or "Uncategorized"
-        )
+        epic_name = ticket.get("epic_name") or "Uncategorized"
         grouped[pl][epic_name].append(ticket)
 
         if pl not in fix_versions:
@@ -609,127 +586,42 @@ def process_tickets_with_claude():
     # -----------------------------------------------------------------------
     print("\n[Step 2] Generating body sections (with full ticket context)...")
     body_by_pl = {}
-
-    def _build_fallback_body(epics: dict) -> str:
-        body_text = ""
-        for epic_name, epic_tickets in epics.items():
-            epic_url = ""
-            for t in epic_tickets:
-                if t.get("epic_url"):
-                    epic_url = t["epic_url"]
-                    break
-            body_text += f"#### [{epic_name}]({epic_url})\n"
-            body_text += "**Value Add**:\n"
-            bug_fixes = []
-            for t in epic_tickets:
-                summary = t.get("summary")
-                if not summary:
-                    continue
-                if t.get("issue_type", "").lower() == "bug":
-                    bug_fixes.append(summary)
-                else:
-                    body_text += f"* {summary}\n"
-            # Check for release type (only from stories/tasks, not bugs)
-            for t in epic_tickets:
-                if t.get("issue_type", "").lower() != "bug" and t.get("release_type"):
-                    body_text += f"{t['release_type']}\n"
-                    break
-            if bug_fixes:
-                body_text += "\n**Bug Fixes:**\n"
-                for fix in bug_fixes:
-                    body_text += f"* {fix}\n"
-            body_text += "\n"
-        return body_text
-
-    def _has_ticket_summary_coverage(body_text: str, epic_tickets: list) -> bool:
-        if not body_text:
-            return False
-        body_lower = body_text.lower()
-        summaries = [t.get("summary", "").strip() for t in epic_tickets if t.get("summary")]
-        if not summaries:
-            return True
-        return any(s.lower() in body_lower for s in summaries)
-
-    def _extract_epic_section(body_text: str, epic_name: str) -> str:
-        if not body_text:
-            return ""
-        lines = body_text.split("\n")
-        start_idx = None
-        for idx, line in enumerate(lines):
-            line_stripped = line.strip()
-            if not line_stripped:
-                continue
-            # Match "#### [Epic](url)" or "Epic"
-            if epic_name in line_stripped:
-                start_idx = idx
-                break
-        if start_idx is None:
-            return ""
-        end_idx = len(lines)
-        for idx in range(start_idx + 1, len(lines)):
-            line_stripped = lines[idx].strip()
-            if line_stripped.startswith("#### ") and line_stripped != lines[start_idx].strip():
-                end_idx = idx
-                break
-        return "\n".join(lines[start_idx:end_idx]).strip()
-
-    def _build_fallback_section(epic_name: str, epic_tickets: list) -> str:
-        epic_url = ""
-        for t in epic_tickets:
-            if t.get("epic_url"):
-                epic_url = t["epic_url"]
-                break
-        section = []
-        section.append(f"#### [{epic_name}]({epic_url})")
-        section.append("**Value Add**:")
-        bug_fixes = []
-        for t in epic_tickets:
-            summary = t.get("summary")
-            if not summary:
-                continue
-            if t.get("issue_type", "").lower() == "bug":
-                bug_fixes.append(summary)
-            else:
-                section.append(f"* {summary}")
-        # Availability from first story/task
-        for t in epic_tickets:
-            if t.get("issue_type", "").lower() != "bug" and t.get("release_type"):
-                section.append(t["release_type"])
-                break
-        if bug_fixes:
-            section.append("")
-            section.append("**Bug Fixes:**")
-            for fix in bug_fixes:
-                section.append(f"* {fix}")
-        section.append("")
-        return "\n".join(section).strip()
-
     for pl, epics in grouped.items():
         fv = fix_versions.get(pl, "")
         print(f"  Processing {pl}...")
         try:
-            body_text = generate_body_with_claude(client, pl, fv, epics)
-            # Validate that all epic titles are present; fallback if any are missing
-            missing_epics = [name for name in epics.keys() if name and name not in body_text]
-            if missing_epics:
-                print(f"  WARNING {pl}: Missing epic titles after generation: {missing_epics}")
-                body_text = _build_fallback_body(epics)
-            else:
-                # Per-epic coverage check: replace only the epics that are over-summarized
-                rebuilt_sections = []
-                for epic_name, epic_tickets in epics.items():
-                    section = _extract_epic_section(body_text, epic_name)
-                    if section and _has_ticket_summary_coverage(section, epic_tickets):
-                        rebuilt_sections.append(section)
-                    else:
-                        rebuilt_sections.append(_build_fallback_section(epic_name, epic_tickets))
-                body_text = "\n\n".join([s for s in rebuilt_sections if s.strip()])
-            body_by_pl[pl] = body_text
+            body_by_pl[pl] = generate_body_with_claude(client, pl, fv, epics)
             print(f"  -> {pl}: generated ({len(body_by_pl[pl])} chars)")
         except Exception as e:
             print(f"  ERROR {pl}: {e}")
             # Fallback to raw formatting matching new format
-            body_by_pl[pl] = _build_fallback_body(epics)
+            body_text = ""
+            for epic_name, epic_tickets in epics.items():
+                epic_url = ""
+                for t in epic_tickets:
+                    if t.get("epic_url"):
+                        epic_url = t["epic_url"]
+                        break
+                body_text += f"#### [{epic_name}]({epic_url})\n"
+                body_text += "**Value Add**:\n"
+                bug_fixes = []
+                for t in epic_tickets:
+                    if t.get("summary"):
+                        if t.get("issue_type", "").lower() == "bug":
+                            bug_fixes.append(t["summary"])
+                        else:
+                            body_text += f"* {t['summary']}\n"
+                # Check for release type (only from stories/tasks, not bugs)
+                for t in epic_tickets:
+                    if t.get("issue_type", "").lower() != "bug" and t.get("release_type"):
+                        body_text += f"{t['release_type']}\n"
+                        break
+                if bug_fixes:
+                    body_text += "\n**Bug Fixes:**\n"
+                    for fix in bug_fixes:
+                        body_text += f"* {fix}\n"
+                body_text += "\n"
+            body_by_pl[pl] = body_text
 
     # -----------------------------------------------------------------------
     # Step 4: Review & polish each body section
