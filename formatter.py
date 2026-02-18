@@ -123,13 +123,13 @@ def parse_pl_from_fix_version(fix_version: str) -> str:
     if not fix_version:
         return "Other"
 
-    # Try to match pattern with year: "DSP Core PL3 2026: Release 4.0"
-    match = re.match(r'^(.+?)\s*\d{4}:\s*Release', fix_version)
+    # Try to match pattern with year: "DSP Core PL3 2026: Release 4.0" or "DSP Core PL3 2026 : Release 4.0"
+    match = re.match(r'^(.+?)\s*\d{4}\s*:\s*Release', fix_version)
     if match:
         return match.group(1).strip()
 
-    # Try to match pattern without year: "Developer Experience: Release 6.0"
-    match = re.match(r'^(.+?):\s*Release', fix_version)
+    # Try to match pattern without year: "Developer Experience: Release 6.0" or "Developer Experience : Release 6.0"
+    match = re.match(r'^(.+?)\s*:\s*Release', fix_version)
     if match:
         return match.group(1).strip()
 

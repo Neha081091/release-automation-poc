@@ -41,12 +41,20 @@ GREEN_COLOR = {"red": 0.13, "green": 0.55, "blue": 0.13}  # Dark green
 def get_pl_category(pl_name: str) -> str:
     """Determine the category header for a product line."""
     pl_lower = pl_name.lower()
-    if 'dsp' in pl_lower:
-        return "DSP"
-    elif 'audience' in pl_lower:
+    if 'audience' in pl_lower:
         return "Audiences"
+    elif 'data governance' in pl_lower:
+        return "Data Governance"
+    elif 'data ingress' in pl_lower:
+        return "Data Ingress"
     elif 'developer' in pl_lower:
         return "Developer Experience"
+    elif 'dsp' in pl_lower:
+        return "DSP"
+    elif 'helix' in pl_lower:
+        return "Helix"
+    elif 'media' in pl_lower:
+        return "Media"
     else:
         return pl_name
 
