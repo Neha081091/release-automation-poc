@@ -452,9 +452,13 @@ Your job is to SHORTEN and TIGHTEN, not expand. Apply these edits:
    BAD:  "Cora Agent responses now render dynamically in the chat interface using a new JSON-to-UI rendering framework, enabling the agent to control how information is presented — including cards, charts, tables, text blocks, and interactive calls-to-action — so that conversational outputs adapt their layout based on context rather than relying on static templates"
    GOOD: "Enables dynamic, agent-driven UI rendering within the Cora Chat experience for adaptive layouts"
 
-2. GARBAGE REMOVAL: Delete any bullet that is just a Jira tag (e.g., "Fixed --", "Fixed dSP | UI | ...") or has no meaningful content.
+2. GARBAGE REMOVAL: Delete ONLY bullet point lines (lines starting with * or •) that are just a raw
+   Jira tag with no meaningful content (e.g., "* Fixed --", "* Fixed DSP | UI | DSP-123").
+   NEVER delete or modify an Epic section title — epic names are always valid even if they contain
+   pipes or look like Jira tags (e.g., "DSP | UI | DSP PL5 | Apollo V3 migration" IS a valid epic title).
 
-3. CONSOLIDATION: Merge bullets that describe the same feature from different angles into ONE bullet.
+3. CONSOLIDATION: Merge VALUE ADD bullets that describe the same feature from different angles into
+   ONE bullet. NEVER merge separate epics — keep each epic as its own distinct section.
 
 4. STRUCTURE: Keep this exact format (no markdown, no #### headers, no ** bold markers):
    Epic Name
