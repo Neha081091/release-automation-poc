@@ -39,9 +39,20 @@ BLUE_COLOR = {"red": 0.06, "green": 0.36, "blue": 0.7}  # Link blue - also used 
 GREEN_COLOR = {"red": 0.13, "green": 0.55, "blue": 0.13}  # Dark green for "Feature Flag" and epic names
 GRAY_COLOR = {"red": 0.5, "green": 0.5, "blue": 0.5}  # Gray for section headers
 
-# Product Line order - grouped by category for consistent display
-# Order: DSP -> Audiences -> Helix -> Media -> Developer Experience -> Data Ingress -> Data Governance
+# Product Line order - alphabetical by category, then by PL number within category
 PRODUCT_LINE_ORDER = [
+    # Audiences PLs
+    "Audiences PL1",
+    "Audiences PL2",
+    "Audiences",
+    # Data Governance
+    "Data Governance",
+    # Data Ingress
+    "Data Ingress",
+    "Data Ingress 2026",
+    # Developer Experience
+    "Developer Experience",
+    "Developer Experience 2026",
     # DSP Core PLs
     "DSP Core PL1",
     "DSP Core PL2",
@@ -52,10 +63,6 @@ PRODUCT_LINE_ORDER = [
     "DSP PL2",
     "DSP PL3",
     "DSP",
-    # Audiences PLs
-    "Audiences PL1",
-    "Audiences PL2",
-    "Audiences",
     # Helix PLs
     "Helix PL1",
     "Helix PL2",
@@ -65,14 +72,6 @@ PRODUCT_LINE_ORDER = [
     "Media PL1",
     "Media PL2",
     "Media",
-    # Developer Experience
-    "Developer Experience",
-    "Developer Experience 2026",
-    # Data Ingress
-    "Data Ingress",
-    "Data Ingress 2026",
-    # Data Governance
-    "Data Governance",
     "Other"
 ]
 
@@ -659,11 +658,10 @@ class GoogleDocsFormatter:
             category = self._get_pl_category(pl)
             pl_by_category[category].append(pl)
 
-        # Define category order (grouped similar PLs together)
-        # Order: DSP -> Audiences -> Helix -> Media -> Developer Experience -> Data Ingress -> Data Governance
+        # Define category order - alphabetical
         category_order = [
-            "DSP", "Audiences", "Helix", "Media", "Developer Experience", "Data Ingress",
-            "Data Governance"
+            "Audiences", "Data Governance", "Data Ingress", "Developer Experience",
+            "DSP", "Helix", "Media"
         ]
 
         # Process each category

@@ -76,6 +76,14 @@ PRODUCT_LINE_MAPPING = {
 # Order for displaying product lines (dynamic - will be populated from fix versions)
 # These are fallback/common names; actual names come from fix versions
 PRODUCT_LINE_ORDER = [
+    "Audiences PL1",
+    "Audiences PL2",
+    "Audiences",
+    "Data Governance",
+    "Data Ingress",
+    "Data Ingress 2026",
+    "Developer Experience",
+    "Developer Experience 2026",
     "DSP Core PL1",
     "DSP Core PL2",
     "DSP Core PL3",
@@ -85,9 +93,6 @@ PRODUCT_LINE_ORDER = [
     "DSP PL2",
     "DSP PL3",
     "DSP",
-    "Audiences PL1",
-    "Audiences PL2",
-    "Audiences",
     "Helix PL1",
     "Helix PL2",
     "Helix PL3",
@@ -95,9 +100,6 @@ PRODUCT_LINE_ORDER = [
     "Media PL1",
     "Media PL2",
     "Media",
-    "Developer Experience",
-    "Developer Experience 2026",
-    "Data Governance",
     "Other"
 ]
 
