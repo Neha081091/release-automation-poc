@@ -524,7 +524,7 @@ def process_tickets_with_claude():
     grouped = defaultdict(lambda: defaultdict(list))
     fix_versions = {}
     fix_version_urls = {}
-    epic_urls = {}
+    epic_urls_by_pl = defaultdict(dict)
 
     for ticket in tickets:
         # Skip Deployment Tracker tickets — they are internal and should not appear in release notes
@@ -552,8 +552,8 @@ def process_tickets_with_claude():
             fix_versions[pl] = fix_version
         if pl not in fix_version_urls and ticket.get("fix_version_url"):
             fix_version_urls[pl] = ticket["fix_version_url"]
-        if epic_name not in epic_urls and ticket.get("epic_url"):
-            epic_urls[epic_name] = ticket["epic_url"]
+        if epic_name not in epic_urls_by_pl.get(pl, {}) and ticket.get("epic_url"):
+            epic_urls_by_pl[pl][epic_name] = ticket["epic_url"]
 
     print(f"[Step 2] Grouped into {len(grouped)} product lines:")
     for pl, epics in grouped.items():
@@ -651,6 +651,13 @@ def process_tickets_with_claude():
     # -----------------------------------------------------------------------
     # Step 6: Export
     # -----------------------------------------------------------------------
+    # Parse short release version from fix_version (e.g., "DSP Core PL1 2026: Release 3.0" -> "Release 3.0")
+    release_versions = {}
+    for pl, fv in fix_versions.items():
+        version_match = re.search(r'(Release\s*[\d.]+)', fv)
+        if version_match:
+            release_versions[pl] = version_match.group(1)
+
     output_data = {
         "processed_at": datetime.now().isoformat(),
         "source_file": input_file,
@@ -663,8 +670,9 @@ def process_tickets_with_claude():
         "tldr_by_pl": tldr_by_pl,
         "body_by_pl": body_by_pl,
         "fix_versions": fix_versions,
+        "release_versions": release_versions,
         "fix_version_urls": fix_version_urls,
-        "epic_urls": epic_urls,
+        "epic_urls_by_pl": dict(epic_urls_by_pl),
         "grouped_data": {
             pl: {
                 epic: [t["key"] for t in tickets]
