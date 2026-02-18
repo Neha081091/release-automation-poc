@@ -146,7 +146,7 @@ Features:
 
 ### LLM Configuration
 
-- Model: `claude-opus-4-5-20250918` (configured in `formatter.py` and used by the hybrid processor)
+- Model: `claude-opus-4-5-20251101` (configured in `formatter.py` and used by the hybrid processor)
 - Temperature: `0` for deterministic output
 
 ### Hybrid 3-Phase Workflow (Mac + GitHub Actions)

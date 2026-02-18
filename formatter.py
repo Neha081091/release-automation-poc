@@ -24,7 +24,7 @@ except ImportError:
     print("[Formatter] Warning: anthropic package not installed. LLM consolidation disabled.")
 
 # Latest Claude model and settings for high-quality release notes
-CLAUDE_MODEL = "claude-opus-4-6"
+CLAUDE_MODEL = "claude-opus-4-5-20251101"
 CLAUDE_TEMPERATURE = 0  # Zero temperature for deterministic, consistent output
 
 # System prompt that establishes the AI as a professional release notes writer,

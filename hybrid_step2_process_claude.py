@@ -407,6 +407,23 @@ def review_and_polish_with_claude(client, product: str, body_text: str) -> str:
     - Separate Bug Fixes section
     - GA/FF availability tags
     """
+    def _extract_epic_titles(text: str) -> list:
+        titles = []
+        for line in text.split("\n"):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.lower().startswith(("value add", "bug fixes")):
+                continue
+            if stripped in ("General Availability", "Feature Flag"):
+                continue
+            titles.append(stripped)
+        seen = set()
+        return [t for t in titles if not (t in seen or seen.add(t))]
+
+    epic_titles = _extract_epic_titles(body_text)
+    epic_title_block = "\n".join(f"- {t}" for t in epic_titles) if epic_titles else "(none)"
+
     message = client.messages.create(
         model=CLAUDE_MODEL,
         max_tokens=4096,
@@ -425,9 +442,14 @@ Your job is to SHORTEN and TIGHTEN, not expand. Apply these edits:
    BAD:  "Cora Agent responses now render dynamically in the chat interface using a new JSON-to-UI rendering framework, enabling the agent to control how information is presented — including cards, charts, tables, text blocks, and interactive calls-to-action — so that conversational outputs adapt their layout based on context rather than relying on static templates"
    GOOD: "Enables dynamic, agent-driven UI rendering within the Cora Chat experience for adaptive layouts"
 
-2. GARBAGE REMOVAL: Delete any bullet that is just a Jira tag (e.g., "Fixed --", "Fixed dSP | UI | ...") or has no meaningful content.
+2. GARBAGE REMOVAL: Delete any bullet that is just a Jira tag (e.g., "Fixed --") or has no meaningful content.
+   IMPORTANT: NEVER delete or rename an Epic section title. Pipe-separated names like
+   "DSP | UI | DSP PL5 | Apollo V3 migration" are valid Epic titles and must be preserved.
+   These exact epic titles MUST remain as-is:
+{epic_title_block}
 
-3. CONSOLIDATION: Merge bullets that describe the same feature from different angles into ONE bullet.
+3. CONSOLIDATION: Merge bullets that describe the same feature ONLY within the same epic.
+   NEVER merge separate epics or move bullets between epics.
 
 4. STRUCTURE: Keep this exact format (no markdown, no #### headers, no ** bold markers):
    Epic Name
@@ -442,13 +464,22 @@ Your job is to SHORTEN and TIGHTEN, not expand. Apply these edits:
 5. Availability tags (General Availability / Feature Flag) go on their own line after value-add bullets ONLY — NEVER after Bug Fixes.
 
 6. Do NOT add introductions, conclusions, or any text outside the epic sections.
+   Do NOT rename Epic titles. Do NOT convert Epic titles into Bug Fixes.
 
 Output ONLY the final release notes."""
             }
         ]
     )
 
-    return message.content[0].text.strip()
+    polished = message.content[0].text.strip()
+    polished_titles = _extract_epic_titles(polished)
+
+    # Guard: if polish pass drops/renames any epic titles, keep original
+    missing = [t for t in epic_titles if t not in polished_titles]
+    if missing:
+        return body_text
+
+    return polished
 
 
 # ---------------------------------------------------------------------------
@@ -578,42 +609,127 @@ def process_tickets_with_claude():
     # -----------------------------------------------------------------------
     print("\n[Step 2] Generating body sections (with full ticket context)...")
     body_by_pl = {}
+
+    def _build_fallback_body(epics: dict) -> str:
+        body_text = ""
+        for epic_name, epic_tickets in epics.items():
+            epic_url = ""
+            for t in epic_tickets:
+                if t.get("epic_url"):
+                    epic_url = t["epic_url"]
+                    break
+            body_text += f"#### [{epic_name}]({epic_url})\n"
+            body_text += "**Value Add**:\n"
+            bug_fixes = []
+            for t in epic_tickets:
+                summary = t.get("summary")
+                if not summary:
+                    continue
+                if t.get("issue_type", "").lower() == "bug":
+                    bug_fixes.append(summary)
+                else:
+                    body_text += f"* {summary}\n"
+            # Check for release type (only from stories/tasks, not bugs)
+            for t in epic_tickets:
+                if t.get("issue_type", "").lower() != "bug" and t.get("release_type"):
+                    body_text += f"{t['release_type']}\n"
+                    break
+            if bug_fixes:
+                body_text += "\n**Bug Fixes:**\n"
+                for fix in bug_fixes:
+                    body_text += f"* {fix}\n"
+            body_text += "\n"
+        return body_text
+
+    def _has_ticket_summary_coverage(body_text: str, epic_tickets: list) -> bool:
+        if not body_text:
+            return False
+        body_lower = body_text.lower()
+        summaries = [t.get("summary", "").strip() for t in epic_tickets if t.get("summary")]
+        if not summaries:
+            return True
+        return any(s.lower() in body_lower for s in summaries)
+
+    def _extract_epic_section(body_text: str, epic_name: str) -> str:
+        if not body_text:
+            return ""
+        lines = body_text.split("\n")
+        start_idx = None
+        for idx, line in enumerate(lines):
+            line_stripped = line.strip()
+            if not line_stripped:
+                continue
+            # Match "#### [Epic](url)" or "Epic"
+            if epic_name in line_stripped:
+                start_idx = idx
+                break
+        if start_idx is None:
+            return ""
+        end_idx = len(lines)
+        for idx in range(start_idx + 1, len(lines)):
+            line_stripped = lines[idx].strip()
+            if line_stripped.startswith("#### ") and line_stripped != lines[start_idx].strip():
+                end_idx = idx
+                break
+        return "\n".join(lines[start_idx:end_idx]).strip()
+
+    def _build_fallback_section(epic_name: str, epic_tickets: list) -> str:
+        epic_url = ""
+        for t in epic_tickets:
+            if t.get("epic_url"):
+                epic_url = t["epic_url"]
+                break
+        section = []
+        section.append(f"#### [{epic_name}]({epic_url})")
+        section.append("**Value Add**:")
+        bug_fixes = []
+        for t in epic_tickets:
+            summary = t.get("summary")
+            if not summary:
+                continue
+            if t.get("issue_type", "").lower() == "bug":
+                bug_fixes.append(summary)
+            else:
+                section.append(f"* {summary}")
+        # Availability from first story/task
+        for t in epic_tickets:
+            if t.get("issue_type", "").lower() != "bug" and t.get("release_type"):
+                section.append(t["release_type"])
+                break
+        if bug_fixes:
+            section.append("")
+            section.append("**Bug Fixes:**")
+            for fix in bug_fixes:
+                section.append(f"* {fix}")
+        section.append("")
+        return "\n".join(section).strip()
+
     for pl, epics in grouped.items():
         fv = fix_versions.get(pl, "")
         print(f"  Processing {pl}...")
         try:
-            body_by_pl[pl] = generate_body_with_claude(client, pl, fv, epics)
+            body_text = generate_body_with_claude(client, pl, fv, epics)
+            # Validate that all epic titles are present; fallback if any are missing
+            missing_epics = [name for name in epics.keys() if name and name not in body_text]
+            if missing_epics:
+                print(f"  WARNING {pl}: Missing epic titles after generation: {missing_epics}")
+                body_text = _build_fallback_body(epics)
+            else:
+                # Per-epic coverage check: replace only the epics that are over-summarized
+                rebuilt_sections = []
+                for epic_name, epic_tickets in epics.items():
+                    section = _extract_epic_section(body_text, epic_name)
+                    if section and _has_ticket_summary_coverage(section, epic_tickets):
+                        rebuilt_sections.append(section)
+                    else:
+                        rebuilt_sections.append(_build_fallback_section(epic_name, epic_tickets))
+                body_text = "\n\n".join([s for s in rebuilt_sections if s.strip()])
+            body_by_pl[pl] = body_text
             print(f"  -> {pl}: generated ({len(body_by_pl[pl])} chars)")
         except Exception as e:
             print(f"  ERROR {pl}: {e}")
             # Fallback to raw formatting matching new format
-            body_text = ""
-            for epic_name, epic_tickets in epics.items():
-                epic_url = ""
-                for t in epic_tickets:
-                    if t.get("epic_url"):
-                        epic_url = t["epic_url"]
-                        break
-                body_text += f"#### [{epic_name}]({epic_url})\n"
-                body_text += "**Value Add**:\n"
-                bug_fixes = []
-                for t in epic_tickets:
-                    if t.get("summary"):
-                        if t.get("issue_type", "").lower() == "bug":
-                            bug_fixes.append(t["summary"])
-                        else:
-                            body_text += f"* {t['summary']}\n"
-                # Check for release type (only from stories/tasks, not bugs)
-                for t in epic_tickets:
-                    if t.get("issue_type", "").lower() != "bug" and t.get("release_type"):
-                        body_text += f"{t['release_type']}\n"
-                        break
-                if bug_fixes:
-                    body_text += "\n**Bug Fixes:**\n"
-                    for fix in bug_fixes:
-                        body_text += f"* {fix}\n"
-                body_text += "\n"
-            body_by_pl[pl] = body_text
+            body_by_pl[pl] = _build_fallback_body(epics)
 
     # -----------------------------------------------------------------------
     # Step 4: Review & polish each body section

@@ -39,65 +39,18 @@ BLUE_COLOR = {"red": 0.06, "green": 0.36, "blue": 0.7}  # Link blue - also used 
 GREEN_COLOR = {"red": 0.13, "green": 0.55, "blue": 0.13}  # Dark green for "Feature Flag" and epic names
 GRAY_COLOR = {"red": 0.5, "green": 0.5, "blue": 0.5}  # Gray for section headers
 
-# Product Line order - grouped by category for consistent display
-PRODUCT_LINE_ORDER = [
-    # Media PLs
-    "Media PL1",
-    "Media PL2",
-    "Media",
-    # Audiences PLs
-    "Audiences PL1",
-    "Audiences PL2",
-    "Audiences",
-    # DSP Core PLs
-    "DSP Core PL1",
-    "DSP Core PL2",
-    "DSP Core PL3",
-    "DSP Core PL5",
-    "DSP PL1",
-    "DSP PL2",
-    "DSP PL3",
-    "DSP",
-    # Developer Experience
-    "Developer Experience",
-    "Developer Experience 2026",
-    # Data Ingress
-    "Data Ingress",
-    "Data Ingress 2026",
-    # Helix PLs
-    "Helix PL3",
-    "Helix",
-    # Data Governance
-    "Data Governance",
-    "Other"
-]
+# Product Line order - alphabetical
+PRODUCT_LINE_ORDER = []
 
 
 def get_ordered_pls(pl_list: list) -> list:
-    """Sort product lines according to PRODUCT_LINE_ORDER.
+    """Sort product lines alphabetically (ignoring year suffix)."""
 
-    Handles year variants by matching base PL name (e.g., "Media PL1 2026" matches "Media PL1").
-    """
-    ordered = []
+    def normalize(pl_name: str) -> str:
+        base = re.sub(r'\s+20\d{2}$', '', pl_name).strip().lower()
+        return base
 
-    def get_base_pl_name(pl_name: str) -> str:
-        """Remove year suffix from PL name for matching."""
-        return re.sub(r'\s+20\d{2}$', '', pl_name)
-
-    # First add PLs that match the preferred order (considering year variants)
-    for preferred_pl in PRODUCT_LINE_ORDER:
-        for pl in pl_list:
-            if pl in ordered:
-                continue
-            # Match exact or base name (without year)
-            if pl == preferred_pl or get_base_pl_name(pl) == preferred_pl:
-                ordered.append(pl)
-
-    # Then add any PLs not matched (at the end)
-    for pl in pl_list:
-        if pl not in ordered:
-            ordered.append(pl)
-    return ordered
+    return sorted(pl_list, key=lambda pl: (normalize(pl), pl))
 
 
 class GoogleDocsFormatter:
@@ -655,12 +608,8 @@ class GoogleDocsFormatter:
             category = self._get_pl_category(pl)
             pl_by_category[category].append(pl)
 
-        # Define category order (grouped similar PLs together)
-        # Order: Media -> Audiences -> DSP -> Developer Experience -> Data Ingress -> Helix -> Data Governance
-        category_order = [
-            "Media", "Audiences", "DSP", "Developer Experience", "Data Ingress",
-            "Helix", "Data Governance"
-        ]
+        # Define category order (alphabetical)
+        category_order = sorted(pl_by_category.keys())
 
         # Process each category
         for category in category_order:
@@ -702,9 +651,18 @@ class GoogleDocsFormatter:
                 sections = self._parse_body_sections(body_text)
 
                 if sections:
+                    all_bug_items = []
                     for section in sections:
                         epic_title = section["epic"]
                         epic_url = self._find_epic_url(epic_title, epic_urls) if epic_urls else ""
+
+                        # Collect bug fixes to render once at the end of the PL
+                        if section["bug_fixes"]:
+                            all_bug_items.extend(section["bug_fixes"])
+
+                        # Skip rendering epic headers for bug-only sections
+                        if not section["value_add"]:
+                            continue
 
                         epic_start = self.current_index
                         self._insert_text(f"{epic_title}\n")
@@ -725,14 +683,15 @@ class GoogleDocsFormatter:
                             self._insert_text(f"{section['availability']}\n")
                             self._mark_green(avail_start, self.current_index - 1)
 
-                        if section["bug_fixes"]:
-                            bug_start = self.current_index
-                            self._insert_text("Bug Fixes:\n")
-                            self._mark_bold(bug_start, bug_start + len("Bug Fixes:"))
-                            for item in section["bug_fixes"]:
-                                bug_text = self._normalize_bug_fix_bullet(item)
-                                self._insert_text(f"• {bug_text}\n")
+                        self._insert_text("\n")
 
+                    if all_bug_items:
+                        bug_start = self.current_index
+                        self._insert_text("Bug Fixes:\n")
+                        self._mark_bold(bug_start, bug_start + len("Bug Fixes:"))
+                        for item in all_bug_items:
+                            bug_text = self._normalize_bug_fix_bullet(item)
+                            self._insert_text(f"• {bug_text}\n")
                         self._insert_text("\n")
                 elif body_text:
                     # Fallback to existing Claude body parsing
