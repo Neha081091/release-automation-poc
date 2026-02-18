@@ -164,7 +164,7 @@ def update_google_docs(processed_data: dict, force_update: bool = False) -> bool
 
 
 def send_slack_notification(processed_data: dict) -> bool:
-    """Send Slack notification with processed notes (via SlackHandler with per-PL dropdowns)."""
+    """Send Slack notification with processed notes (legacy simple notification)."""
     print("\n[Step 3b] Sending Slack notification...")
 
     try:
@@ -175,18 +175,14 @@ def send_slack_notification(processed_data: dict) -> bool:
             return False
 
         release_date = processed_data.get("release_summary", "").replace("Release ", "")
-        if not release_date:
-            release_date = datetime.now().strftime("%d %B %Y")
         tldr_by_pl = processed_data.get("tldr_by_pl", {})
         product_lines = processed_data.get("product_lines", [])
-
-        # Clean PL names (remove year suffix)
-        clean_pls = [clean_pl_name(pl) for pl in product_lines if pl.lower() != "other"]
 
         # Build TL;DR summary (prose format, no bullets)
         tldr_lines = ["*Key Deployments:*"]
         for pl in product_lines:
             if pl in tldr_by_pl and pl.lower() != "other":
+                # Clean PL name (remove year suffix)
                 pl_clean = clean_pl_name(pl)
                 tldr_lines.append(f"{pl_clean} - {tldr_by_pl[pl]}")
 
@@ -196,12 +192,11 @@ def send_slack_notification(processed_data: dict) -> bool:
         doc_id = os.getenv('GOOGLE_DOC_ID', '')
         doc_url = f"https://docs.google.com/document/d/{doc_id}/edit" if doc_id else ""
 
-        # Send notification with per-PL dropdowns (new format)
+        # Send notification
         result = slack.send_review_notification(
             release_date=release_date,
             doc_url=doc_url,
-            tldr_summary=tldr_summary,
-            pl_names=clean_pls
+            tldr_summary=tldr_summary
         )
 
         if result:
@@ -235,17 +230,14 @@ def send_slack_approval_message(processed_data: dict) -> bool:
         # Check if bot token is available (required for interactive messages)
         bot_token = os.getenv('SLACK_BOT_TOKEN')
         if not bot_token:
-            print("[Step 3b] ERROR: SLACK_BOT_TOKEN not set - required for interactive approval message")
-            print("[Step 3b] Please set SLACK_BOT_TOKEN in your .env file")
-            return False
+            print("[Step 3b] WARNING: SLACK_BOT_TOKEN not set, falling back to simple notification")
+            return send_slack_notification(processed_data)
 
         # Get PLs and metadata from processed data
         pls = processed_data.get('product_lines', [])
         doc_id = os.getenv('GOOGLE_DOC_ID')
         doc_url = f"https://docs.google.com/document/d/{doc_id}/edit" if doc_id else None
         release_date = processed_data.get('release_summary', '').replace('Release ', '')
-        if not release_date:
-            release_date = datetime.now().strftime("%d %B %Y")
         notes_by_pl = processed_data.get('body_by_pl', {})
 
         # Use socket mode post_approval_message
@@ -269,8 +261,9 @@ def send_slack_approval_message(processed_data: dict) -> bool:
         print(f"[Step 3b] ERROR: {e}")
         import traceback
         traceback.print_exc()
-        print("[Step 3b] Failed to send interactive approval message")
-        return False
+        # Fall back to simple notification
+        print("[Step 3b] Falling back to simple notification...")
+        return send_slack_notification(processed_data)
 
 
 def load_deferred_pls_for_today() -> list:

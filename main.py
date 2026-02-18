@@ -80,7 +80,7 @@ def step1_fetch_jira_tickets(release_summary: str = None) -> Tuple[Optional[Dict
     """
     print_step(1, "FETCH JIRA TICKETS")
 
-    release_summary = release_summary or os.getenv('RELEASE_TICKET_SUMMARY', f'Release {_today_date_str()}')
+    release_summary = release_summary or os.getenv('RELEASE_TICKET_SUMMARY', 'Release 2nd February 2026')
     project_key = os.getenv('JIRA_PROJECT_KEY', 'DI')
 
     try:
@@ -152,8 +152,8 @@ def step2_create_release_notes(tickets: list, release_date: str = None) -> Tuple
 
     # Parse release date from environment or use default
     if not release_date:
-        release_summary = os.getenv('RELEASE_TICKET_SUMMARY', f'Release {_today_date_str()}')
-        # Extract date from "Release 17th February 2026" etc.
+        release_summary = os.getenv('RELEASE_TICKET_SUMMARY', 'Release 2nd February 2026')
+        # Extract date from "Release 2nd February 2026"
         if 'Release ' in release_summary:
             release_date = release_summary.replace('Release ', '')
         else:
@@ -646,7 +646,7 @@ Examples:
             sys.exit(1)
 
         # Build formatter to get TL;DR
-        release_summary = os.getenv('RELEASE_TICKET_SUMMARY', f'Release {_today_date_str()}')
+        release_summary = os.getenv('RELEASE_TICKET_SUMMARY', 'Release 2nd February 2026')
         release_date = args.release_date
         if not release_date:
             if 'Release ' in release_summary:

@@ -18,7 +18,7 @@ Usage:
 
     formatter = GoogleDocsFormatter()
     requests = formatter.format_release_notes(
-        release_date="<today's date, e.g. 17th February 2026>",
+        release_date="5th February 2026",
         tldr_by_pl={"DSP Core PL1": "summary..."},
         body_by_pl={"DSP Core PL1": "Epic Name\\nValue Add:\\n..."},
         product_lines=["DSP Core PL1"],
@@ -29,74 +29,28 @@ Usage:
 """
 
 import re
+import json
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
 
 
 # Color definitions (RGB values 0-1 scale for Google Docs API)
-BLUE_COLOR = {"red": 0.06, "green": 0.36, "blue": 0.7}  # Link blue - used for epic names and hyperlinks
-GREEN_COLOR = {"red": 0.13, "green": 0.55, "blue": 0.13}  # Dark green for status tags (Feature Flag and General Availability)
+BLUE_COLOR = {"red": 0.06, "green": 0.36, "blue": 0.7}  # Link blue - also used for "General Availability" label
+GREEN_COLOR = {"red": 0.13, "green": 0.55, "blue": 0.13}  # Dark green for "Feature Flag" and epic names
 GRAY_COLOR = {"red": 0.5, "green": 0.5, "blue": 0.5}  # Gray for section headers
 
-# Product Line order - grouped by category for consistent display
-PRODUCT_LINE_ORDER = [
-    # Media PLs
-    "Media PL1",
-    "Media PL2",
-    "Media",
-    # Audiences PLs
-    "Audiences PL1",
-    "Audiences PL2",
-    "Audiences",
-    # DSP Core PLs
-    "DSP Core PL1",
-    "DSP Core PL2",
-    "DSP Core PL3",
-    "DSP Core PL5",
-    "DSP PL1",
-    "DSP PL2",
-    "DSP PL3",
-    "DSP",
-    # Developer Experience
-    "Developer Experience",
-    "Developer Experience 2026",
-    # Data Ingress
-    "Data Ingress",
-    "Data Ingress 2026",
-    # Helix PLs
-    "Helix PL3",
-    "Helix",
-    # Data Governance
-    "Data Governance",
-    "Other"
-]
+# Product Line order - alphabetical
+PRODUCT_LINE_ORDER = []
 
 
 def get_ordered_pls(pl_list: list) -> list:
-    """Sort product lines according to PRODUCT_LINE_ORDER.
+    """Sort product lines alphabetically (ignoring year suffix)."""
 
-    Handles year variants by matching base PL name (e.g., "Media PL1 2026" matches "Media PL1").
-    """
-    ordered = []
+    def normalize(pl_name: str) -> str:
+        base = re.sub(r'\s+20\d{2}$', '', pl_name).strip().lower()
+        return base
 
-    def get_base_pl_name(pl_name: str) -> str:
-        """Remove year suffix from PL name for matching."""
-        return re.sub(r'\s+20\d{2}$', '', pl_name)
-
-    # First add PLs that match the preferred order (considering year variants)
-    for preferred_pl in PRODUCT_LINE_ORDER:
-        for pl in pl_list:
-            if pl in ordered:
-                continue
-            # Match exact or base name (without year)
-            if pl == preferred_pl or get_base_pl_name(pl) == preferred_pl:
-                ordered.append(pl)
-
-    # Then add any PLs not matched (at the end)
-    for pl in pl_list:
-        if pl not in ordered:
-            ordered.append(pl)
-    return ordered
+    return sorted(pl_list, key=lambda pl: (normalize(pl), pl))
 
 
 class GoogleDocsFormatter:
@@ -164,11 +118,11 @@ class GoogleDocsFormatter:
         self.formatting_positions["links"].append((start, end, url))
 
     def _mark_green(self, start: int, end: int):
-        """Mark text range as green (status tags: Feature Flag and General Availability)."""
+        """Mark text range as green (Feature Flag status and epic names)."""
         self.formatting_positions["green"].append((start, end))
 
     def _mark_blue(self, start: int, end: int):
-        """Mark text range as blue (epic names without hyperlinks)."""
+        """Mark text range as blue (General Availability status)."""
         self.formatting_positions["blue"].append((start, end))
 
     def _mark_gray(self, start: int, end: int):
@@ -184,6 +138,162 @@ class GoogleDocsFormatter:
             "DSP Core PL1" -> "DSP Core PL1"
         """
         return re.sub(r'\s+20\d{2}$', '', pl_name)
+
+    def _join_pl_names(self, pl_names: List[str]) -> str:
+        """Join PL names using commas and 'and'."""
+        if not pl_names:
+            return ""
+        if len(pl_names) == 1:
+            return pl_names[0]
+        if len(pl_names) == 2:
+            return f"{pl_names[0]} and {pl_names[1]}"
+        return f"{', '.join(pl_names[:-1])} and {pl_names[-1]}"
+
+    def _normalize_bug_fix_bullet(self, text: str) -> str:
+        """Ensure bug fix bullets start with 'Fixed'."""
+        trimmed = text.strip()
+        if not trimmed:
+            return text
+        if re.match(r'(?i)^fixed\b', trimmed):
+            return trimmed
+        if re.match(r'(?i)^fix\b', trimmed):
+            return re.sub(r'(?i)^fix\b', 'Fixed', trimmed, count=1)
+        return f"Fixed {trimmed[0].lower() + trimmed[1:] if trimmed else trimmed}"
+
+    def _parse_body_sections(self, body_text: str) -> List[Dict]:
+        """Parse body text into epic sections with value-adds, bugs, availability."""
+        sections: List[Dict] = []
+        current = None
+        mode = None  # "value" or "bug"
+
+        def start_section(title: str):
+            nonlocal current
+            if current:
+                sections.append(current)
+            current = {
+                "epic": title,
+                "value_add": [],
+                "bug_fixes": [],
+                "availability": ""
+            }
+
+        if not body_text:
+            return sections
+
+        for raw in body_text.split("\n"):
+            line = raw.strip().replace("**", "")
+            if not line:
+                continue
+
+            # Normalize markdown epic heading
+            if line.startswith("#### "):
+                line = line[5:].strip()
+
+            # Normalize markdown epic link [Epic](url)
+            link_match = re.match(r'^\[([^\]]+)\]\([^)]+\)$', line)
+            if link_match:
+                line = link_match.group(1).strip()
+
+            lower = line.lower()
+            if lower.startswith("value add"):
+                mode = "value"
+                continue
+            if lower.startswith("bug fix"):
+                mode = "bug"
+                continue
+            if line in ("General Availability", "Feature Flag"):
+                if current:
+                    current["availability"] = line
+                mode = None
+                continue
+
+            if mode is None:
+                start_section(line)
+                continue
+
+            clean = re.sub(r'^[●•\*\-]\s*', '', line).strip()
+            if not clean:
+                continue
+            if current is None:
+                start_section("Other")
+            if mode == "value":
+                current["value_add"].append(clean)
+            elif mode == "bug":
+                current["bug_fixes"].append(clean)
+
+        if current:
+            sections.append(current)
+        return sections
+
+    def _extract_value_add_summaries(self, body_text: str) -> Dict[str, str]:
+        """Extract first value-add sentence per epic from Claude body text."""
+        summaries: Dict[str, str] = {}
+        if not body_text:
+            return summaries
+        lines = body_text.split('\n')
+        current_epic = None
+        in_value = False
+        for raw in lines:
+            line = raw.strip()
+            if not line:
+                continue
+            lower = line.lower()
+            if lower.startswith("#### "):
+                line = line[5:].strip()
+                lower = line.lower()
+            if lower.startswith("value add"):
+                in_value = True
+                continue
+            if lower.startswith("bug fix"):
+                in_value = False
+                continue
+            if lower in ("general availability", "feature flag"):
+                continue
+            if not in_value:
+                # treat as epic heading
+                if not line.startswith(("●", "•", "-", "*")):
+                    current_epic = line
+                continue
+            # Capture the first value-add line under this epic
+            if current_epic and current_epic not in summaries:
+                clean = re.sub(r'^[●•\*\-]\s*', '', line).strip()
+                if clean:
+                    summaries[current_epic] = clean
+        return summaries
+
+    def _availability_tag(self, ticket: Dict) -> str:
+        """Return availability tag string for a ticket."""
+        labels = ticket.get("labels") or []
+        release_type = (ticket.get("release_type") or "").strip().lower()
+
+        for label in labels:
+            label_lower = label.lower()
+            if label_lower.startswith(("ff:", "feature_flag:", "feature-flag:", "featureflag:")):
+                name = label.split(":", 1)[1].strip()
+                if name:
+                    return f"[FF: {name}]"
+            if label_lower.startswith(("ff-", "feature-flag-")):
+                name = label.split("-", 1)[1].strip()
+                if name:
+                    return f"[FF: {name}]"
+
+        if release_type in ("ga", "general availability"):
+            return "[GA]"
+        if "feature flag" in release_type or release_type == "ff":
+            return "[FF]"
+
+        for label in labels:
+            label_lower = label.lower()
+            if label_lower in ("ga", "general_availability") or "general availability" in label_lower:
+                return "[GA]"
+            if label_lower in ("ff", "feature_flag", "featureflag") or "feature flag" in label_lower:
+                return "[FF]"
+
+        issue_type = (ticket.get("issue_type") or "").lower()
+        if issue_type in ("story", "task"):
+            return "[GA]"
+
+        return ""
 
     def _get_pl_category(self, pl_name: str) -> str:
         """Determine the category header for a product line."""
@@ -430,7 +540,9 @@ class GoogleDocsFormatter:
         product_lines: List[str],
         release_versions: Dict[str, str],
         fix_version_urls: Dict[str, str],
-        epic_urls_by_pl: Dict[str, Dict[str, str]]
+        epic_urls_by_pl: Dict[str, Dict[str, str]],
+        grouped_data: Optional[Dict[str, Dict[str, List[str]]]] = None,
+        ticket_map: Optional[Dict[str, Dict]] = None
     ) -> Tuple[List[Dict], List[Dict]]:
         """
         Format release notes into Google Docs API requests.
@@ -461,40 +573,28 @@ class GoogleDocsFormatter:
         tldr_header = "------------------TL;DR:------------------\n\n"
         tldr_header_start = self._insert_text(tldr_header)
 
-        # Key Deployments header (bold)
-        key_deploy_header = "Key Deployments:\n"
-        key_deploy_start = self._insert_text(key_deploy_header)
-        self._mark_bold(key_deploy_start, key_deploy_start + len("Key Deployments:"))
-
-        # TL;DR items per PL (bullet point format)
-        # Skip "Other" category as it's a catch-all for unclassified tickets
-        # Sort PLs according to PRODUCT_LINE_ORDER for consistent display
+        # Key Deployments line with PL list
         sorted_product_lines = get_ordered_pls(product_lines)
-        for pl in sorted_product_lines:
-            if pl not in tldr_by_pl:
-                continue
-            if pl.lower() == "other":
-                continue  # Skip "Other" in TL;DR
+        tldr_pls = [self._clean_pl_name(pl) for pl in sorted_product_lines if pl in tldr_by_pl and pl.lower() != "other"]
+        if tldr_pls:
+            key_deploy_line = f"Key Deployments: {self._join_pl_names(tldr_pls)}\n"
+            key_deploy_start = self._insert_text(key_deploy_line)
+            self._mark_bold(key_deploy_start, key_deploy_start + len("Key Deployments:"))
 
+        # TL;DR items per PL (sub-bullets)
+        for pl in sorted_product_lines:
+            if pl not in tldr_by_pl or pl.lower() == "other":
+                continue
             summary = tldr_by_pl[pl]
             pl_clean = self._clean_pl_name(pl)
-
-            # Capitalize first letter of summary after the dash
             if summary:
                 summary = summary[0].upper() + summary[1:] if len(summary) > 1 else summary.upper()
-
-            # Insert bullet point
-            self._insert_text("• ")
-
-            # Insert PL name (bold, NO hyperlink - black text)
-            pl_start = self.current_index
-            self._insert_text(pl_clean)
-            pl_end = self.current_index
+            bullet_text = f"• {pl_clean} - {summary}\n"
+            bullet_start = self.current_index
+            self._insert_text(bullet_text)
+            pl_start = bullet_start + len("• ")
+            pl_end = pl_start + len(pl_clean)
             self._mark_bold(pl_start, pl_end)
-
-            # Insert separator and summary
-            rest_of_line = f" - {summary}\n"
-            self._insert_text(rest_of_line)
 
         # Blank line after TL;DR
         self._insert_text("\n")
@@ -508,12 +608,8 @@ class GoogleDocsFormatter:
             category = self._get_pl_category(pl)
             pl_by_category[category].append(pl)
 
-        # Define category order (grouped similar PLs together)
-        # Order: Media -> Audiences -> DSP -> Developer Experience -> Data Ingress -> Helix -> Data Governance
-        category_order = [
-            "Media", "Audiences", "DSP", "Developer Experience", "Data Ingress",
-            "Helix", "Data Governance"
-        ]
+        # Define category order (alphabetical)
+        category_order = sorted(pl_by_category.keys())
 
         # Process each category
         for category in category_order:
@@ -550,45 +646,61 @@ class GoogleDocsFormatter:
                 # Get epic URLs for this PL
                 epic_urls = epic_urls_by_pl.get(pl, {})
 
-                # Parse and format body content
-                if pl in body_by_pl:
-                    body_text = body_by_pl[pl]
+                # Parse and format body content from Claude output
+                body_text = body_by_pl.get(pl, "")
+                sections = self._parse_body_sections(body_text)
+
+                if sections:
+                    for section in sections:
+                        epic_title = section["epic"]
+                        epic_url = self._find_epic_url(epic_title, epic_urls) if epic_urls else ""
+
+                        epic_start = self.current_index
+                        self._insert_text(f"{epic_title}\n")
+                        epic_end = self.current_index
+                        self._mark_bold(epic_start, epic_end - 1)
+                        if epic_url:
+                            self._mark_link(epic_start, epic_end - 1, epic_url)
+
+                        if section["value_add"]:
+                            value_start = self.current_index
+                            self._insert_text("Value Add:\n")
+                            self._mark_bold(value_start, value_start + len("Value Add:"))
+                            for item in section["value_add"]:
+                                self._insert_text(f"• {item}\n")
+
+                        if section["availability"]:
+                            avail_start = self.current_index
+                            self._insert_text(f"{section['availability']}\n")
+                            self._mark_green(avail_start, self.current_index - 1)
+
+                        if section["bug_fixes"]:
+                            bug_start = self.current_index
+                            self._insert_text("Bug Fixes:\n")
+                            self._mark_bold(bug_start, bug_start + len("Bug Fixes:"))
+                            for item in section["bug_fixes"]:
+                                bug_text = self._normalize_bug_fix_bullet(item)
+                                self._insert_text(f"• {bug_text}\n")
+
+                        self._insert_text("\n")
+                elif body_text:
+                    # Fallback to existing Claude body parsing
                     elements = self._parse_body_content(
                         body_text, epic_urls, pl_clean, release_ver
                     )
-
-                    # Insert each element with appropriate formatting
                     for element in elements:
                         elem_start = self.current_index
                         self._insert_text(element["text"])
                         elem_end = self.current_index
-
                         if element["type"] == "epic":
                             if element.get("bold"):
-                                # Bold the epic name (excluding newline)
                                 self._mark_bold(elem_start, elem_end - 1)
-                            # Epic names are blue colored
-                            self._mark_blue(elem_start, elem_end - 1)
                             if element.get("url"):
-                                # Add hyperlink (blue link color matches epic color)
                                 self._mark_link(elem_start, elem_end - 1, element["url"])
-
                         elif element["type"] in ("value_add_header", "bug_fixes_header"):
-                            # Bold the header portion
                             bold_start, bold_end = element.get("bold_range", (0, 0))
                             if bold_end > bold_start:
                                 self._mark_bold(elem_start + bold_start, elem_start + bold_end)
-
-                        elif element["type"] == "status":
-                            # Color based on status type
-                            if element.get("color") == "green":
-                                self._mark_green(elem_start, elem_end - 1)
-                            elif element.get("color") == "blue":
-                                self._mark_blue(elem_start, elem_end - 1)
-
-                        # "prose" type has no special formatting - just regular text
-
-                    # Add spacing after body
                     self._insert_text("\n")
 
                 # Spacing between PLs
@@ -669,7 +781,7 @@ class GoogleDocsFormatter:
                 }
             })
 
-        # Green text (status tags: Feature Flag and General Availability)
+        # Green text (Feature Flag status tags and epic names)
         for start, end in self.formatting_positions["green"]:
             if end > start:
                 self.format_requests.append({
@@ -682,7 +794,7 @@ class GoogleDocsFormatter:
                     }
                 })
 
-        # Blue text (epic names without hyperlinks)
+        # Blue text (General Availability status tags)
         for start, end in self.formatting_positions["blue"]:
             if end > start:
                 self.format_requests.append({
@@ -747,20 +859,9 @@ def format_for_google_docs(
 
 # Test the formatter
 if __name__ == "__main__":
-    from datetime import datetime
-
-    def _today_date_str() -> str:
-        today = datetime.now()
-        day = today.day
-        if 11 <= day <= 13:
-            suffix = 'th'
-        else:
-            suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th')
-        return f"{day}{suffix} {today.strftime('%B %Y')}"
-
     # Sample test data
     test_data = {
-        "release_summary": _today_date_str(),
+        "release_summary": "5th February 2026",
         "product_lines": ["Media PL1", "Developer Experience", "DSP Core PL1"],
         "tldr_by_pl": {
             "Media PL1": "InventoryTier dimension now visible in Reporting for seats with enabled priority tiers; Open Auction enablement flag added for Deal IDs with new Negotiated Bid Floor field for internal auction dynamics",

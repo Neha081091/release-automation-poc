@@ -1222,16 +1222,7 @@ def main():
             return
 
         # Test inserting some content
-        from datetime import datetime
-        today = datetime.now()
-        day = today.day
-        if 11 <= day <= 13:
-            suffix = 'th'
-        else:
-            suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th')
-        today_str = f"{day}{suffix} {today.strftime('%B %Y')}"
-
-        test_content = f"""Daily Deployment Summary: {today_str}
+        test_content = """Daily Deployment Summary: 2nd February 2026
 
 ------------------TL;DR:------------------
 
