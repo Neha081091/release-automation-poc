@@ -34,7 +34,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import anthropic
-from formatter import CLAUDE_MODEL, CLAUDE_TEMPERATURE, RELEASE_NOTES_SYSTEM_PROMPT
+from formatter import CLAUDE_MODEL, CLAUDE_TEMPERATURE, RELEASE_NOTES_SYSTEM_PROMPT, parse_pl_from_fix_version
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +117,27 @@ def _build_epic_sections_context(epics: dict) -> str:
     """
     sections = []
     for epic_name, epic_tickets in epics.items():
+        # "Bug Fixes" is a synthetic key for bugs that don't belong to any feature epic.
+        # Render it as a standalone bug section so Claude knows NOT to add Value Add / GA / FF.
+        is_standalone_bugs = (epic_name == "Bug Fixes")
+
+        if is_standalone_bugs:
+            sections.append("=== Standalone Bug Fixes (NOT a feature epic) ===")
+            sections.append("Note: These bugs do not belong to any feature epic.")
+            sections.append("Write ONLY a Bug Fixes section for these — no Value Add, no availability tag.")
+            sections.append("")
+            for t in epic_tickets:
+                key = t.get("key", "")
+                summary = t.get("summary", "")
+                description = (t.get("description") or "").strip()
+                sections.append(f"  [{key}] (Bug) {summary}")
+                if description and description.lower() != summary.lower():
+                    desc_clean = _clean_description(description)
+                    if desc_clean:
+                        sections.append(f"    Context: {desc_clean}")
+            sections.append("")
+            continue
+
         # Get epic URL from first ticket that has it
         epic_url = ""
         for t in epic_tickets:
@@ -294,7 +315,13 @@ Value Add:
 * Another bullet if the epic has multiple distinct deliverables
 General Availability
 
-If the epic has Bug tickets, add a separate section AFTER value-adds:
+If the epic has Bug tickets mixed in, add a separate section AFTER value-adds:
+
+Bug Fixes:
+* Fixed [what was broken] — [what users can now do]
+
+If you see a "=== Standalone Bug Fixes (NOT a feature epic) ===" section in the data,
+output ONLY (no epic title, no Value Add, no availability tag):
 
 Bug Fixes:
 * Fixed [what was broken] — [what users can now do]
@@ -524,20 +551,22 @@ def process_tickets_with_claude():
         # Skip tickets from Hotfix fix versions
         if "hotfix" in fix_version.lower():
             continue
-        # Parse PL from fix version
-        match = re.match(r'^(.+?)\s*\d{4}:\s*Release', fix_version)
-        if match:
-            pl = match.group(1).strip()
-        else:
-            match = re.match(r'^(.+?):\s*Release', fix_version)
-            pl = match.group(1).strip() if match else "Other"
+        # Parse PL from fix version using shared helper (handles "YYYY : Release" with space)
+        pl = parse_pl_from_fix_version(fix_version)
 
-        epic_name = (
-            ticket.get("epic_name")
-            or ticket.get("summary", "").strip()
-            or ", ".join(ticket.get("components", []))
-            or "Uncategorized"
-        )
+        # Determine epic name — bug tickets without an epic group under "Bug Fixes"
+        # so they are NOT mistakenly rendered as feature epic headers
+        raw_epic = ticket.get("epic_name")
+        if raw_epic:
+            epic_name = raw_epic
+        elif issue_type == "bug":
+            epic_name = "Bug Fixes"
+        else:
+            epic_name = (
+                ticket.get("summary", "").strip()
+                or ", ".join(ticket.get("components", []))
+                or "Uncategorized"
+            )
         grouped[pl][epic_name].append(ticket)
 
         if pl not in fix_versions:
