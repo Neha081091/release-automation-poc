@@ -236,15 +236,13 @@ def generate_body_with_claude(client, product: str, fix_version: str,
     """
     Generate the detailed body section for one Product Line using full ticket context.
 
-    Sends complete ticket data including descriptions so Claude can write
-    stakeholder-quality prose — the same output you'd get in a direct Claude AI chat.
-
-    Output format matches the exact structure used in the manual Claude AI prompt:
-    - Epic names as markdown hyperlinks: #### [Epic Name](url)
-    - **Value Add**: bold with colon
-    - Flat bullet points (no sub-bullets)
-    - Separate Bug Fixes section for bugs
-    - GA/FF availability tags after value-adds
+    Output format:
+    #### [Epic Name](epic_url)
+    **Value Add**: Brief description of what this epic delivers.
+    - Ticket summary (JIRA-KEY) [GA]
+    - Another ticket summary (JIRA-KEY) [FF: flag_name]
+    **Bug Fixes:**
+    - Fixed issue with X (JIRA-KEY)
     """
     epic_context = _build_epic_sections_context(epics)
 
@@ -258,92 +256,50 @@ def generate_body_with_claude(client, product: str, fix_version: str,
         system=RELEASE_NOTES_SYSTEM_PROMPT,
         messages=[{
             "role": "user",
-            "content": f"""Release Notes Prompt (with TLDR)
+            "content": f"""Write the detailed body section for "{product}" ({fix_version}) using the ticket data below.
+There are {total} tickets across {len(epics)} epics.
 
-Find today's release ticket with summary "Release [today's date]" (e.g., "Release 13th Oct 2025"). Create a Daily Deployment Summary with this EXACT formatting:
-
-Daily Deployment Summary: [Date in format "13th Oct 2025"]
-------------------TL;DR:------------------
-Key Deployments: [List deployments, e.g., "DSP PL2 and DSP PL4"]
-
-------------------DSP------------------
-For each Product Line:
-{product}: {fix_version} (Make "{fix_version}" a blue hyperlink to the fix version)
-#### [Epic Name](epic_url)
-**Value Add**:
-* List each value-add as a separate bullet point
-* Extract from ticket summaries and descriptions
-* Focus on business value and user benefits
-* No sub-bullets, keep flat structure
-After all value-adds for an epic, add availability tag: 'Feature Flag' or 'General Availability'
-
-Rules:
-* Use blue hyperlinks for Release versions and Epic names
-* "Value Add:" should be bold
-* Keep bullet points simple and flat (no nested bullets)
-* Add blank line between different PLs
-* Exclude the release ticket itself from the summary
-* For stories (not bugs), check labels field for GA/FF information
-
-Generate professional, concise summaries emphasizing user benefits.
-
-Now write the detailed body section for "{product}" ({fix_version}) using the ticket data below. There are {total} tickets across {len(epics)} epics.
-
-Here is the FULL ticket data grouped by Epic. Read the descriptions carefully — they \
-contain the user stories, acceptance criteria, and business rationale that you should \
-reflect in the release notes:
+FULL ticket data grouped by Epic:
 
 {epic_context}
 
-Write polished, stakeholder-ready release notes following this EXACT structure for EACH epic:
+Follow this EXACT output format for EACH epic:
 
 #### [Epic Name](epic_url)
-**Value Add**:
-* A clear, stakeholder-friendly sentence explaining what shipped and why it matters.
-* Another bullet if the epic has multiple distinct deliverables.
-General Availability
-
-OR for multiple value-adds:
-
-#### [Epic Name](epic_url)
-**Value Add**:
-* First value-add bullet explaining user benefit
-* Second value-add bullet explaining user benefit
-Feature Flag
-
-If the epic has Bug tickets, add them in a separate section AFTER the value-adds:
+**Value Add**: One sentence describing what this epic delivers and its business value.
+- Ticket summary describing the change (JIRA-KEY) [GA]
+- Another ticket summary (JIRA-KEY) [FF: feature_flag_name]
 
 **Bug Fixes:**
-* Fixed issue where [description of what was broken and what was fixed]
-* Fixed [another bug description]
+- Fixed issue with X (JIRA-KEY)
 
 EXAMPLE of a complete epic section:
 
 #### [Campaigns List Page V3](https://deepintent.atlassian.net/browse/DI-12345)
-**Value Add**:
-* Improved campaign listing by allowing top bar metrics selection independently from listing columns
-* Enhanced audit log for PG Ad Groups by removing inapplicable bid fields for improved clarity
-General Availability
+**Value Add**: Improved campaign management with independent metrics selection and cleaner audit logs.
+- Improved campaign listing by allowing top bar metrics selection independently from listing columns (DI-12345) [GA]
+- Enhanced audit log for PG Ad Groups by removing inapplicable bid fields for improved clarity (DI-12346) [GA]
 
 **Bug Fixes:**
-* Fixed issue where Add frequency button disappears when directly deleting existing frequency on ad-group quickview
-* Fixed null date display in tooltip when hovering on graph datapoints in Goal Widget
+- Fixed issue where Add frequency button disappears when directly deleting existing frequency on ad-group quickview (DI-12350)
+- Fixed null date display in tooltip when hovering on graph datapoints in Goal Widget (DI-12351)
 
 Critical rules:
-- Use the Epic URL provided in the data to create markdown hyperlinks: [Epic Name](epic_url)
-- "**Value Add**:" must be bold (use ** markdown) followed by a colon
-- Keep bullet points simple and FLAT — no sub-bullets or nested lists
-- Separate Bug tickets (issue_type=Bug) into a "**Bug Fixes:**" section after value-adds
-- For story/task tickets (not bugs), check the Labels field for GA/FF information
-- Add the availability tag (General Availability or Feature Flag) on its own line after value-add bullets ONLY for stories/tasks
-- NEVER add availability tags (General Availability or Feature Flag) to the Bug Fixes section
-- If multiple tickets in an epic describe the same work across different repos, consolidate into ONE bullet
-- Keep each Epic as a SEPARATE section — do NOT merge epics together
-- Draw from ticket descriptions to explain WHY the change matters, not just WHAT changed
-- Translate developer jargon into language a PMO or executive would understand
-- Do NOT invent features or benefits not supported by the ticket data
-- Do NOT add an introduction or conclusion — jump straight into the first epic section
-- Exclude the release ticket itself from the summary
+1. Epic heading: Use #### [Epic Name](epic_url) with the URL from the data
+2. **Value Add**: followed by a colon and ONE sentence describing what the epic delivers overall
+3. Each ticket gets its OWN bullet using - prefix (dash, not asterisk)
+4. EVERY bullet MUST include the JIRA ticket key in parentheses at the end: (JIRA-KEY)
+5. For story/task tickets (NOT bugs), append availability tag INLINE at end of the bullet:
+   - [GA] for General Availability
+   - [FF: flag_name] for Feature Flag (use the actual flag name from labels if available)
+6. NEVER put availability tags on a separate line — they go INLINE at end of each bullet
+7. Bug tickets go in a separate **Bug Fixes:** section AFTER value-adds
+8. Bug fix bullets start with "Fixed" and include (JIRA-KEY) but NO availability tag
+9. If multiple tickets describe the same work, consolidate into ONE bullet but keep one JIRA key
+10. Keep each Epic SEPARATE — do NOT merge epics together
+11. Focus on user/business value, not developer implementation details
+12. Do NOT add an introduction or conclusion — jump straight into the first epic section
+13. Exclude the release ticket itself from the summary
 
 Output the formatted sections now:"""
         }]
@@ -414,13 +370,6 @@ def review_and_polish_with_claude(client, product: str, body_text: str) -> str:
     """
     Final quality review pass — Claude reviews its own body output for consistency,
     readability, and formatting correctness.
-
-    Validates against the exact format used in the manual Claude AI prompt:
-    - #### [Epic Name](url) headings
-    - **Value Add**: bold format
-    - Flat bullets only
-    - Separate Bug Fixes section
-    - GA/FF availability tags
     """
     message = client.messages.create(
         model=CLAUDE_MODEL,
@@ -437,24 +386,24 @@ def review_and_polish_with_claude(client, product: str, body_text: str) -> str:
 Review and fix ONLY if there are actual issues. The format must match this exact structure:
 
 #### [Epic Name](url)
-**Value Add**:
-* Flat bullet describing user value
-* Another flat bullet if needed
-General Availability
+**Value Add**: One sentence describing what this epic delivers.
+- Ticket summary describing the change (JIRA-KEY) [GA]
+- Another ticket summary (JIRA-KEY) [FF: feature_flag_name]
 
 **Bug Fixes:**
-* Fixed issue where [description]
+- Fixed issue with X (JIRA-KEY)
 
 Validation checklist:
-1. Formatting: Every epic must use #### [Epic Name](url) as the heading
-2. "**Value Add**:" must be bold (wrapped in **) followed by a colon
-3. Bullet points must be flat — NO sub-bullets or nested lists
-4. Bug tickets must be in a separate "**Bug Fixes:**" section (not mixed with value-adds)
-5. Availability tags (General Availability / Feature Flag) must be on their own line after value-add bullets ONLY — NEVER after Bug Fixes
-6. Clarity: Each bullet should be a complete sentence a PMO can understand
-7. Accuracy: Bullets should not claim features or benefits not supported by the ticket data
-8. Consolidation: Repetitive items (e.g., same integration across repos) should be one bullet
-9. No extra sections, introductions, or conclusions
+1. Every epic must use #### [Epic Name](url) as the heading
+2. **Value Add**: must be bold with a brief epic description on the same line
+3. Bullets use - (dash) prefix, NOT * or bullet characters
+4. Every bullet MUST include JIRA ticket key in parentheses: (JIRA-KEY)
+5. Story/task bullets MUST have availability tag INLINE at end: [GA] or [FF: flag_name]
+6. Availability tags are NEVER on a separate line — always inline at end of bullet
+7. Bug tickets in separate **Bug Fixes:** section, NO availability tags on bugs
+8. Each bullet is a clear sentence a PMO can understand
+9. Repetitive items consolidated into one bullet
+10. No extra sections, introductions, or conclusions
 
 If the draft is already good, return it unchanged. Output ONLY the final release notes."""
             }

@@ -160,21 +160,43 @@ class GoogleDocsFormatter:
             return re.sub(r'(?i)^fix\b', 'Fixed', trimmed, count=1)
         return f"Fixed {trimmed[0].lower() + trimmed[1:] if trimmed else trimmed}"
 
+    def _extract_inline_tag(self, text: str) -> Tuple[str, str]:
+        """Extract inline [GA] or [FF: name] tag from end of bullet text.
+
+        Returns:
+            Tuple of (text_without_tag, tag_string)
+            tag_string is e.g. "[GA]", "[FF: feature_flag_name]", or ""
+        """
+        # Match [GA] or [FF] or [FF: some_name] at end of line
+        tag_match = re.search(r'\s*(\[(?:GA|FF(?::\s*[^\]]+)?)\])\s*$', text)
+        if tag_match:
+            return text[:tag_match.start()].strip(), tag_match.group(1)
+        return text, ""
+
     def _parse_body_sections(self, body_text: str) -> List[Dict]:
-        """Parse body text into epic sections with value-adds, bugs, availability."""
+        """Parse body text into epic sections with value-adds, bugs, inline tags.
+
+        Expected format from Claude:
+            #### [Epic Name](url)
+            **Value Add**: Brief description of what this epic delivers.
+            - Ticket summary (JIRA-KEY) [GA]
+            - Another summary (JIRA-KEY) [FF: flag_name]
+            **Bug Fixes:**
+            - Fixed issue with X (JIRA-KEY)
+        """
         sections: List[Dict] = []
         current = None
         mode = None  # "value" or "bug"
 
-        def start_section(title: str):
+        def start_section(title: str, description: str = ""):
             nonlocal current
             if current:
                 sections.append(current)
             current = {
                 "epic": title,
-                "value_add": [],
-                "bug_fixes": [],
-                "availability": ""
+                "value_add_desc": description,  # brief description after **Value Add**:
+                "value_add": [],      # list of {"text": str, "tag": str}
+                "bug_fixes": [],      # list of str
             }
 
         if not body_text:
@@ -185,39 +207,62 @@ class GoogleDocsFormatter:
             if not line:
                 continue
 
-            # Normalize markdown epic heading
+            # Detect #### heading — ALWAYS starts a new epic section
+            is_heading = False
             if line.startswith("#### "):
                 line = line[5:].strip()
+                is_heading = True
 
-            # Normalize markdown epic link [Epic](url)
+            # Normalize markdown link [Epic](url) -> Epic
             link_match = re.match(r'^\[([^\]]+)\]\([^)]+\)$', line)
             if link_match:
                 line = link_match.group(1).strip()
+                is_heading = True  # A standalone link line is an epic heading
+
+            # If this was an #### heading, start a new section regardless of mode
+            if is_heading:
+                mode = None
+                start_section(line)
+                continue
 
             lower = line.lower()
+
+            # Check for "Value Add: description" line
             if lower.startswith("value add"):
                 mode = "value"
+                # Extract description after "Value Add:" on the same line
+                desc = ""
+                colon_idx = line.find(":")
+                if colon_idx >= 0 and colon_idx < len(line) - 1:
+                    desc = line[colon_idx + 1:].strip()
+                if current:
+                    current["value_add_desc"] = desc
                 continue
+
             if lower.startswith("bug fix"):
                 mode = "bug"
                 continue
+
+            # Handle standalone availability tags (legacy format, kept as fallback)
             if line in ("General Availability", "Feature Flag"):
-                if current:
-                    current["availability"] = line
                 mode = None
                 continue
 
+            # If not in value/bug mode, treat as epic heading
             if mode is None:
                 start_section(line)
                 continue
 
+            # Strip bullet prefix (-, *, •, ●)
             clean = re.sub(r'^[●•\*\-]\s*', '', line).strip()
             if not clean:
                 continue
             if current is None:
                 start_section("Other")
+
             if mode == "value":
-                current["value_add"].append(clean)
+                text, tag = self._extract_inline_tag(clean)
+                current["value_add"].append({"text": text, "tag": tag})
             elif mode == "bug":
                 current["bug_fixes"].append(clean)
 
@@ -573,15 +618,16 @@ class GoogleDocsFormatter:
         tldr_header = "------------------TL;DR:------------------\n\n"
         tldr_header_start = self._insert_text(tldr_header)
 
-        # Key Deployments line with PL list
+        # * Key Deployments: line as a bullet
         sorted_product_lines = get_ordered_pls(product_lines)
         tldr_pls = [self._clean_pl_name(pl) for pl in sorted_product_lines if pl in tldr_by_pl and pl.lower() != "other"]
         if tldr_pls:
-            key_deploy_line = f"Key Deployments: {self._join_pl_names(tldr_pls)}\n"
+            key_deploy_line = f"* Key Deployments:\n"
             key_deploy_start = self._insert_text(key_deploy_line)
-            self._mark_bold(key_deploy_start, key_deploy_start + len("Key Deployments:"))
+            # Bold "Key Deployments:" (after the "* " prefix)
+            self._mark_bold(key_deploy_start + 2, key_deploy_start + 2 + len("Key Deployments:"))
 
-        # TL;DR items per PL (sub-bullets)
+        # TL;DR items per PL (indented sub-bullets)
         for pl in sorted_product_lines:
             if pl not in tldr_by_pl or pl.lower() == "other":
                 continue
@@ -589,10 +635,10 @@ class GoogleDocsFormatter:
             pl_clean = self._clean_pl_name(pl)
             if summary:
                 summary = summary[0].upper() + summary[1:] if len(summary) > 1 else summary.upper()
-            bullet_text = f"• {pl_clean} - {summary}\n"
+            bullet_text = f"   * {pl_clean} - {summary}\n"
             bullet_start = self.current_index
             self._insert_text(bullet_text)
-            pl_start = bullet_start + len("• ")
+            pl_start = bullet_start + len("   * ")
             pl_end = pl_start + len(pl_clean)
             self._mark_bold(pl_start, pl_end)
 
@@ -655,6 +701,7 @@ class GoogleDocsFormatter:
                         epic_title = section["epic"]
                         epic_url = self._find_epic_url(epic_title, epic_urls) if epic_urls else ""
 
+                        # Epic heading (bold + hyperlinked)
                         epic_start = self.current_index
                         self._insert_text(f"{epic_title}\n")
                         epic_end = self.current_index
@@ -662,25 +709,40 @@ class GoogleDocsFormatter:
                         if epic_url:
                             self._mark_link(epic_start, epic_end - 1, epic_url)
 
-                        if section["value_add"]:
+                        # Value Add: description + bullets with inline tags
+                        if section["value_add"] or section.get("value_add_desc"):
+                            desc = section.get("value_add_desc", "")
+                            if desc:
+                                va_line = f"Value Add: {desc}\n"
+                            else:
+                                va_line = "Value Add:\n"
                             value_start = self.current_index
-                            self._insert_text("Value Add:\n")
+                            self._insert_text(va_line)
                             self._mark_bold(value_start, value_start + len("Value Add:"))
+
                             for item in section["value_add"]:
-                                self._insert_text(f"• {item}\n")
+                                text = item["text"]
+                                tag = item.get("tag", "")
+                                if tag:
+                                    bullet_line = f"- {text} {tag}\n"
+                                else:
+                                    bullet_line = f"- {text}\n"
+                                bullet_start = self.current_index
+                                self._insert_text(bullet_line)
+                                # Color the inline tag green
+                                if tag:
+                                    tag_start = self.current_index - len(tag) - 1  # -1 for \n
+                                    tag_end = tag_start + len(tag)
+                                    self._mark_green(tag_start, tag_end)
 
-                        if section["availability"]:
-                            avail_start = self.current_index
-                            self._insert_text(f"{section['availability']}\n")
-                            self._mark_green(avail_start, self.current_index - 1)
-
+                        # Bug Fixes section
                         if section["bug_fixes"]:
                             bug_start = self.current_index
                             self._insert_text("Bug Fixes:\n")
                             self._mark_bold(bug_start, bug_start + len("Bug Fixes:"))
                             for item in section["bug_fixes"]:
                                 bug_text = self._normalize_bug_fix_bullet(item)
-                                self._insert_text(f"• {bug_text}\n")
+                                self._insert_text(f"- {bug_text}\n")
 
                         self._insert_text("\n")
                 elif body_text:
@@ -869,28 +931,23 @@ if __name__ == "__main__":
             "DSP Core PL1": "Forecasting improvements with frequency cap calculation logic moved to API side, returning minimum FCAP per day with timeframe for consistent results"
         },
         "body_by_pl": {
-            "Media PL1": """Inventory Priority Tiers - Reporting
-Value Add:
-InventoryTier dimension is now available in Reporting for seats that have enabled priority tiers, providing visibility into inventory tier performance.
-General Availability
+            "Media PL1": """#### [Inventory Priority Tiers - Reporting](https://jira.example.com/epic/inventory)
+**Value Add**: Inventory tier visibility in reporting for better performance analysis.
+- InventoryTier dimension now available in Reporting for seats with enabled priority tiers (DI-10001) [GA]
 
-Ops UI Enhancements
-Value Add:
-OA Enablement Flag has been added for Deal IDs along with the Negotiated Bid Floor Value, enhancing deal management capabilities in Ops UI.
-General Availability""",
-            "Developer Experience": """Migration of data pipelines from spring batch to airflow
-Value Add:
-REST API changes have been evaluated and prepared for Airflow upgrade across planner-service, patient-planner-service, event-consumer-service, di-match-service, and account-manager-service.
-General Availability
+#### [Ops UI Enhancements](https://jira.example.com/epic/ops-ui)
+**Value Add**: Enhanced deal management with OA enablement and bid floor controls.
+- OA Enablement Flag added for Deal IDs with Negotiated Bid Floor Value (DI-10010) [GA]""",
+            "Developer Experience": """#### [Migration of data pipelines from spring batch to airflow](https://jira.example.com/epic/airflow)
+**Value Add**: Airflow upgrade compatibility across 5 core services.
+- REST API changes evaluated and prepared for Airflow upgrade (DI-20001) [GA]
 
-Saarthi Code Reviewer integration across major repositories
-Value Add:
-Saarthi AI code reviewer is now integrated into di-agentic-service and common-graphql repositories, enabling automated code review across more codebases.
-General Availability""",
-            "DSP Core PL1": """Forecasting
-Value Add:
-FCAP calculation logic has been moved to the API side, improving forecasting performance and maintainability.
-General Availability"""
+#### [Saarthi Code Reviewer integration](https://jira.example.com/epic/saarthi)
+**Value Add**: Automated code review expanded to additional repositories.
+- Saarthi AI code reviewer integrated into di-agentic-service and common-graphql (DI-20010) [GA]""",
+            "DSP Core PL1": """#### [Forecasting](https://jira.example.com/epic/forecasting)
+**Value Add**: Improved forecasting performance with API-side FCAP calculation.
+- FCAP calculation logic moved to API side for better performance (DI-30001) [GA]"""
         },
         "release_versions": {
             "Media PL1": "Release 5.0",
