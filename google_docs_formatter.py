@@ -618,16 +618,15 @@ class GoogleDocsFormatter:
         tldr_header = "------------------TL;DR:------------------\n\n"
         tldr_header_start = self._insert_text(tldr_header)
 
-        # * Key Deployments: line as a bullet
+        # Key Deployments line with PL list
         sorted_product_lines = get_ordered_pls(product_lines)
         tldr_pls = [self._clean_pl_name(pl) for pl in sorted_product_lines if pl in tldr_by_pl and pl.lower() != "other"]
         if tldr_pls:
-            key_deploy_line = f"* Key Deployments:\n"
+            key_deploy_line = f"Key Deployments: {self._join_pl_names(tldr_pls)}\n"
             key_deploy_start = self._insert_text(key_deploy_line)
-            # Bold "Key Deployments:" (after the "* " prefix)
-            self._mark_bold(key_deploy_start + 2, key_deploy_start + 2 + len("Key Deployments:"))
+            self._mark_bold(key_deploy_start, key_deploy_start + len("Key Deployments:"))
 
-        # TL;DR items per PL (indented sub-bullets)
+        # TL;DR items per PL (bullet points)
         for pl in sorted_product_lines:
             if pl not in tldr_by_pl or pl.lower() == "other":
                 continue
@@ -635,10 +634,10 @@ class GoogleDocsFormatter:
             pl_clean = self._clean_pl_name(pl)
             if summary:
                 summary = summary[0].upper() + summary[1:] if len(summary) > 1 else summary.upper()
-            bullet_text = f"   * {pl_clean} - {summary}\n"
+            bullet_text = f"• {pl_clean} - {summary}\n"
             bullet_start = self.current_index
             self._insert_text(bullet_text)
-            pl_start = bullet_start + len("   * ")
+            pl_start = bullet_start + len("• ")
             pl_end = pl_start + len(pl_clean)
             self._mark_bold(pl_start, pl_end)
 
@@ -709,16 +708,16 @@ class GoogleDocsFormatter:
                         if epic_url:
                             self._mark_link(epic_start, epic_end - 1, epic_url)
 
-                        # Value Add: description + bullets with inline tags
+                        # Value Add: on own line, then description, then bullets
                         if section["value_add"] or section.get("value_add_desc"):
+                            value_start = self.current_index
+                            self._insert_text("Value Add:\n")
+                            self._mark_bold(value_start, value_start + len("Value Add:"))
+
+                            # Brief epic description on its own line under Value Add:
                             desc = section.get("value_add_desc", "")
                             if desc:
-                                va_line = f"Value Add: {desc}\n"
-                            else:
-                                va_line = "Value Add:\n"
-                            value_start = self.current_index
-                            self._insert_text(va_line)
-                            self._mark_bold(value_start, value_start + len("Value Add:"))
+                                self._insert_text(f"{desc}\n")
 
                             for item in section["value_add"]:
                                 text = item["text"]
