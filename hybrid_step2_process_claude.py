@@ -38,6 +38,50 @@ from formatter import CLAUDE_MODEL, CLAUDE_TEMPERATURE, RELEASE_NOTES_SYSTEM_PRO
 
 
 # ---------------------------------------------------------------------------
+# Markdown stripping & post-processing
+# ---------------------------------------------------------------------------
+
+def _strip_markdown_from_body(text: str) -> str:
+    """
+    Strip markdown formatting that Claude sometimes emits despite instructions.
+
+    Handles:
+    - Double-nested links: [[text](url)](url) -> text
+    - Markdown links: [text](url) -> text
+    - Bold markers: **text** -> text
+    - Heading markers: #### text -> text
+    - Duplicate consecutive lines
+    """
+    if not text:
+        return text
+
+    # Strip markdown links in two passes to handle brackets in text
+    # Pass 1: Standard links [text](url) where text has no brackets
+    text = re.sub(r'\[([^\[\]]+)\]\([^)]*\)', r'\1', text)
+    # Pass 2: Links with inner brackets [[text] rest](url)
+    text = re.sub(r'\[(\[[^\]]*\][^\[\]]*)\]\([^)]*\)', r'\1', text)
+
+    # Replace **bold** markers -> plain text
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+
+    # Replace #### heading markers -> plain text
+    text = re.sub(r'^####\s+', '', text, flags=re.MULTILINE)
+
+    # Remove duplicate consecutive non-blank lines
+    lines = text.split('\n')
+    deduped = []
+    prev_stripped = None
+    for line in lines:
+        stripped = line.strip()
+        if stripped and stripped == prev_stripped:
+            continue
+        deduped.append(line)
+        prev_stripped = stripped
+
+    return '\n'.join(deduped)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -566,18 +610,16 @@ def process_tickets_with_claude():
         pl = parse_pl_from_fix_version(fix_version)
 
         # Determine epic name — bug tickets without an epic group under "Bug Fixes"
-        # so they are NOT mistakenly rendered as feature epic headers
+        # so they are NOT mistakenly rendered as feature epic headers.
+        # Non-bug tickets without an epic are grouped under "General Enhancements"
+        # to avoid each ticket becoming its own fake epic section.
         raw_epic = ticket.get("epic_name")
         if raw_epic:
             epic_name = raw_epic
         elif issue_type == "bug":
             epic_name = "Bug Fixes"
         else:
-            epic_name = (
-                ticket.get("summary", "").strip()
-                or ", ".join(ticket.get("components", []))
-                or "Uncategorized"
-            )
+            epic_name = "General Enhancements"
         grouped[pl][epic_name].append(ticket)
 
         if pl not in fix_versions:
@@ -622,7 +664,8 @@ def process_tickets_with_claude():
         fv = fix_versions.get(pl, "")
         print(f"  Processing {pl}...")
         try:
-            body_by_pl[pl] = generate_body_with_claude(client, pl, fv, epics)
+            raw_body = generate_body_with_claude(client, pl, fv, epics)
+            body_by_pl[pl] = _strip_markdown_from_body(raw_body)
             print(f"  -> {pl}: generated ({len(body_by_pl[pl])} chars)")
         except Exception as e:
             print(f"  ERROR {pl}: {e}")
@@ -662,7 +705,8 @@ def process_tickets_with_claude():
     for pl in body_by_pl:
         print(f"  Reviewing {pl}...")
         try:
-            body_by_pl[pl] = review_and_polish_with_claude(client, pl, body_by_pl[pl])
+            raw_reviewed = review_and_polish_with_claude(client, pl, body_by_pl[pl])
+            body_by_pl[pl] = _strip_markdown_from_body(raw_reviewed)
             print(f"  -> {pl}: reviewed ({len(body_by_pl[pl])} chars)")
         except Exception as e:
             print(f"  Review skipped for {pl}: {e}")

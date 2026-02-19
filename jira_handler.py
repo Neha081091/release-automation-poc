@@ -364,12 +364,19 @@ class JiraHandler:
         # Method 1: customfield_10014 (Epic Link in some Jira instances)
         if fields.get("customfield_10014"):
             epic_key = fields.get("customfield_10014")
-        # Method 2: parent field (for next-gen projects or sub-tasks)
+        # Method 2: parent field (for next-gen/team-managed projects or sub-tasks)
         elif fields.get("parent"):
             parent = fields.get("parent", {})
-            if parent.get("fields", {}).get("issuetype", {}).get("name") == "Epic":
+            parent_type = (parent.get("fields", {}).get("issuetype", {}).get("name") or "").lower()
+            if "epic" in parent_type:
+                # Parent is an Epic — use it directly
                 epic_key = parent.get("key")
                 epic_name = parent.get("fields", {}).get("summary")
+            elif parent_type not in ("sub-task", "subtask"):
+                # Parent is a Story/Task/etc. — use parent summary as group name
+                # and try to resolve the parent's own epic link
+                epic_name = parent.get("fields", {}).get("summary")
+                epic_key = parent.get("key")
         # Method 3: customfield_10008 (Epic Name in some instances)
         if fields.get("customfield_10008"):
             epic_name = fields.get("customfield_10008")

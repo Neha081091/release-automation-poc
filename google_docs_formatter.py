@@ -239,10 +239,17 @@ class GoogleDocsFormatter:
             if line.startswith("#### "):
                 line = line[5:].strip()
 
-            # Normalize markdown epic link [Epic](url)
-            link_match = re.match(r'^\[([^\]]+)\]\([^)]+\)$', line)
+            # Normalize markdown epic link [Epic](url) - handles empty URLs too
+            link_match = re.match(r'^\[([^\]]+)\]\([^)]*\)$', line)
             if link_match:
                 line = link_match.group(1).strip()
+
+            # Strip any remaining inline markdown links within the line
+            line = re.sub(r'\[([^\[\]]+)\]\([^)]*\)', r'\1', line)
+            line = re.sub(r'\[(\[[^\]]*\][^\[\]]*)\]\([^)]*\)', r'\1', line)
+
+            # Strip bold markers **text** -> text
+            line = re.sub(r'\*\*([^*]+)\*\*', r'\1', line)
 
             lower = line.lower()
             if lower.startswith("value add"):
@@ -273,7 +280,35 @@ class GoogleDocsFormatter:
 
         if current:
             sections.append(current)
-        return sections
+
+        # Deduplicate entries within each section
+        for section in sections:
+            section["value_add"] = list(dict.fromkeys(section["value_add"]))
+            section["bug_fixes"] = list(dict.fromkeys(section["bug_fixes"]))
+
+        # Merge duplicate epic sections (same epic name appearing multiple times)
+        merged = {}
+        order = []
+        for section in sections:
+            epic = section["epic"]
+            if epic in merged:
+                merged[epic]["value_add"].extend(section["value_add"])
+                merged[epic]["bug_fixes"].extend(section["bug_fixes"])
+                if section["availability"] and not merged[epic]["availability"]:
+                    merged[epic]["availability"] = section["availability"]
+            else:
+                merged[epic] = section
+                order.append(epic)
+
+        # Deduplicate again after merging
+        result = []
+        for epic in order:
+            section = merged[epic]
+            section["value_add"] = list(dict.fromkeys(section["value_add"]))
+            section["bug_fixes"] = list(dict.fromkeys(section["bug_fixes"]))
+            result.append(section)
+
+        return result
 
     def _extract_value_add_summaries(self, body_text: str) -> Dict[str, str]:
         """Extract first value-add sentence per epic from Claude body text."""
@@ -444,6 +479,15 @@ class GoogleDocsFormatter:
             List of parsed elements with text and formatting info
         """
         elements = []
+
+        # Safety net: strip any markdown that Claude may have emitted
+        # Pass 1: Standard links [text](url) where text has no brackets
+        body_text = re.sub(r'\[([^\[\]]+)\]\([^)]*\)', r'\1', body_text)
+        # Pass 2: Links with inner brackets [[text] rest](url)
+        body_text = re.sub(r'\[(\[[^\]]*\][^\[\]]*)\]\([^)]*\)', r'\1', body_text)
+        body_text = re.sub(r'\*\*([^*]+)\*\*', r'\1', body_text)
+        body_text = re.sub(r'^####\s+', '', body_text, flags=re.MULTILINE)
+
         lines = body_text.split('\n')
 
         # Filter out duplicate PL header lines
@@ -623,20 +667,23 @@ class GoogleDocsFormatter:
         tldr_header = "------------------TL;DR:------------------\n\n"
         tldr_header_start = self._insert_text(tldr_header)
 
-        # Key Deployments line with PL list
+        # Key Deployments header (PL names appear in the bullets below, not on this line)
         sorted_product_lines = get_ordered_pls(product_lines)
-        tldr_pls = [self._clean_pl_name(pl) for pl in sorted_product_lines if pl in tldr_by_pl and pl.lower() != "other"]
-        if tldr_pls:
-            key_deploy_line = f"Key Deployments: {self._join_pl_names(tldr_pls)}\n"
-            key_deploy_start = self._insert_text(key_deploy_line)
-            self._mark_bold(key_deploy_start, key_deploy_start + len("Key Deployments:"))
+        key_deploy_line = "Key Deployments:\n"
+        key_deploy_start = self._insert_text(key_deploy_line)
+        self._mark_bold(key_deploy_start, key_deploy_start + len("Key Deployments:"))
 
-        # TL;DR items per PL (sub-bullets)
+        # TL;DR items per PL (sub-bullets), deduplicated by cleaned PL name
+        seen_pl_names = set()
         for pl in sorted_product_lines:
             if pl not in tldr_by_pl or pl.lower() == "other":
                 continue
-            summary = tldr_by_pl[pl]
             pl_clean = self._clean_pl_name(pl)
+            # Skip duplicate PL names (e.g., "Developer Experience" and "Developer Experience 2026")
+            if pl_clean in seen_pl_names:
+                continue
+            seen_pl_names.add(pl_clean)
+            summary = tldr_by_pl[pl]
             if summary:
                 summary = summary[0].upper() + summary[1:] if len(summary) > 1 else summary.upper()
             bullet_text = f"• {pl_clean} - {summary}\n"
