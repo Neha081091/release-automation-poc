@@ -265,7 +265,13 @@ class GoogleDocsFormatter:
                 continue
 
             if mode is None:
-                start_section(line)
+                # Skip separator lines (---, ===, ***) and known non-epic labels
+                is_separator = bool(re.match(r'^[-=*_]{2,}$', line.strip()))
+                is_skip_label = lower.strip() in {
+                    "uncategorized", "general enhancements", "other", "bug fixes", "bug fix"
+                }
+                if not is_separator and not is_skip_label:
+                    start_section(line)
                 continue
 
             clean = re.sub(r'^[●•\*\-]\s*', '', line).strip()
@@ -756,9 +762,14 @@ class GoogleDocsFormatter:
                         has_value_add = bool(section["value_add"])
                         has_bugs = bool(section["bug_fixes"])
 
-                        # Only render the epic title when there are Value Add bullets.
-                        # Pure bug sections (no value_add) get no epic header — just "Bug Fixes:".
-                        if has_value_add:
+                        # Known labels that should never appear as epic section titles
+                        _SUPPRESS_TITLES = {
+                            "uncategorized", "general enhancements", "other",
+                            "bug fixes", "bug fix", "---", "===",
+                        }
+                        # Render the epic title only when there are Value Add bullets
+                        # AND the title is not a known non-epic label.
+                        if has_value_add and epic_title.lower().strip() not in _SUPPRESS_TITLES:
                             epic_url = self._find_epic_url(epic_title, epic_urls) if epic_urls else ""
                             epic_start = self.current_index
                             self._insert_text(f"{epic_title}\n")
