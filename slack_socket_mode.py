@@ -907,20 +907,24 @@ def handle_good_to_announce(ack, body):
             announced_pls.append(pl)
             body_for_pl[pl] = body
 
+    # ━×60 inside triple-backtick code blocks forces Slack to expand the
+    # rendered container to the full message width (Technique 1).  The code
+    # block background spans the full width of the separator line, so even
+    # short PL names look "full screen".
+    sep = "━" * 60
+
     announcement_text = f"*Daily Deployment Summary: {release_date}*\n\n"
-    announcement_text += "------------------TL;DR:------------------\n\n"
-    announcement_text += "*Key Deployments:*\n"
+    announcement_text += f"```{sep}\n  TL;DR — Key Deployments\n{sep}```\n\n"
     for pl in announced_pls:
         tldr = tldr_by_pl.get(pl) or tldr_by_pl.get(pl.replace(' 2026', ''))
         if tldr:
-            announcement_text += f"● *{pl}* - {tldr}\n"
+            announcement_text += f"● *{pl}* — {tldr}\n"
     announcement_text += "\n"
 
     for pl in announced_pls:
         version = release_versions.get(pl, "") or release_versions.get(pl.replace(' 2026', ''), "")
-        announcement_text += f"------------------{pl}------------------\n"
-        if version:
-            announcement_text += f"{pl}: {version}\n"
+        pl_label = pl + (f"   |   {version}" if version else "")
+        announcement_text += f"```{sep}\n  {pl_label}\n{sep}```\n"
         body = body_for_pl.get(pl, "")
         if body:
             announcement_text += f"{body}\n\n"
