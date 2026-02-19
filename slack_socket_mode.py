@@ -128,26 +128,64 @@ def _resolve_pl_key(pl_name: str, notes_by_pl: dict) -> str:
     return pl_name
 
 
+def _resolve_pl_key_from_processed(pl_name: str, processed_data: dict) -> str:
+    pl_clean = _clean_pl_name_for_doc(pl_name)
+    candidates = []
+    candidates.extend(processed_data.get("product_lines", []) or [])
+    candidates.extend(list((processed_data.get("tldr_by_pl", {}) or {}).keys()))
+    candidates.extend(list((processed_data.get("body_by_pl", {}) or {}).keys()))
+    candidates.extend(list((processed_data.get("release_versions", {}) or {}).keys()))
+    for key in candidates:
+        if _clean_pl_name_for_doc(key) == pl_clean:
+            return key
+    return pl_name
+
+
+def _build_text_blocks(text: str, chunk_size: int = 3000):
+    chunks = []
+    remaining = text or ""
+    while remaining:
+        chunks.append(remaining[:chunk_size])
+        remaining = remaining[chunk_size:]
+    return [{"type": "section", "text": {"type": "mrkdwn", "text": chunk}} for chunk in chunks] or [
+        {"type": "section", "text": {"type": "mrkdwn", "text": ""}}
+    ]
+
+
 def _extract_epics_from_body(body_text: str) -> list:
     epics = []
     current = None
 
+    def _normalize_line(line: str) -> str:
+        cleaned = line.strip()
+        if cleaned.startswith("#### "):
+            cleaned = cleaned[5:].strip()
+        cleaned = cleaned.replace("**", "").strip()
+        link_match = re.match(r'^\[([^\]]+)\]\([^)]+\)$', cleaned)
+        if link_match:
+            cleaned = link_match.group(1).strip()
+        return cleaned
+
     def _is_epic_header(line: str) -> bool:
-        stripped = line.strip()
+        stripped = _normalize_line(line)
         if not stripped:
             return False
-        if stripped.startswith("●") or stripped.startswith("•") or stripped.startswith("-"):
+        if stripped.startswith(("●", "•", "-", "*")):
             return False
         lowered = stripped.lower()
-        if lowered.startswith("value add:") or lowered.startswith("bug fixes:"):
+        if lowered.startswith("value add") or lowered.startswith("bug fix"):
             return False
-        if stripped in ("Value Add:", "Bug Fixes:", "General Availability", "Feature Flag", "Beta"):
+        if lowered in ("general availability", "feature flag", "beta"):
+            return False
+        if lowered in ("uncategorized", "other"):
+            return False
+        if "bug fix" in lowered:
             return False
         return True
 
     for line in body_text.splitlines():
         if _is_epic_header(line):
-            current = line.strip()
+            current = _normalize_line(line)
             if current not in epics:
                 epics.append(current)
     return epics
@@ -158,13 +196,32 @@ def _split_body_by_epic(body_text: str) -> list:
     current_epic = None
     current_lines = []
 
+    def _normalize_line(line: str) -> str:
+        cleaned = line.strip()
+        if cleaned.startswith("#### "):
+            cleaned = cleaned[5:].strip()
+        cleaned = cleaned.replace("**", "").strip()
+        link_match = re.match(r'^\[([^\]]+)\]\([^)]+\)$', cleaned)
+        if link_match:
+            cleaned = link_match.group(1).strip()
+        return cleaned
+
     def _is_epic_header(line: str) -> bool:
-        stripped = line.strip()
+        stripped = _normalize_line(line)
         if not stripped:
             return False
-        if stripped.startswith("●") or stripped.startswith("•") or stripped.startswith("-"):
+        if stripped.startswith(("●", "•", "-", "*")):
             return False
-        if stripped in ("Value Add:", "Bug Fixes:", "General Availability", "Feature Flag", "Beta"):
+        if re.fullmatch(r'[-–—]{3,}', stripped):
+            return False
+        lowered = stripped.lower()
+        if lowered.startswith("value add") or lowered.startswith("bug fix"):
+            return False
+        if lowered in ("general availability", "feature flag", "beta"):
+            return False
+        if lowered in ("uncategorized", "other"):
+            return False
+        if "bug fix" in lowered:
             return False
         return True
 
@@ -172,11 +229,12 @@ def _split_body_by_epic(body_text: str) -> list:
         if _is_epic_header(line):
             if current_epic:
                 sections.append((current_epic, current_lines))
-            current_epic = line.strip()
+            current_epic = _normalize_line(line)
             current_lines = [line]
         else:
             if current_epic:
-                current_lines.append(line)
+                if not re.fullmatch(r'\s*[-–—]{3,}\s*', line.strip()):
+                    current_lines.append(line)
             else:
                 current_epic = "Other"
                 current_lines = [line]
@@ -189,15 +247,199 @@ def _split_body_by_epic(body_text: str) -> list:
 def _filter_body_by_deferred_epics(body_text: str, deferred_epics: list) -> str:
     if not deferred_epics:
         return body_text
-    deferred_set = {e.lower().strip() for e in deferred_epics}
+    def _normalize_epic_name(name: str) -> str:
+        cleaned = name.strip()
+        if cleaned.startswith("#### "):
+            cleaned = cleaned[5:].strip()
+        cleaned = cleaned.replace("**", "").strip()
+        link_match = re.match(r'^\[([^\]]+)\]\([^)]+\)$', cleaned)
+        if link_match:
+            cleaned = link_match.group(1).strip()
+        return cleaned.lower().strip()
+
+    deferred_set = {_normalize_epic_name(e) for e in deferred_epics}
     sections = _split_body_by_epic(body_text)
     kept = []
     for epic, lines in sections:
-        if epic.lower().strip() in deferred_set:
+        if _normalize_epic_name(epic) in deferred_set:
             continue
         kept.extend(lines)
         kept.append("")
     return "\n".join(kept).strip() + ("\n" if kept else "")
+
+
+def auto_format_text(text: str, processed_data: dict = None) -> str:
+    if processed_data is None:
+        try:
+            with open('processed_notes.json', 'r') as f:
+                processed_data = json.load(f)
+        except Exception:
+            processed_data = {}
+
+    fix_version_urls = processed_data.get('fix_version_urls', {})
+    epic_urls_by_pl = processed_data.get('epic_urls_by_pl', {})
+    epic_urls_flat = processed_data.get('epic_urls', {})
+
+    def _normalize_epic_key(text: str) -> str:
+        text = re.sub(r'\s+', ' ', text.strip().lower())
+        text = re.sub(r'\s*:\s*', ':', text)
+        return text
+
+    # Flatten epic URLs for easier lookup
+    all_epic_urls = {}
+    for _, epics in epic_urls_by_pl.items():
+        if epics:
+            for epic_name, epic_url in epics.items():
+                all_epic_urls[_normalize_epic_key(epic_name)] = (epic_name, epic_url)
+    if epic_urls_flat:
+        for epic_name, epic_url in epic_urls_flat.items():
+            all_epic_urls[_normalize_epic_key(epic_name)] = (epic_name, epic_url)
+
+    lines = (text or "").split('\n')
+    formatted_lines = []
+
+    def strip_formatting(s: str) -> str:
+        s = s.strip('*')
+        s = re.sub(r'^\s*#{2,}\s*', '', s)
+        link_match = re.match(r'^<[^|]+\|(.+)>$', s)
+        if link_match:
+            s = link_match.group(1).strip('*')
+        return s.strip()
+
+    def _parse_slack_link(s: str):
+        match = re.match(r'^<([^|>]+)\|(.+)>$', s)
+        if not match:
+            return None
+        return match.group(1), match.group(2)
+
+    in_value_add = False
+    in_bug_fixes = False
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            formatted_lines.append('')
+            in_value_add = False
+            in_bug_fixes = False
+            continue
+        if re.fullmatch(r'[-–—]{3,}', stripped):
+            continue
+
+        # Normalize markdown bold (**text**) to Slack bold (*text*)
+        stripped = re.sub(r'\*\*([^*]+)\*\*', r'*\1*', stripped)
+        stripped = stripped.replace("**", "")
+
+        parsed_link = _parse_slack_link(stripped)
+        if parsed_link:
+            url, link_text = parsed_link
+            link_clean = strip_formatting(link_text)
+            if link_clean.startswith("Release "):
+                formatted_lines.append(stripped)
+            else:
+                formatted_lines.append(f"<{url}|*{link_clean}*>")
+            in_value_add = False
+            in_bug_fixes = False
+            continue
+
+        # Strip markdown heading prefixes
+        stripped = re.sub(r'^\s*#{2,}\s*', '', stripped)
+        stripped = re.sub(r'^\*\s*Value Add\s*\*:\s*', 'Value Add: ', stripped, flags=re.IGNORECASE)
+        stripped = re.sub(r'^\*\s*Bug Fixes\s*\*:\s*', 'Bug Fixes: ', stripped, flags=re.IGNORECASE)
+        stripped = re.sub(r'^\*\s+', '• ', stripped)
+        stripped = re.sub(r'^[\-]\s+', '• ', stripped)
+        bullet_stripped = re.sub(r'^[●•\*\-]\s*', '', stripped)
+        clean_text = strip_formatting(bullet_stripped)
+        clean_lower = _normalize_epic_key(clean_text)
+        if clean_lower in ("uncategorized", "other"):
+            continue
+        if "bug fix" in clean_lower and clean_lower not in ("bug fixes", "bug fixes:"):
+            continue
+
+        # Normalize "PL: <url|Release X>" to bold PL name
+        release_link_match = re.match(r'^([^:]+):\s*<([^|>]+)\|(Release\s+\d+\.\d+)>$', stripped)
+        if release_link_match:
+            pl_name = release_link_match.group(1).strip()
+            url = release_link_match.group(2).strip()
+            release_ver = release_link_match.group(3).strip()
+            formatted_lines.append(f"*{pl_name}*: <{url}|{release_ver}>")
+            in_value_add = False
+            in_bug_fixes = False
+            continue
+
+        if clean_lower in ('value add:', 'value add'):
+            formatted_lines.append('*Value Add:*')
+            in_value_add = True
+            in_bug_fixes = False
+            continue
+        if clean_lower in ('bug fixes:', 'bug fixes'):
+            formatted_lines.append('*Bug Fixes:*')
+            in_bug_fixes = True
+            in_value_add = False
+            continue
+
+        if clean_text in ('General Availability', 'Feature Flag', 'Beta'):
+            formatted_lines.append(f'`{clean_text}`')
+            in_value_add = False
+            in_bug_fixes = False
+            continue
+
+        release_match = re.match(r'^\*?([^*:]+)\*?:\s*(Release\s+\d+\.\d+)$', stripped)
+        if release_match and '<' not in stripped:
+            pl_name = release_match.group(1).strip()
+            release_ver = release_match.group(2)
+            url = None
+            pl_name_lower = pl_name.lower()
+            for stored_pl, stored_url in fix_version_urls.items():
+                stored_pl_lower = stored_pl.lower()
+                stored_pl_clean = re.sub(r'\s+20\d{2}$', '', stored_pl_lower)
+                pl_name_clean = re.sub(r'\s+20\d{2}$', '', pl_name_lower)
+                if (pl_name_lower == stored_pl_lower or
+                    pl_name_clean == stored_pl_clean or
+                    pl_name_lower in stored_pl_lower or
+                    stored_pl_lower in pl_name_lower):
+                    url = stored_url
+                    break
+            if url:
+                formatted_lines.append(f"*{pl_name}*: <{url}|{release_ver}>")
+                in_value_add = False
+                in_bug_fixes = False
+                continue
+
+        md_link = re.match(r'^\[([^\]]+)\]\(([^)]+)\)$', clean_text)
+        if md_link:
+            md_text = md_link.group(1).strip()
+            md_url = md_link.group(2).strip()
+            formatted_lines.append(f"<{md_url}|*{md_text}*>")
+            continue
+
+        clean_words = set(clean_lower.split())
+        found_epic = False
+        for epic_key, (epic_name, epic_url) in all_epic_urls.items():
+            epic_words = set(epic_key.split())
+            if not epic_words or not clean_words:
+                continue
+            common = clean_words & epic_words
+            forward_ratio = len(common) / len(epic_words)
+            reverse_ratio = len(common) / len(clean_words)
+            if forward_ratio >= 0.7 or reverse_ratio >= 0.7:
+                formatted_lines.append(f"<{epic_url}|*{clean_text}*>")
+                found_epic = True
+                break
+
+        if found_epic:
+            in_value_add = False
+            in_bug_fixes = False
+            continue
+
+        # Skip bullets/prose from epic matching
+        if '<' in stripped or stripped.startswith(('●', '•', '-', '*', '`')):
+            formatted_lines.append(stripped)
+            continue
+        if in_value_add or in_bug_fixes:
+            formatted_lines.append(f"• {stripped}")
+        else:
+            formatted_lines.append(stripped)
+
+    return '\n'.join(formatted_lines)
 
 
 def run_async(target, *args, **kwargs):
@@ -334,7 +576,7 @@ def update_message_with_status(channel: str, message_ts: str, user_id: str = Non
 def restore_pl_to_google_doc(pl_name: str, deferred_pl_data: dict, message_ts: str) -> bool:
     try:
         from google_docs_handler import GoogleDocsHandler
-        from google_docs_formatter import GoogleDocsFormatter
+        from google_docs_formatter import GoogleDocsFormatter, get_ordered_pls
 
         message_metadata = load_message_metadata()
         release_date = message_metadata.get(message_ts, {}).get('release_date', '')
@@ -392,12 +634,80 @@ def restore_pl_to_google_doc(pl_name: str, deferred_pl_data: dict, message_ts: s
             else:
                 tldr_insert_text_pos = release_start + len(section_text)
 
+        def _get_pl_category(name: str) -> str:
+            lower = name.lower()
+            if 'media' in lower:
+                return "Media"
+            if 'audience' in lower:
+                return "Audiences"
+            if 'developer' in lower:
+                return "Developer Experience"
+            if 'data ingress' in lower:
+                return "Data Ingress"
+            if 'data governance' in lower:
+                return "Data Governance"
+            if 'helix' in lower:
+                return "Helix"
+            if 'dsp' in lower:
+                return "DSP"
+            return name
+
         formatter = GoogleDocsFormatter()
         formatter.reset()
         release_ver = deferred_pl_data.get('release_version', 'Release 1.0')
         fix_version_url = deferred_pl_data.get('fix_version_url', '')
         epic_urls = deferred_pl_data.get('epic_urls', {})
         body_text = deferred_pl_data.get('body', '')
+
+        category = _get_pl_category(pl_clean)
+        header_text = f"------------------{category}------------------"
+
+        # Find category section bounds
+        category_start = section_text.find(header_text)
+        category_insert_text_pos = None
+        if category_start != -1:
+            after_header = category_start + len(header_text)
+            rest = section_text[after_header:]
+            next_header = re.search(r'\n-{10,}[^-]+-{10,}', rest)
+            category_end = after_header + (next_header.start() if next_header else len(rest))
+
+            # Find existing PL headers within category section
+            category_body = section_text[after_header:category_end]
+            pl_header_matches = list(re.finditer(r'(^[^\n]+:\s*Release\s+\d+(?:\.\d+)?)', category_body, re.MULTILINE))
+            existing_pls = []
+            for m in pl_header_matches:
+                header_line = m.group(1)
+                pl_name_part = header_line.split(":")[0].strip()
+                existing_pls.append((pl_name_part, m.start()))
+
+            # Determine insertion order
+            existing_names = [p for p, _ in existing_pls]
+            desired_order = get_ordered_pls(existing_names + [pl_clean])
+
+            insert_before = None
+            for name in desired_order:
+                if name == pl_clean:
+                    # Insert before next existing PL in order
+                    idx = desired_order.index(name)
+                    for next_name in desired_order[idx + 1:]:
+                        for existing_name, pos in existing_pls:
+                            if existing_name == next_name:
+                                insert_before = pos
+                                break
+                        if insert_before is not None:
+                            break
+                    break
+
+            if insert_before is not None:
+                category_insert_text_pos = release_start + after_header + insert_before
+            else:
+                category_insert_text_pos = release_start + category_end
+        else:
+            # Category header missing; insert at end of release section
+            category_insert_text_pos = section_end
+
+        if header_text not in section_text:
+            formatter._insert_text(f"\n{header_text}\n\n")
 
         formatter._insert_text("\n")
         formatter._insert_text(f"{pl_clean}: ")
@@ -407,31 +717,78 @@ def restore_pl_to_google_doc(pl_name: str, deferred_pl_data: dict, message_ts: s
         if fix_version_url:
             formatter._mark_link(ver_start, ver_end, fix_version_url)
 
-        elements = formatter._parse_body_content(body_text, epic_urls, pl_clean, release_ver)
-        for element in elements:
-            elem_start = formatter.current_index
-            if element["type"] == "bullet":
-                formatter._insert_text(f"    ● {element['text']}")
-            else:
-                formatter._insert_text(element["text"])
-            elem_end = formatter.current_index
-            if element["type"] == "epic":
-                if element.get("bold"):
-                    formatter._mark_bold(elem_start, elem_end - 1)
-                if element.get("url"):
-                    formatter._mark_link(elem_start, elem_end - 1, element["url"])
-            elif element["type"] in ("value_add_header", "bug_fixes_header"):
-                bold_start, bold_end = element.get("bold_range", (0, 0))
-                if bold_end > bold_start:
-                    formatter._mark_bold(elem_start + bold_start, elem_start + bold_end)
-            elif element["type"] == "status":
-                if element.get("color") == "green":
-                    formatter._mark_green(elem_start, elem_end - 1)
+        sections = formatter._parse_body_sections(body_text)
+        if sections:
+            aggregated_bug_fixes = []
+            render_sections = []
+            for section in sections:
+                epic_title = section["epic"]
+                has_value = bool(section["value_add"])
+                has_bug = bool(section["bug_fixes"])
+                if has_bug:
+                    aggregated_bug_fixes.extend(section["bug_fixes"])
+                if has_bug and not has_value:
+                    continue
+                render_sections.append(section)
+
+            for section in render_sections:
+                epic_title = section["epic"]
+                epic_url = formatter._find_epic_url(epic_title, epic_urls) if epic_urls else ""
+                epic_start = formatter.current_index
+                formatter._insert_text(f"{epic_title}\n")
+                epic_end = formatter.current_index
+                formatter._mark_bold(epic_start, epic_end - 1)
+                if epic_url:
+                    formatter._mark_link(epic_start, epic_end - 1, epic_url)
+
+                if section["value_add"]:
+                    value_start = formatter.current_index
+                    formatter._insert_text("Value Add:\n")
+                    formatter._mark_bold(value_start, value_start + len("Value Add:"))
+                    for item in section["value_add"]:
+                        formatter._insert_text(f"• {item}\n")
+
+                if section["availability"]:
+                    avail_start = formatter.current_index
+                    formatter._insert_text(f"{section['availability']}\n")
+                    formatter._mark_green(avail_start, formatter.current_index - 1)
+
+                formatter._insert_text("\n")
+
+            if aggregated_bug_fixes:
+                bug_start = formatter.current_index
+                formatter._insert_text("Bug Fixes:\n")
+                formatter._mark_bold(bug_start, bug_start + len("Bug Fixes:"))
+                for item in aggregated_bug_fixes:
+                    bug_text = formatter._normalize_bug_fix_bullet(item)
+                    formatter._insert_text(f"• {bug_text}\n")
+                formatter._insert_text("\n")
+        else:
+            elements = formatter._parse_body_content(body_text, epic_urls, pl_clean, release_ver)
+            for element in elements:
+                elem_start = formatter.current_index
+                if element["type"] == "bullet":
+                    formatter._insert_text(f"    ● {element['text']}")
+                else:
+                    formatter._insert_text(element["text"])
+                elem_end = formatter.current_index
+                if element["type"] == "epic":
+                    if element.get("bold"):
+                        formatter._mark_bold(elem_start, elem_end - 1)
+                    if element.get("url"):
+                        formatter._mark_link(elem_start, elem_end - 1, element["url"])
+                elif element["type"] in ("value_add_header", "bug_fixes_header"):
+                    bold_start, bold_end = element.get("bold_range", (0, 0))
+                    if bold_end > bold_start:
+                        formatter._mark_bold(elem_start + bold_start, elem_start + bold_end)
+                elif element["type"] == "status":
+                    if element.get("color") == "green":
+                        formatter._mark_green(elem_start, elem_end - 1)
 
         formatter._insert_text("\n")
         formatter._build_format_requests()
 
-        body_insert_index = _text_pos_to_doc_index(section_end)
+        body_insert_index = _text_pos_to_doc_index(category_insert_text_pos)
         tldr_insert_index = _text_pos_to_doc_index(tldr_insert_text_pos) if tldr_insert_text_pos is not None else None
 
         jobs = []
@@ -700,7 +1057,10 @@ def handle_tomorrow(ack, body, action):
                 pl_data['body'] = processed_data.get('body_by_pl', {}).get(original_pl, '')
                 pl_data['release_version'] = processed_data.get('release_versions', {}).get(original_pl, 'Release 1.0')
                 pl_data['fix_version_url'] = processed_data.get('fix_version_urls', {}).get(original_pl, '')
-                pl_data['epic_urls'] = processed_data.get('epic_urls_by_pl', {}).get(original_pl, {})
+                epic_urls_by_pl = processed_data.get('epic_urls_by_pl', {}).get(original_pl, {})
+                if not epic_urls_by_pl:
+                    epic_urls_by_pl = processed_data.get('epic_urls', {}) or {}
+                pl_data['epic_urls'] = epic_urls_by_pl
         except Exception:
             pass
 
@@ -860,6 +1220,7 @@ def handle_good_to_announce(ack, body):
     user = body['user']['username']
     channel = body['channel']['id']
     message_ts = body['message']['ts']
+    user_id = body['user']['id']
 
     if not all_pls_reviewed(message_ts):
         return
@@ -899,8 +1260,15 @@ def handle_good_to_announce(ack, body):
 
     announced_pls = []
     body_for_pl = {}
+    resolved_by_pl = {}
+    notes_by_pl = message_metadata.get(message_ts, {}).get('notes_by_pl', {}) if message_metadata else {}
     for pl in approved_pls:
-        body = body_by_pl.get(pl, "") or body_by_pl.get(pl.replace(' 2026', ''), "")
+        resolved_key = _resolve_pl_key_from_processed(pl, processed_data)
+        resolved_by_pl[pl] = resolved_key
+        body = body_by_pl.get(resolved_key, "") or body_by_pl.get(pl, "") or body_by_pl.get(pl.replace(' 2026', ''), "")
+        if not body and notes_by_pl:
+            notes_key = _resolve_pl_key(pl, notes_by_pl)
+            body = notes_by_pl.get(notes_key, "")
         if pl in deferred_partial and body:
             body = _filter_body_by_deferred_epics(body, deferred_partial.get(pl, []))
         if body and body.strip():
@@ -911,13 +1279,15 @@ def handle_good_to_announce(ack, body):
     announcement_text += "------------------TL;DR:------------------\n\n"
     announcement_text += "*Key Deployments:*\n"
     for pl in announced_pls:
-        tldr = tldr_by_pl.get(pl) or tldr_by_pl.get(pl.replace(' 2026', ''))
+        resolved_key = resolved_by_pl.get(pl, pl)
+        tldr = tldr_by_pl.get(resolved_key) or tldr_by_pl.get(pl) or tldr_by_pl.get(pl.replace(' 2026', ''))
         if tldr:
             announcement_text += f"● *{pl}* - {tldr}\n"
     announcement_text += "\n"
 
     for pl in announced_pls:
-        version = release_versions.get(pl, "") or release_versions.get(pl.replace(' 2026', ''), "")
+        resolved_key = resolved_by_pl.get(pl, pl)
+        version = release_versions.get(resolved_key, "") or release_versions.get(pl, "") or release_versions.get(pl.replace(' 2026', ''), "")
         announcement_text += f"------------------{pl}------------------\n"
         if version:
             announcement_text += f"{pl}: {version}\n"
@@ -926,15 +1296,32 @@ def handle_good_to_announce(ack, body):
             announcement_text += f"{body}\n\n"
 
     try:
-        result = client.chat_postMessage(channel=announce_channel, text=f"Daily Deployment Summary: {release_date}", blocks=[{
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": announcement_text}
-        }])
+        announcement_text = auto_format_text(announcement_text, processed_data)
+        blocks = _build_text_blocks(announcement_text)
+        result = client.chat_postMessage(
+            channel=announce_channel,
+            text=announcement_text[:40000],
+            blocks=blocks
+        )
         announcement_ts = result.get('ts')
         if announcement_ts:
             save_last_announcement(announce_channel, announcement_ts, announcement_text)
-    except Exception:
-        pass
+    except Exception as e:
+        error_msg = str(e)
+        try:
+            if hasattr(e, "response"):
+                error_msg = e.response.get("error", error_msg)
+        except Exception:
+            pass
+        print(f"[Socket Mode] Error posting announcement: {error_msg}")
+        try:
+            client.chat_postEphemeral(
+                channel=channel,
+                user=user_id,
+                text=f"⚠️ Failed to post the final announcement: {error_msg}"
+            )
+        except Exception:
+            pass
 
     deferred_partial_pls = list(deferred_partial.keys())
     final_blocks = [

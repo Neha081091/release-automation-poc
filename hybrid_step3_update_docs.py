@@ -307,6 +307,49 @@ def merge_deferred_pls(processed_data: dict, deferred_pls: list) -> dict:
     if not deferred_pls:
         return processed_data
 
+    import re
+    from google_docs_handler import parse_fix_version
+    from jira_handler import JiraHandler
+
+    def _extract_epic_urls_from_body(body_text: str) -> dict:
+        epic_urls = {}
+        if not body_text:
+            return epic_urls
+        for line in body_text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            match = re.match(r'^####\s*\[([^\]]+)\]\((https?://[^\)]+)\)\s*$', line)
+            if not match:
+                match = re.match(r'^\[([^\]]+)\]\((https?://[^\)]+)\)\s*$', line)
+            if match:
+                epic_name = match.group(1).strip()
+                epic_url = match.group(2).strip()
+                if epic_name and epic_url:
+                    epic_urls[epic_name] = epic_url
+        return epic_urls
+
+    def _extract_issue_keys(body_text: str) -> list:
+        if not body_text:
+            return []
+        keys = []
+        # Look for Jira browse links in markdown
+        for match in re.finditer(r'/browse/([A-Z][A-Z0-9]+-\d+)', body_text):
+            keys.append(match.group(1))
+        # Fallback: direct issue key patterns in text
+        for match in re.finditer(r'\b([A-Z][A-Z0-9]+-\d+)\b', body_text):
+            keys.append(match.group(1))
+        # De-duplicate while preserving order
+        seen = set()
+        ordered = []
+        for k in keys:
+            if k not in seen:
+                seen.add(k)
+                ordered.append(k)
+        return ordered
+
+    jira = JiraHandler()
+
     for deferred in deferred_pls:
         pl_name = deferred.get('pl')
         if not pl_name:
@@ -334,8 +377,36 @@ def merge_deferred_pls(processed_data: dict, deferred_pls: list) -> dict:
             processed_data.setdefault('fix_version_urls', {})[pl_name] = deferred['fix_version_url']
 
         # Add epic URLs
-        if deferred.get('epic_urls'):
-            processed_data.setdefault('epic_urls_by_pl', {})[pl_name] = deferred['epic_urls']
+        epic_urls = deferred.get('epic_urls') or {}
+        if not epic_urls and deferred.get('body'):
+            epic_urls = _extract_epic_urls_from_body(deferred.get('body', ''))
+        if epic_urls:
+            processed_data.setdefault('epic_urls_by_pl', {})[pl_name] = epic_urls
+
+        # Backfill release version and fix version URL if missing or default
+        release_ver = processed_data.get('release_versions', {}).get(pl_name, '') or deferred.get('release_version', '')
+        fix_url = processed_data.get('fix_version_urls', {}).get(pl_name, '') or deferred.get('fix_version_url', '')
+        if not fix_url or not release_ver or release_ver.strip().lower() == "release 1.0":
+            issue_keys = _extract_issue_keys(deferred.get('body', '') or deferred.get('notes', ''))
+            for key in issue_keys:
+                try:
+                    ticket = jira.get_ticket_details(key)
+                except Exception:
+                    ticket = None
+                if not ticket:
+                    continue
+                fix_version = ticket.get('fix_version')
+                fix_version_url = ticket.get('fix_version_url')
+                if fix_version and (not release_ver or release_ver.strip().lower() == "release 1.0"):
+                    _, parsed_release = parse_fix_version(fix_version)
+                    if parsed_release:
+                        release_ver = parsed_release
+                        processed_data.setdefault('release_versions', {})[pl_name] = release_ver
+                if fix_version_url and not fix_url:
+                    fix_url = fix_version_url
+                    processed_data.setdefault('fix_version_urls', {})[pl_name] = fix_url
+                if release_ver and fix_url:
+                    break
 
     return processed_data
 

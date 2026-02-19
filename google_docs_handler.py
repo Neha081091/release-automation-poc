@@ -518,19 +518,15 @@ class GoogleDocsHandler:
             section_text_start = match.start()
             section_text_end = match.end()
 
-            # Look back for section header (dashes)
-            prev_text = full_text[:section_text_start]
-            header_pos = prev_text.rfind('------------------')
-            if header_pos != -1:
-                # Start from after the header line
-                header_end = full_text.find('\n', header_pos)
-                if header_end != -1 and header_end < section_text_start:
-                    section_text_start = header_end + 1
+            # Start from the PL header line (do not consume category header)
+            line_start = full_text.rfind('\n', 0, section_text_start)
+            if line_start != -1 and line_start < section_text_start:
+                section_text_start = line_start + 1
 
             # Look forward for next section
             rest_text = full_text[match.end():]
             next_patterns = [
-                r'\n[A-Za-z][\w\s]+:\s*Release\s+\d+\.\d+',  # Next PL
+                r'\n[^:\n]+:\s*Release\s+\d+(?:\.\d+)?',  # Next PL (flexible)
                 r'\n------------------[^-]+------------------',  # Category header
                 r'\n═{20,}',  # Release separator
                 r'\nDaily Deployment Summary:',  # Next day's release header
@@ -737,6 +733,85 @@ class GoogleDocsHandler:
                 documentId=self.document_id,
                 body={'requests': requests}
             ).execute()
+
+            # If a category header is now empty, remove it too
+            def _get_pl_category(name: str) -> str:
+                lower = name.lower()
+                if 'media' in lower:
+                    return "Media"
+                if 'audience' in lower:
+                    return "Audiences"
+                if 'developer' in lower:
+                    return "Developer Experience"
+                if 'data ingress' in lower:
+                    return "Data Ingress"
+                if 'data governance' in lower:
+                    return "Data Governance"
+                if 'helix' in lower:
+                    return "Helix"
+                if 'dsp' in lower:
+                    return "DSP"
+                return name
+
+            # Re-read content after deletion
+            doc = self.service.documents().get(documentId=self.document_id).execute()
+            content = doc.get('body', {}).get('content', [])
+            text_segments = []
+            full_text = ""
+            for element in content:
+                if 'paragraph' in element:
+                    for text_run in element['paragraph'].get('elements', []):
+                        if 'textRun' in text_run:
+                            text_content = text_run['textRun'].get('content', '')
+                            run_start = text_run.get('startIndex', 0)
+                            run_end = text_run.get('endIndex', run_start + len(text_content))
+                            text_segments.append((text_content, run_start, run_end))
+                            full_text += text_content
+
+            def text_pos_to_doc_index(text_pos: int) -> int:
+                current_pos = 0
+                for text, doc_start, doc_end in text_segments:
+                    if current_pos + len(text) > text_pos:
+                        offset = text_pos - current_pos
+                        return doc_start + offset
+                    current_pos += len(text)
+                return text_segments[-1][2] if text_segments else 1
+
+            import re
+            category = _get_pl_category(pl_name)
+            header_text = f"------------------{category}------------------"
+            header_pos = full_text.find(header_text)
+            if header_pos != -1:
+                after_header = header_pos + len(header_text)
+                rest = full_text[after_header:]
+                next_header = re.search(r'\n-{10,}[^-]+-{10,}', rest)
+                section_end = after_header + (next_header.start() if next_header else len(rest))
+                section_text = full_text[after_header:section_end]
+                # Look for any remaining PL header lines within this category section
+                if not re.search(r'^[^\n]+:\s*Release\s+\d+(?:\.\d+)?', section_text, re.MULTILINE):
+                    # Remove header line (and following blank line if present)
+                    header_line_end = full_text.find('\n', header_pos)
+                    if header_line_end != -1:
+                        header_line_end += 1
+                    else:
+                        header_line_end = after_header
+                    # Remove one extra blank line after header if exists
+                    if full_text[header_line_end:header_line_end + 1] == "\n":
+                        header_line_end += 1
+                    doc_start = text_pos_to_doc_index(header_pos)
+                    doc_end = text_pos_to_doc_index(header_line_end)
+                    self.service.documents().batchUpdate(
+                        documentId=self.document_id,
+                        body={'requests': [{
+                            'deleteContentRange': {
+                                'range': {
+                                    'startIndex': doc_start,
+                                    'endIndex': doc_end
+                                }
+                            }
+                        }]}
+                    ).execute()
+                    print(f"[Google Docs] Removed empty category header: {category}")
 
             print(f"[Google Docs] Successfully removed {len(requests)} section(s) for PL: {pl_name}")
             return True

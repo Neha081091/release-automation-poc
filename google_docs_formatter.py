@@ -160,6 +160,14 @@ class GoogleDocsFormatter:
             return re.sub(r'(?i)^fix\b', 'Fixed', trimmed, count=1)
         return f"Fixed {trimmed[0].lower() + trimmed[1:] if trimmed else trimmed}"
 
+    def _is_bug_fix_epic_title(self, title: str) -> bool:
+        if not title:
+            return False
+        lowered = title.strip().lower()
+        if lowered in ("bug fixes", "bug fix", "uncategorized", "other"):
+            return True
+        return "bug fix" in lowered
+
     def _parse_body_sections(self, body_text: str) -> List[Dict]:
         """Parse body text into epic sections with value-adds, bugs, availability."""
         sections: List[Dict] = []
@@ -183,6 +191,8 @@ class GoogleDocsFormatter:
         for raw in body_text.split("\n"):
             line = raw.strip().replace("**", "")
             if not line:
+                continue
+            if re.fullmatch(r'[-–—]{3,}', line):
                 continue
 
             # Normalize markdown epic heading
@@ -208,6 +218,12 @@ class GoogleDocsFormatter:
                 continue
 
             if mode is None:
+                if self._is_bug_fix_epic_title(line):
+                    # Treat bug-fix epic headings as non-sections; wait for bug fixes
+                    mode = "bug"
+                    if current is None:
+                        start_section("Bug Fixes")
+                    continue
                 start_section(line)
                 continue
 
@@ -215,7 +231,7 @@ class GoogleDocsFormatter:
             if not clean:
                 continue
             if current is None:
-                start_section("Other")
+                start_section("Bug Fixes" if mode == "bug" else "Other")
             if mode == "value":
                 current["value_add"].append(clean)
             elif mode == "bug":
@@ -419,6 +435,8 @@ class GoogleDocsFormatter:
 
         for line in filtered_lines:
             stripped = line.strip()
+            if re.fullmatch(r'[-–—]{3,}', stripped):
+                continue
 
             if not stripped:
                 # Skip consecutive blank lines - only allow one blank between sections
@@ -500,6 +518,9 @@ class GoogleDocsFormatter:
                 continue
 
             # Otherwise, check if it's an epic name
+            if self._is_bug_fix_epic_title(stripped):
+                continue
+
             epic_url = self._find_epic_url(stripped, epic_urls)
             if epic_url:
                 elements.append({
@@ -517,7 +538,7 @@ class GoogleDocsFormatter:
                     not stripped.endswith(':') and
                     not stripped.startswith('http')
                 )
-                if is_likely_epic:
+                if is_likely_epic and not self._is_bug_fix_epic_title(stripped):
                     elements.append({
                         "type": "epic",
                         "text": stripped + "\n",
@@ -573,13 +594,11 @@ class GoogleDocsFormatter:
         tldr_header = "------------------TL;DR:------------------\n\n"
         tldr_header_start = self._insert_text(tldr_header)
 
-        # Key Deployments line with PL list
+        # Key Deployments label only (no PL list)
         sorted_product_lines = get_ordered_pls(product_lines)
-        tldr_pls = [self._clean_pl_name(pl) for pl in sorted_product_lines if pl in tldr_by_pl and pl.lower() != "other"]
-        if tldr_pls:
-            key_deploy_line = f"Key Deployments: {self._join_pl_names(tldr_pls)}\n"
-            key_deploy_start = self._insert_text(key_deploy_line)
-            self._mark_bold(key_deploy_start, key_deploy_start + len("Key Deployments:"))
+        key_deploy_line = "Key Deployments:\n"
+        key_deploy_start = self._insert_text(key_deploy_line)
+        self._mark_bold(key_deploy_start, key_deploy_start + len("Key Deployments:"))
 
         # TL;DR items per PL (sub-bullets)
         for pl in sorted_product_lines:
@@ -651,7 +670,24 @@ class GoogleDocsFormatter:
                 sections = self._parse_body_sections(body_text)
 
                 if sections:
+                    aggregated_bug_fixes = []
+                    render_sections = []
                     for section in sections:
+                        epic_title = section["epic"]
+                        is_bug_epic = self._is_bug_fix_epic_title(epic_title)
+                        has_value = bool(section["value_add"])
+                        has_bug = bool(section["bug_fixes"])
+
+                        if has_bug:
+                            aggregated_bug_fixes.extend(section["bug_fixes"])
+
+                        # Skip rendering bug-fix epics and bug-only sections
+                        if is_bug_epic or (has_bug and not has_value):
+                            continue
+
+                        render_sections.append(section)
+
+                    for section in render_sections:
                         epic_title = section["epic"]
                         epic_url = self._find_epic_url(epic_title, epic_urls) if epic_urls else ""
 
@@ -674,14 +710,15 @@ class GoogleDocsFormatter:
                             self._insert_text(f"{section['availability']}\n")
                             self._mark_green(avail_start, self.current_index - 1)
 
-                        if section["bug_fixes"]:
-                            bug_start = self.current_index
-                            self._insert_text("Bug Fixes:\n")
-                            self._mark_bold(bug_start, bug_start + len("Bug Fixes:"))
-                            for item in section["bug_fixes"]:
-                                bug_text = self._normalize_bug_fix_bullet(item)
-                                self._insert_text(f"• {bug_text}\n")
+                        self._insert_text("\n")
 
+                    if aggregated_bug_fixes:
+                        bug_start = self.current_index
+                        self._insert_text("Bug Fixes:\n")
+                        self._mark_bold(bug_start, bug_start + len("Bug Fixes:"))
+                        for item in aggregated_bug_fixes:
+                            bug_text = self._normalize_bug_fix_bullet(item)
+                            self._insert_text(f"• {bug_text}\n")
                         self._insert_text("\n")
                 elif body_text:
                     # Fallback to existing Claude body parsing
