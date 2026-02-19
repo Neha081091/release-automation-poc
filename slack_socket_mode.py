@@ -978,13 +978,16 @@ def handle_good_to_announce(ack, body):
         version = release_versions.get(pl, "") or release_versions.get(pl.replace(' 2026', ''), "")
         body = body_for_pl.get(pl, "")
 
-        # Technique 1: triple-backtick code block for the PL header.
-        # The code block container spans the full message width and uses a
-        # distinct monospace background, making each section clearly separated.
-        pl_header_line = pl + (f"   |   {version}" if version else "")
+        # Technique 1: code block with wide separator lines.
+        # The code block container expands to fit its longest line, so ━×60
+        # forces the box to span the full message width regardless of how
+        # short the PL name / version text is.
+        sep = "━" * 60
+        pl_center = f"  {pl}" + (f"   |   {version}" if version else "")
+        pl_header_block = f"{sep}\n{pl_center}\n{sep}"
         ann_blocks.append({
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"```{pl_header_line}```"}
+            "text": {"type": "mrkdwn", "text": f"```{pl_header_block}```"}
         })
 
         if body:
