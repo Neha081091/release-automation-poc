@@ -925,11 +925,66 @@ def handle_good_to_announce(ack, body):
         if body:
             announcement_text += f"{body}\n\n"
 
-    try:
-        result = client.chat_postMessage(channel=announce_channel, text=f"Daily Deployment Summary: {release_date}", blocks=[{
+    # Build multi-block announcement for full-width rendering in Slack.
+    # A single `section` block renders as a narrow text blob; using a `header`
+    # block plus multiple `section`/`divider` blocks claims the full channel width.
+    ann_blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"Daily Deployment Summary: {release_date}",
+                "emoji": True
+            }
+        },
+        {"type": "divider"},
+        {
             "type": "section",
-            "text": {"type": "mrkdwn", "text": announcement_text}
-        }])
+            "text": {"type": "mrkdwn", "text": "*TL;DR — Key Deployments:*"}
+        }
+    ]
+
+    tldr_lines = []
+    for pl in announced_pls:
+        tldr = tldr_by_pl.get(pl) or tldr_by_pl.get(pl.replace(' 2026', ''))
+        if tldr:
+            tldr_lines.append(f"● *{pl}* — {tldr}")
+    if tldr_lines:
+        ann_blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "\n".join(tldr_lines)}
+        })
+
+    ann_blocks.append({"type": "divider"})
+
+    # One section per PL; chunk body text to stay under Slack's 3000-char limit.
+    for pl in announced_pls:
+        version = release_versions.get(pl, "") or release_versions.get(pl.replace(' 2026', ''), "")
+        body = body_for_pl.get(pl, "")
+        pl_label = f"*{pl}*" + (f"  —  {version}" if version else "")
+        ann_blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": pl_label}
+        })
+        if body:
+            for i in range(0, len(body), 2900):
+                ann_blocks.append({
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": body[i:i + 2900]}
+                })
+        ann_blocks.append({"type": "divider"})
+
+    ann_blocks.append({
+        "type": "context",
+        "elements": [{"type": "mrkdwn", "text": f"_Announced by @{user} · Release Announcement Agent_"}]
+    })
+
+    try:
+        result = client.chat_postMessage(
+            channel=announce_channel,
+            text=f"Daily Deployment Summary: {release_date}",
+            blocks=ann_blocks
+        )
         announcement_ts = result.get('ts')
         if announcement_ts:
             save_last_announcement(announce_channel, announcement_ts, announcement_text)
