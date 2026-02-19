@@ -753,28 +753,32 @@ class GoogleDocsFormatter:
                 if sections:
                     for section in sections:
                         epic_title = section["epic"]
-                        epic_url = self._find_epic_url(epic_title, epic_urls) if epic_urls else ""
+                        has_value_add = bool(section["value_add"])
+                        has_bugs = bool(section["bug_fixes"])
 
-                        epic_start = self.current_index
-                        self._insert_text(f"{epic_title}\n")
-                        epic_end = self.current_index
-                        self._mark_bold(epic_start, epic_end - 1)
-                        if epic_url:
-                            self._mark_link(epic_start, epic_end - 1, epic_url)
+                        # Only render the epic title when there are Value Add bullets.
+                        # Pure bug sections (no value_add) get no epic header — just "Bug Fixes:".
+                        if has_value_add:
+                            epic_url = self._find_epic_url(epic_title, epic_urls) if epic_urls else ""
+                            epic_start = self.current_index
+                            self._insert_text(f"{epic_title}\n")
+                            epic_end = self.current_index
+                            self._mark_bold(epic_start, epic_end - 1)
+                            if epic_url:
+                                self._mark_link(epic_start, epic_end - 1, epic_url)
 
-                        if section["value_add"]:
                             value_start = self.current_index
                             self._insert_text("Value Add:\n")
                             self._mark_bold(value_start, value_start + len("Value Add:"))
                             for item in section["value_add"]:
                                 self._insert_text(f"• {item}\n")
 
-                        if section["availability"]:
-                            avail_start = self.current_index
-                            self._insert_text(f"{section['availability']}\n")
-                            self._mark_green(avail_start, self.current_index - 1)
+                            if section["availability"]:
+                                avail_start = self.current_index
+                                self._insert_text(f"{section['availability']}\n")
+                                self._mark_green(avail_start, self.current_index - 1)
 
-                        if section["bug_fixes"]:
+                        if has_bugs:
                             bug_start = self.current_index
                             self._insert_text("Bug Fixes:\n")
                             self._mark_bold(bug_start, bug_start + len("Bug Fixes:"))
@@ -782,7 +786,8 @@ class GoogleDocsFormatter:
                                 bug_text = self._normalize_bug_fix_bullet(item)
                                 self._insert_text(f"• {bug_text}\n")
 
-                        self._insert_text("\n")
+                        if has_value_add or has_bugs:
+                            self._insert_text("\n")
                 elif body_text:
                     # Fallback to existing Claude body parsing
                     elements = self._parse_body_content(

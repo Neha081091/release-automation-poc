@@ -609,15 +609,14 @@ def process_tickets_with_claude():
         # Parse PL from fix version using shared helper (handles "YYYY : Release" with space)
         pl = parse_pl_from_fix_version(fix_version)
 
-        # Determine epic name — bug tickets without an epic group under "Bug Fixes"
-        # so they are NOT mistakenly rendered as feature epic headers.
-        # Non-bug tickets without an epic are grouped under "General Enhancements"
-        # to avoid each ticket becoming its own fake epic section.
+        # Determine epic name.
+        # RULE: Bugs always go to "Bug Fixes" — epic is ignored for bugs.
+        # Non-bug tickets without an epic go to "General Enhancements".
         raw_epic = ticket.get("epic_name")
-        if raw_epic:
-            epic_name = raw_epic
-        elif issue_type == "bug":
+        if issue_type == "bug":
             epic_name = "Bug Fixes"
+        elif raw_epic:
+            epic_name = raw_epic
         else:
             epic_name = "General Enhancements"
         grouped[pl][epic_name].append(ticket)
