@@ -618,9 +618,11 @@ def process_tickets_with_claude():
 
         # Determine epic name.
         # RULE: Bugs always go to "Bug Fixes" — epic is ignored for bugs.
+        # RULE: Bug-fix epics (name contains "bug fix") → all tickets go to "Bug Fixes".
         # Non-bug tickets without an epic go to "General Enhancements".
         raw_epic = ticket.get("epic_name")
-        if issue_type == "bug":
+        is_bugfix_epic = raw_epic and "bug fix" in raw_epic.lower()
+        if issue_type == "bug" or is_bugfix_epic:
             epic_name = "Bug Fixes"
         elif raw_epic:
             epic_name = raw_epic

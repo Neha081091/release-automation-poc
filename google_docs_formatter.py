@@ -324,10 +324,14 @@ class GoogleDocsFormatter:
             if mode is None:
                 # Skip separator lines (---, ===, ***) and known non-epic labels
                 is_separator = bool(re.match(r'^[-=*_]{2,}$', stripped))
-                is_skip_label = lower.strip() in {
-                    "uncategorized", "general enhancements", "other",
-                    "bug fixes", "bug fix"
-                }
+                _lower_stripped = lower.strip()
+                is_skip_label = (
+                    _lower_stripped in {
+                        "uncategorized", "general enhancements", "other",
+                        "bug fixes", "bug fix"
+                    }
+                    or "bug fix" in _lower_stripped  # e.g. "Dev/Integration/Prod Bug Fixes Q4 2025"
+                )
                 if not is_separator and not is_skip_label:
                     # Strip any inline links from plain epic heading
                     clean_title = re.sub(r'\[([^\[\]]+)\]\([^)]*\)', r'\1', line)
@@ -342,7 +346,9 @@ class GoogleDocsFormatter:
             if not clean:
                 continue
             if current is None:
+                saved_mode = mode
                 start_section("Other")
+                mode = saved_mode  # restore mode — start_section resets it
 
             if mode == "value":
                 clean_text, tag = self._extract_inline_tag(clean)
@@ -849,9 +855,14 @@ class GoogleDocsFormatter:
                             "uncategorized", "general enhancements", "other",
                             "bug fixes", "bug fix", "---", "===",
                         }
+                        _title_lower = epic_title.lower().strip()
+                        _is_suppressed = (
+                            _title_lower in _SUPPRESS_TITLES
+                            or "bug fix" in _title_lower  # e.g. "Dev/Integration/Prod Bug Fixes Q4 2025"
+                        )
                         # Render the epic title only when there are Value Add bullets
                         # AND the title is not a known non-epic label.
-                        if has_value_add and epic_title.lower().strip() not in _SUPPRESS_TITLES:
+                        if has_value_add and not _is_suppressed:
                             # Use URL embedded in the parsed markdown (#### [Epic](url))
                             # if available; otherwise fall back to the epic_urls_by_pl dict.
                             epic_url = section.get("epic_url") or (
