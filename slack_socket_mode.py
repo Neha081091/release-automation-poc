@@ -1297,11 +1297,10 @@ def handle_good_to_announce(ack, body):
 
     try:
         announcement_text = auto_format_text(announcement_text, processed_data)
-        blocks = _build_text_blocks(announcement_text)
+        # Post as plain text to match typed-message layout
         result = client.chat_postMessage(
             channel=announce_channel,
-            text=announcement_text[:40000],
-            blocks=blocks
+            text=announcement_text[:40000]
         )
         announcement_ts = result.get('ts')
         if announcement_ts:
@@ -1322,6 +1321,7 @@ def handle_good_to_announce(ack, body):
             )
         except Exception:
             pass
+
 
     deferred_partial_pls = list(deferred_partial.keys())
     final_blocks = [
