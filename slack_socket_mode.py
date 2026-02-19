@@ -925,9 +925,11 @@ def handle_good_to_announce(ack, body):
         if body:
             announcement_text += f"{body}\n\n"
 
-    # Build multi-block announcement for full-width rendering in Slack.
-    # A single `section` block renders as a narrow text blob; using a `header`
-    # block plus multiple `section`/`divider` blocks claims the full channel width.
+    # Build announcement using all four Block Kit width techniques:
+    #  Technique 1 – code blocks (```):  PL headers render as wide monospace boxes
+    #  Technique 2 – \n line breaks:     preserved throughout body text (no change needed)
+    #  Technique 3 – mrkdwn sections:    body content keeps *bold* / ● bullet formatting
+    #  Technique 4 – fields (2-col grid): TL;DR expands across both columns of the channel
     ann_blocks = [
         {
             "type": "header",
@@ -944,29 +946,52 @@ def handle_good_to_announce(ack, body):
         }
     ]
 
-    tldr_lines = []
+    # Technique 4: fields render as a 2-column grid — each PL occupies one cell,
+    # and the grid stretches to fill the full message width automatically.
+    tldr_fields = []
     for pl in announced_pls:
         tldr = tldr_by_pl.get(pl) or tldr_by_pl.get(pl.replace(' 2026', ''))
         if tldr:
-            tldr_lines.append(f"● *{pl}* — {tldr}")
-    if tldr_lines:
-        ann_blocks.append({
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": "\n".join(tldr_lines)}
-        })
+            tldr_fields.append({"type": "mrkdwn", "text": f"*{pl}*\n{tldr}"})
+
+    if tldr_fields:
+        # Slack allows up to 10 fields per section block; renders as 2-column grid.
+        for i in range(0, len(tldr_fields), 10):
+            ann_blocks.append({"type": "section", "fields": tldr_fields[i:i + 10]})
+    else:
+        # Fallback if no TL;DR text: plain bullet list
+        fallback_lines = []
+        for pl in announced_pls:
+            tldr = tldr_by_pl.get(pl) or tldr_by_pl.get(pl.replace(' 2026', ''))
+            if tldr:
+                fallback_lines.append(f"● *{pl}* — {tldr}")
+        if fallback_lines:
+            ann_blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "\n".join(fallback_lines)}
+            })
 
     ann_blocks.append({"type": "divider"})
 
-    # One section per PL; chunk body text to stay under Slack's 3000-char limit.
+    # Per-PL detailed sections
     for pl in announced_pls:
         version = release_versions.get(pl, "") or release_versions.get(pl.replace(' 2026', ''), "")
         body = body_for_pl.get(pl, "")
-        pl_label = f"*{pl}*" + (f"  —  {version}" if version else "")
+
+        # Technique 1: triple-backtick code block for the PL header.
+        # The code block container spans the full message width and uses a
+        # distinct monospace background, making each section clearly separated.
+        pl_header_line = pl + (f"   |   {version}" if version else "")
         ann_blocks.append({
             "type": "section",
-            "text": {"type": "mrkdwn", "text": pl_label}
+            "text": {"type": "mrkdwn", "text": f"```{pl_header_line}```"}
         })
+
         if body:
+            # Technique 3: mrkdwn in section block — preserves *bold*, ● bullets,
+            # and all formatting Claude generated in the body text.
+            # Technique 2: \n line breaks inside body are honoured automatically.
+            # Chunk at 2900 chars to stay safely under Slack's 3000-char block limit.
             for i in range(0, len(body), 2900):
                 ann_blocks.append({
                     "type": "section",
