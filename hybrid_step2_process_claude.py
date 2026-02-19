@@ -43,7 +43,13 @@ from formatter import CLAUDE_MODEL, CLAUDE_TEMPERATURE, RELEASE_NOTES_SYSTEM_PRO
 
 def _strip_markdown_from_body(text: str) -> str:
     """
-    Strip markdown formatting that Claude sometimes emits despite instructions.
+    Strip markdown formatting from body text.
+
+    NOTE: This function is kept for backward-compatibility and emergency
+    fallback use. In the current architecture, Claude is instructed to
+    OUTPUT markdown (#### [Epic](url), **Value Add**:, [GA]/[FF:] tags),
+    and the google_docs_formatter.py parser handles that structure.
+    Do NOT call this function in the normal processing pipeline.
 
     Handles:
     - Double-nested links: [[text](url)](url) -> text
@@ -355,52 +361,54 @@ for every ticket — the Context field contains the real business value that mus
 
 --- OUTPUT FORMAT ---
 
-For each FEATURE epic (NOT the Standalone Bug Fixes section), output:
+For each FEATURE epic (NOT the Standalone Bug Fixes section), output EXACTLY this structure:
 
-[Epic Name]
-Value Add:
-* <Sentence drawn from ticket summary + description explaining what users gain>
-* <Another bullet for each distinct user benefit covered by this epic>
-General Availability   ← or "Feature Flag" based on Release Status field
+#### [Epic Name](Epic URL)
+**Value Add**:
+- <Sentence drawn from ticket summary + description explaining what users gain> [GA]
+- <Another bullet for each distinct user benefit covered by this epic> [GA]
 
-If the feature epic also contains Bug tickets, add AFTER the availability tag:
-Bug Fixes:
-* Fixed [specific problem] — [what users can now do]
+Where:
+- The Epic URL comes from the "Epic URL:" line in the context above (leave empty if none: #### [Epic Name]())
+- [GA] = General Availability; [FF: flag_name] = Feature Flag (use the flag name from labels if available)
+- Append [GA] or [FF: flag_name] at the END of EACH Value Add bullet (not on a separate line)
+- Use 2-4 bullets per epic
+
+If the feature epic also contains Bug tickets, add AFTER the last Value Add bullet:
+**Bug Fixes**:
+- Fixed [specific problem] — [what users can now do]
 
 For the "=== Standalone Bug Fixes ===" section, output ONLY:
-Bug Fixes:
-* Fixed [specific problem] — [what users can now do]
-(No epic title, no Value Add heading, no availability tag for this section.)
+**Bug Fixes**:
+- Fixed [specific problem] — [what users can now do]
+(No epic title, no **Value Add**, no [GA]/[FF] for this section.)
 
 --- EXAMPLE of the desired quality ---
 
-DSP | UI | DSP PL5 | Apollo V3 migration
-Value Add:
-* Improved application performance and data-fetching efficiency through Apollo V3 migration
-* Modernised codebase with class-based components converted to functional components, enhancing maintainability and developer experience
-General Availability
+#### [DSP | UI | DSP PL5 | Apollo V3 migration](https://deepintent.atlassian.net/browse/DI-1234)
+**Value Add**:
+- Improved application performance and data-fetching efficiency through Apollo V3 migration [GA]
+- Modernised codebase with class-based components converted to functional components, enhancing maintainability and developer experience [GA]
 
-Account Manager Revamp - Bulk Actions
-Value Add:
-* Super Admin users can now view detailed seat assignments for other Super Admin users
-* Enhanced user management with search functionality across seat assignment lists
-* Enables Super Admin users to demote another Super Admin to a normal user role from the details page
-Feature Flag
+#### [Account Manager Revamp - Bulk Actions](https://deepintent.atlassian.net/browse/DI-5678)
+**Value Add**:
+- Super Admin users can now view detailed seat assignments for other Super Admin users [FF: bulk-actions-v2]
+- Enhanced user management with search functionality across seat assignment lists [FF: bulk-actions-v2]
+- Enables Super Admin users to demote another Super Admin to a normal user role from the details page [FF: bulk-actions-v2]
 
-Bug Fixes:
-* Fixed Peer39 Usage Report to correctly display category IDs — users can now properly identify categories within the report
+**Bug Fixes**:
+- Fixed Peer39 Usage Report to correctly display category IDs — users can now properly identify categories within the report
 
 --- CRITICAL RULES ---
 1. CONTENT: Each Value Add bullet MUST be drawn from the ticket's Context (description) field, not just the summary.
-   Use 2-4 bullets per epic to capture the most important user-facing benefits.
-2. ISSUE TYPE: A ticket marked "(Bug)" must ONLY appear in a Bug Fixes section, never in Value Add.
-   A ticket marked "(Story)" or "(Task)" must ONLY appear in Value Add, never in Bug Fixes.
+2. ISSUE TYPE: A ticket marked "(Bug)" must ONLY appear in a **Bug Fixes** section, never in **Value Add**.
+   A ticket marked "(Story)" or "(Task)" must ONLY appear in **Value Add**, never in **Bug Fixes**.
 3. EPIC ISOLATION: Keep each epic as its own separate section. NEVER mix content across epics.
-4. AVAILABILITY: Use the "Release Status" field for GA/FF. Add the tag after Value Add bullets only — NEVER after Bug Fixes.
-5. SKIP garbage bugs: If a bug ticket has no meaningful description and its summary is just a raw Jira tag \
+4. AVAILABILITY: Append [GA] or [FF: flag_name] at the END of each Value Add bullet. NEVER on a separate line. NEVER after Bug Fixes.
+5. SKIP garbage bugs: If a bug has no meaningful description and its summary is just a raw Jira tag \
 (e.g. "DSP | UI | ticket-123"), skip that bug entirely.
-6. NO MARKDOWN: No ####, no **, no []() links. Plain text only.
-7. START immediately with the first epic — no introduction or conclusion.
+6. FORMAT: Use exactly #### [Epic Name](url), **Value Add**:, - bullets, **Bug Fixes**: as shown above.
+7. START immediately with the first #### epic heading — no introduction or conclusion.
 
 Output the formatted sections now:"""
         }]
@@ -498,30 +506,29 @@ Apply only these edits:
    context already implied by the epic name and other bullets — do NOT add invented facts. \
    If a bullet is clear and meaningful at 30+ words, leave it as-is.
 
-2. GARBAGE REMOVAL: Delete ONLY bullet lines (starting with * or •) that contain ZERO user-facing \
-   information — e.g., "* Fixed --", "* Fixed DSP | UI | DSP-123 |" with no further description. \
-   NEVER delete or modify an epic section title. Epic titles are always valid even if they look like \
-   Jira tags (e.g., "DSP | UI | DSP PL5 | Apollo V3 migration" IS a valid epic title, keep it).
+2. GARBAGE REMOVAL: Delete ONLY bullet lines (starting with - or *) that contain ZERO user-facing \
+   information — e.g., "- Fixed --", "- Fixed DSP | UI | DSP-123 |" with no further description. \
+   NEVER delete or modify an epic section title (#### heading). Epic titles are always valid.
 
 3. ISSUE TYPE ENFORCEMENT: If a Value Add bullet describes a bug fix (starts with "Fixed"), move it \
-   to the Bug Fixes section of that epic. If a Bug Fixes bullet is actually a feature, move it to \
-   Value Add. Do NOT invent a Bug Fixes section if none existed — only move existing bullets.
+   to the **Bug Fixes** section of that epic. If a **Bug Fixes** bullet is actually a feature, move it to \
+   **Value Add** with a [GA] tag. Do NOT invent a **Bug Fixes** section if none existed.
 
 4. CONSOLIDATION: Merge Value Add bullets that describe the exact same user benefit from different \
    angles into ONE bullet. NEVER merge bullets from separate epics.
 
-5. STRUCTURE: Preserve this exact format (no markdown, no #### headers, no ** bold markers):
-   Epic Name
-   Value Add:
-   * Bullet explaining user benefit
-   * Another distinct bullet
-   General Availability
+5. STRUCTURE: Preserve this EXACT markdown format — do NOT strip ####, ** bold, or [GA]/[FF:] tags:
+   #### [Epic Name](url)
+   **Value Add**:
+   - Bullet explaining user benefit [GA]
+   - Another distinct bullet [FF: flag_name]
 
-   Bug Fixes:
-   * Fixed [specific problem] — [what users can now do]
+   **Bug Fixes**:
+   - Fixed [specific problem] — [what users can now do]
 
-6. Availability tags (General Availability / Feature Flag) appear on their own line after Value Add \
-   bullets ONLY. NEVER place an availability tag after Bug Fixes.
+6. AVAILABILITY TAGS: Every Value Add bullet must end with [GA] or [FF: flag_name]. \
+   NEVER add availability tags after **Bug Fixes** bullets. \
+   If a bullet is missing its tag, infer it from the epic context (default to [GA] for stories/tasks).
 
 7. Do NOT add introductions, conclusions, or any text outside the epic sections.
 
@@ -663,8 +670,7 @@ def process_tickets_with_claude():
         fv = fix_versions.get(pl, "")
         print(f"  Processing {pl}...")
         try:
-            raw_body = generate_body_with_claude(client, pl, fv, epics)
-            body_by_pl[pl] = _strip_markdown_from_body(raw_body)
+            body_by_pl[pl] = generate_body_with_claude(client, pl, fv, epics)
             print(f"  -> {pl}: generated ({len(body_by_pl[pl])} chars)")
         except Exception as e:
             print(f"  ERROR {pl}: {e}")
@@ -704,8 +710,7 @@ def process_tickets_with_claude():
     for pl in body_by_pl:
         print(f"  Reviewing {pl}...")
         try:
-            raw_reviewed = review_and_polish_with_claude(client, pl, body_by_pl[pl])
-            body_by_pl[pl] = _strip_markdown_from_body(raw_reviewed)
+            body_by_pl[pl] = review_and_polish_with_claude(client, pl, body_by_pl[pl])
             print(f"  -> {pl}: reviewed ({len(body_by_pl[pl])} chars)")
         except Exception as e:
             print(f"  Review skipped for {pl}: {e}")

@@ -210,98 +210,175 @@ class GoogleDocsFormatter:
             return re.sub(r'(?i)^fix\b', 'Fixed', trimmed, count=1)
         return f"Fixed {trimmed[0].lower() + trimmed[1:] if trimmed else trimmed}"
 
+    def _extract_inline_tag(self, text: str) -> Tuple[str, str]:
+        """
+        Extract inline availability tag [GA] or [FF: flag_name] from the end of a bullet.
+
+        Claude appends these tags directly to bullet lines, e.g.:
+          "Users can now filter by date range [GA]"
+          "Dark mode is behind a feature flag [FF: dark-mode-beta]"
+
+        Returns:
+            Tuple of (clean_text, tag) where:
+              - clean_text is the bullet without the tag
+              - tag is "[GA]", "[FF: flag_name]", or "" if none found
+        """
+        match = re.search(r'\s*(\[(?:GA|FF:[^\]]*)\])\s*$', text, re.IGNORECASE)
+        if match:
+            tag = match.group(1).strip()
+            clean = text[:match.start()].strip()
+            return clean, tag
+        return text.strip(), ""
+
     def _parse_body_sections(self, body_text: str) -> List[Dict]:
-        """Parse body text into epic sections with value-adds, bugs, availability."""
+        """
+        Parse body text into epic sections with value-adds, bugs, and availability.
+
+        Supports two input formats from Claude:
+
+        Markdown format (new architecture):
+            #### [Epic Name](url)
+            **Value Add**:
+            - Bullet text [GA]
+            - Another bullet [FF: flag_name]
+            **Bug Fixes**:
+            - Fixed something specific
+
+        Plain text format (legacy/fallback):
+            Epic Name
+            Value Add:
+            * Bullet text
+            General Availability
+
+        Inline [GA] / [FF: name] tags on bullets are extracted and stored
+        in value_add_tags (parallel to value_add) for green coloring.
+        """
         sections: List[Dict] = []
         current = None
         mode = None  # "value" or "bug"
 
-        def start_section(title: str):
-            nonlocal current
+        def start_section(title: str, url: str = ""):
+            nonlocal current, mode
             if current:
                 sections.append(current)
             current = {
                 "epic": title,
+                "epic_url": url,
                 "value_add": [],
+                "value_add_tags": [],  # parallel to value_add; each entry is "[GA]", "[FF: name]", or ""
                 "bug_fixes": [],
                 "availability": ""
             }
+            mode = None
 
         if not body_text:
             return sections
 
         for raw in body_text.split("\n"):
-            line = raw.strip().replace("**", "")
-            if not line:
+            stripped = raw.strip()
+            if not stripped:
                 continue
 
-            # Normalize markdown epic heading
-            if line.startswith("#### "):
-                line = line[5:].strip()
+            # ── Markdown epic heading: #### [Epic Name](url) ──────────────────
+            if stripped.startswith("#### "):
+                inner = stripped[5:].strip()
+                link_match = re.match(r'^\[([^\]]+)\]\(([^)]*)\)$', inner)
+                if link_match:
+                    epic_name = link_match.group(1).strip()
+                    epic_url = link_match.group(2).strip()
+                else:
+                    # Heading without link — strip bold markers
+                    epic_name = re.sub(r'\*\*([^*]+)\*\*', r'\1', inner).strip()
+                    epic_url = ""
+                start_section(epic_name, epic_url)
+                continue
 
-            # Normalize markdown epic link [Epic](url) - handles empty URLs too
-            link_match = re.match(r'^\[([^\]]+)\]\([^)]*\)$', line)
-            if link_match:
-                line = link_match.group(1).strip()
-
-            # Strip any remaining inline markdown links within the line
-            line = re.sub(r'\[([^\[\]]+)\]\([^)]*\)', r'\1', line)
-            line = re.sub(r'\[(\[[^\]]*\][^\[\]]*)\]\([^)]*\)', r'\1', line)
-
-            # Strip bold markers **text** -> text
-            line = re.sub(r'\*\*([^*]+)\*\*', r'\1', line)
-
+            # ── Strip bold markers for header detection (Value Add, Bug Fixes) ──
+            line = re.sub(r'\*\*([^*]+)\*\*', r'\1', stripped)
             lower = line.lower()
+
+            # ── Plain markdown link on its own line: [Epic](url) ──────────────
+            # Only treat as epic heading when not inside a bullet section
+            if mode is None:
+                plain_link = re.match(r'^\[([^\]]+)\]\(([^)]*)\)$', line)
+                if plain_link:
+                    start_section(plain_link.group(1).strip(), plain_link.group(2).strip())
+                    continue
+
+            # ── Section mode transitions ───────────────────────────────────────
             if lower.startswith("value add"):
                 mode = "value"
                 continue
             if lower.startswith("bug fix"):
                 mode = "bug"
                 continue
+
+            # Legacy standalone availability line (plain-text format)
             if line in ("General Availability", "Feature Flag"):
                 if current:
                     current["availability"] = line
                 mode = None
                 continue
 
+            # ── No active section: try to start a new epic ────────────────────
             if mode is None:
                 # Skip separator lines (---, ===, ***) and known non-epic labels
-                is_separator = bool(re.match(r'^[-=*_]{2,}$', line.strip()))
+                is_separator = bool(re.match(r'^[-=*_]{2,}$', stripped))
                 is_skip_label = lower.strip() in {
-                    "uncategorized", "general enhancements", "other", "bug fixes", "bug fix"
+                    "uncategorized", "general enhancements", "other",
+                    "bug fixes", "bug fix"
                 }
                 if not is_separator and not is_skip_label:
-                    start_section(line)
+                    # Strip any inline links from plain epic heading
+                    clean_title = re.sub(r'\[([^\[\]]+)\]\([^)]*\)', r'\1', line)
+                    clean_title = re.sub(r'\[(\[[^\]]*\][^\[\]]*)\]\([^)]*\)', r'\1', clean_title)
+                    start_section(clean_title)
                 continue
 
+            # ── Bullet handling ───────────────────────────────────────────────
             clean = re.sub(r'^[●•\*\-]\s*', '', line).strip()
+            # Strip markdown links from within bullet text (keep [GA]/[FF:] tags intact)
+            clean = re.sub(r'\[([^\[\]]+)\]\([^)]*\)', r'\1', clean)
             if not clean:
                 continue
             if current is None:
                 start_section("Other")
+
             if mode == "value":
-                current["value_add"].append(clean)
+                clean_text, tag = self._extract_inline_tag(clean)
+                current["value_add"].append(clean_text)
+                current["value_add_tags"].append(tag)
             elif mode == "bug":
                 current["bug_fixes"].append(clean)
 
         if current:
             sections.append(current)
 
-        # Deduplicate entries within each section
+        # ── Deduplicate entries within each section ───────────────────────────
         for section in sections:
-            section["value_add"] = list(dict.fromkeys(section["value_add"]))
+            # Dedup value_add while keeping the first tag for each unique item
+            seen_va: dict = {}
+            for text, tag in zip(section["value_add"], section["value_add_tags"]):
+                if text not in seen_va:
+                    seen_va[text] = tag
+            section["value_add"] = list(seen_va.keys())
+            section["value_add_tags"] = list(seen_va.values())
+
             section["bug_fixes"] = list(dict.fromkeys(section["bug_fixes"]))
 
-        # Merge duplicate epic sections (same epic name appearing multiple times)
-        merged = {}
-        order = []
+        # ── Merge duplicate epic sections ─────────────────────────────────────
+        merged: dict = {}
+        order: list = []
         for section in sections:
             epic = section["epic"]
             if epic in merged:
                 merged[epic]["value_add"].extend(section["value_add"])
+                merged[epic]["value_add_tags"].extend(section["value_add_tags"])
                 merged[epic]["bug_fixes"].extend(section["bug_fixes"])
                 if section["availability"] and not merged[epic]["availability"]:
                     merged[epic]["availability"] = section["availability"]
+                if section["epic_url"] and not merged[epic]["epic_url"]:
+                    merged[epic]["epic_url"] = section["epic_url"]
             else:
                 merged[epic] = section
                 order.append(epic)
@@ -310,7 +387,12 @@ class GoogleDocsFormatter:
         result = []
         for epic in order:
             section = merged[epic]
-            section["value_add"] = list(dict.fromkeys(section["value_add"]))
+            seen_va = {}
+            for text, tag in zip(section["value_add"], section["value_add_tags"]):
+                if text not in seen_va:
+                    seen_va[text] = tag
+            section["value_add"] = list(seen_va.keys())
+            section["value_add_tags"] = list(seen_va.values())
             section["bug_fixes"] = list(dict.fromkeys(section["bug_fixes"]))
             result.append(section)
 
@@ -770,7 +852,11 @@ class GoogleDocsFormatter:
                         # Render the epic title only when there are Value Add bullets
                         # AND the title is not a known non-epic label.
                         if has_value_add and epic_title.lower().strip() not in _SUPPRESS_TITLES:
-                            epic_url = self._find_epic_url(epic_title, epic_urls) if epic_urls else ""
+                            # Use URL embedded in the parsed markdown (#### [Epic](url))
+                            # if available; otherwise fall back to the epic_urls_by_pl dict.
+                            epic_url = section.get("epic_url") or (
+                                self._find_epic_url(epic_title, epic_urls) if epic_urls else ""
+                            )
                             epic_start = self.current_index
                             self._insert_text(f"{epic_title}\n")
                             epic_end = self.current_index
@@ -781,8 +867,23 @@ class GoogleDocsFormatter:
                             value_start = self.current_index
                             self._insert_text("Value Add:\n")
                             self._mark_bold(value_start, value_start + len("Value Add:"))
-                            for item in section["value_add"]:
-                                self._insert_text(f"• {item}\n")
+
+                            # Render value-add bullets, coloring any inline [GA]/[FF:] tags green
+                            value_add_tags = section.get("value_add_tags", [])
+                            for i, item in enumerate(section["value_add"]):
+                                tag = value_add_tags[i] if i < len(value_add_tags) else ""
+                                if tag:
+                                    bullet_text = f"• {item} {tag}\n"
+                                    bullet_start = self.current_index
+                                    self._insert_text(bullet_text)
+                                    # Mark the inline tag green
+                                    tag_offset = len(f"• {item} ")
+                                    self._mark_green(
+                                        bullet_start + tag_offset,
+                                        bullet_start + tag_offset + len(tag)
+                                    )
+                                else:
+                                    self._insert_text(f"• {item}\n")
 
                             if section["availability"]:
                                 avail_start = self.current_index
@@ -802,7 +903,7 @@ class GoogleDocsFormatter:
                 elif body_text:
                     # Fallback to existing Claude body parsing
                     elements = self._parse_body_content(
-                        body_text, epic_urls, pl_clean, release_ver
+                        body_text, epic_urls, self._clean_pl_name(pl), release_ver
                     )
                     for element in elements:
                         elem_start = self.current_index
