@@ -82,9 +82,10 @@ def step1_fetch_jira_tickets(release_summary: str = None) -> Tuple[Optional[Dict
 
     release_key_override = os.getenv('RELEASE_TICKET_KEY', '').strip()
     release_summary_env = os.getenv('RELEASE_TICKET_SUMMARY', '').strip()
+    today_summary = f"Release {_today_date_str()}"
     release_summary = release_summary or release_summary_env
     if not release_summary or release_summary == 'Release 2nd February 2026':
-        release_summary = f"Release {_today_date_str()}"
+        release_summary = today_summary
     project_key = os.getenv('JIRA_PROJECT_KEY', 'DI')
 
     try:
@@ -108,14 +109,12 @@ def step1_fetch_jira_tickets(release_summary: str = None) -> Tuple[Optional[Dict
                     "fields": {"summary": ticket_data.get("summary", "")}
                 }
         if not release_ticket:
-            print(f"[Step 1] Searching for release ticket: '{release_summary}'")
-            release_ticket = jira.find_release_ticket(release_summary, project_key)
+            if release_summary != today_summary:
+                print(f"[Step 1] Searching for release ticket: '{today_summary}'")
+                release_ticket = jira.find_release_ticket(today_summary, project_key)
             if not release_ticket:
-                # Fallback: try today's release summary if different
-                today_summary = f"Release {_today_date_str()}"
-                if today_summary != release_summary:
-                    print(f"[Step 1] Fallback search for release ticket: '{today_summary}'")
-                    release_ticket = jira.find_release_ticket(today_summary, project_key)
+                print(f"[Step 1] Searching for release ticket: '{release_summary}'")
+                release_ticket = jira.find_release_ticket(release_summary, project_key)
 
         if not release_ticket:
             print(f"[Step 1] ERROR: Release ticket not found: '{release_summary}'")
