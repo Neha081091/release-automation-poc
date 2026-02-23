@@ -540,7 +540,7 @@ def all_pls_reviewed(message_ts: str) -> bool:
     return count_pending_reviews(message_ts) == 0
 
 
-def build_footer_blocks(message_ts: str = None, pls: list = None) -> list:
+def build_footer_blocks(message_ts: str = None, pls: list = None, no_announce: bool = False) -> list:
     blocks = []
     pending_count = count_pending_reviews(message_ts) if message_ts else len(pls or [])
     all_reviewed = pending_count == 0
@@ -551,15 +551,59 @@ def build_footer_blocks(message_ts: str = None, pls: list = None) -> list:
         blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": "*All PLs reviewed*"}]})
 
     if all_reviewed:
-        blocks.append({
-            "type": "actions",
-            "elements": [{"type": "button", "text": {"type": "plain_text", "text": "Good to Announce"}, "style": "primary", "action_id": "good_to_announce"}]
-        })
+        if no_announce:
+            blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "_No content to announce (all PLs deferred or moved to tomorrow)._"}}
+            )
+        else:
+            blocks.append({
+                "type": "actions",
+                "elements": [{"type": "button", "text": {"type": "plain_text", "text": "Good to Announce"}, "style": "primary", "action_id": "good_to_announce"}]
+            })
     else:
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "_Good to Announce (review all PLs first)_"}})
 
     blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": "_© Powered by Release Announcement Agent_"}]})
     return blocks
+
+
+def _get_announceable_pls(message_ts: str) -> list:
+    approval_states = load_approval_states()
+    message_metadata = load_message_metadata()
+
+    approved_pls = []
+    deferred_partial = {}
+    for pl, state in approval_states.get(message_ts, {}).items():
+        status = state.get('status')
+        if status == 'approved':
+            approved_pls.append(pl)
+        elif status == 'deferred_partial':
+            approved_pls.append(pl)
+            deferred_partial[pl] = state.get('deferred_epics', [])
+
+    approved_pls = get_ordered_pls(approved_pls)
+
+    try:
+        with open('processed_notes.json', 'r') as f:
+            processed_data = json.load(f)
+    except Exception:
+        processed_data = {}
+
+    body_by_pl = processed_data.get('body_by_pl', {})
+    notes_by_pl = message_metadata.get(message_ts, {}).get('notes_by_pl', {}) if message_metadata else {}
+    announced_pls = []
+
+    for pl in approved_pls:
+        resolved_key = _resolve_pl_key_from_processed(pl, processed_data)
+        body = body_by_pl.get(resolved_key, "") or body_by_pl.get(pl, "") or body_by_pl.get(pl.replace(' 2026', ''), "")
+        if not body and notes_by_pl:
+            notes_key = _resolve_pl_key(pl, notes_by_pl)
+            body = notes_by_pl.get(notes_key, "")
+        if pl in deferred_partial and body:
+            body = _filter_body_by_deferred_epics(body, deferred_partial.get(pl, []))
+        if body and body.strip():
+            announced_pls.append(pl)
+
+    return announced_pls
 
 
 def update_message_with_status(channel: str, message_ts: str, user_id: str = None):
@@ -582,7 +626,8 @@ def update_message_with_status(channel: str, message_ts: str, user_id: str = Non
     blocks.append({"type": "divider"})
     blocks.extend(build_pl_blocks(pls, message_ts))
     blocks.append({"type": "divider"})
-    blocks.extend(build_footer_blocks(message_ts, pls))
+    no_announce = all_pls_reviewed(message_ts) and len(_get_announceable_pls(message_ts)) == 0
+    blocks.extend(build_footer_blocks(message_ts, pls, no_announce=no_announce))
 
     try:
         client.chat_update(channel=channel, ts=message_ts, blocks=blocks, text="Release Notes Review")
@@ -1362,6 +1407,18 @@ def handle_good_to_announce(ack, body):
         if body and body.strip():
             announced_pls.append(pl)
             body_for_pl[pl] = body
+
+    if not announced_pls:
+        update_message_with_status(channel, message_ts, user_id)
+        try:
+            client.chat_postEphemeral(
+                channel=channel,
+                user=user_id,
+                text="⚠️ No content to announce (all PLs deferred or moved to tomorrow)."
+            )
+        except Exception:
+            pass
+        return
 
     announcement_text = f"*Daily Deployment Summary: {release_date}*\n\n"
     announcement_text += "------------------TL;DR:------------------\n\n"
