@@ -17,6 +17,7 @@ import os
 import sys
 import argparse
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Dict, Optional, Tuple
 
 # Load environment variables
@@ -37,15 +38,23 @@ def _ordinal(day: int) -> str:
     return f"{day}{['th','st','nd','rd','th','th','th','th','th','th'][day % 10]}"
 
 
+def _get_local_now() -> datetime:
+    timezone_name = os.getenv('SCHEDULER_TIMEZONE') or os.getenv('TIMEZONE') or 'Asia/Kolkata'
+    try:
+        return datetime.now(ZoneInfo(timezone_name))
+    except Exception:
+        return datetime.now()
+
+
 def _today_date_str() -> str:
     """Return today's date formatted like '14th February 2026'."""
-    today = datetime.now()
+    today = _get_local_now()
     return f"{_ordinal(today.day)} {today.strftime('%B %Y')}"
 
 
 def is_weekday() -> bool:
     """Return True if today is Monday-Friday."""
-    return datetime.now().weekday() < 5  # 0=Mon … 4=Fri
+    return _get_local_now().weekday() < 5  # 0=Mon … 4=Fri
 
 
 def print_banner():
