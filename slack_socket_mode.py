@@ -1517,22 +1517,11 @@ def handle_edit_modal_submission(ack, body, view):
 
     formatted_text = auto_format_text(new_text, processed_data)
 
-    def _build_text_blocks(text: str, chunk_size: int = 3000):
-        chunks = []
-        remaining = text or ""
-        while remaining:
-            chunks.append(remaining[:chunk_size])
-            remaining = remaining[chunk_size:]
-        return [{"type": "section", "text": {"type": "mrkdwn", "text": chunk}} for chunk in chunks] or [
-            {"type": "section", "text": {"type": "mrkdwn", "text": ""}}
-        ]
-
     try:
         client.chat_update(
             channel=channel,
             ts=message_ts,
-            text=formatted_text[:40000],
-            blocks=_build_text_blocks(formatted_text)
+            text=formatted_text[:40000]
         )
         save_last_announcement(channel, message_ts, formatted_text)
         try:
