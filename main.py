@@ -80,7 +80,11 @@ def step1_fetch_jira_tickets(release_summary: str = None) -> Tuple[Optional[Dict
     """
     print_step(1, "FETCH JIRA TICKETS")
 
-    release_summary = release_summary or os.getenv('RELEASE_TICKET_SUMMARY', 'Release 2nd February 2026')
+    release_key_override = os.getenv('RELEASE_TICKET_KEY', '').strip()
+    release_summary_env = os.getenv('RELEASE_TICKET_SUMMARY', '').strip()
+    release_summary = release_summary or release_summary_env
+    if not release_summary or release_summary == 'Release 2nd February 2026':
+        release_summary = f"Release {_today_date_str()}"
     project_key = os.getenv('JIRA_PROJECT_KEY', 'DI')
 
     try:
@@ -94,8 +98,24 @@ def step1_fetch_jira_tickets(release_summary: str = None) -> Tuple[Optional[Dict
             return None, []
 
         # Find release ticket
-        print(f"[Step 1] Searching for release ticket: '{release_summary}'")
-        release_ticket = jira.find_release_ticket(release_summary, project_key)
+        release_ticket = None
+        if release_key_override:
+            print(f"[Step 1] Using RELEASE_TICKET_KEY override: {release_key_override}")
+            ticket_data = jira.get_ticket_details(release_key_override)
+            if ticket_data:
+                release_ticket = {
+                    "key": release_key_override,
+                    "fields": {"summary": ticket_data.get("summary", "")}
+                }
+        if not release_ticket:
+            print(f"[Step 1] Searching for release ticket: '{release_summary}'")
+            release_ticket = jira.find_release_ticket(release_summary, project_key)
+            if not release_ticket:
+                # Fallback: try today's release summary if different
+                today_summary = f"Release {_today_date_str()}"
+                if today_summary != release_summary:
+                    print(f"[Step 1] Fallback search for release ticket: '{today_summary}'")
+                    release_ticket = jira.find_release_ticket(today_summary, project_key)
 
         if not release_ticket:
             print(f"[Step 1] ERROR: Release ticket not found: '{release_summary}'")
