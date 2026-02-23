@@ -467,7 +467,18 @@ def run_release_automation(release_date: str = None, skip_approval: bool = False
     }
 
     if not linked_tickets:
-        print("\n[WORKFLOW] No release found for today. Skipping Slack notification.")
+        print("\n[WORKFLOW] No release found for today. Sending Slack notification...")
+        try:
+            slack = SlackHandler()
+            if slack.test_connection():
+                slack.send_no_release_notification(_today_date_str())
+        except Exception as e:
+            print(f"[WORKFLOW] Could not send no-release Slack notification: {e}")
+        try:
+            with open(".no_release", "w") as f:
+                f.write(_today_date_str())
+        except Exception:
+            pass
         results["success"] = True
         results["error"] = "No tickets found"
         return results

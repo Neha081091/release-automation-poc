@@ -66,7 +66,17 @@ jobs:
           python main.py --skip-approval
           echo "Release Automation completed at $(date)"
 
+      - name: Detect No-Release Day
+        id: no_release
+        run: |
+          if [ -f .no_release ]; then
+            echo "no_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Notify Slack on Success
+        if: steps.no_release.outputs.no_release != 'true'
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
@@ -79,7 +89,7 @@ jobs:
           fi
 
       - name: Notify Slack on Failure
-        if: failure()
+        if: failure() && steps.no_release.outputs.no_release != 'true'
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
@@ -95,3 +105,4 @@ jobs:
         if: always()
         run: |
           rm -f service_account.json
+          rm -f .no_release
