@@ -325,6 +325,7 @@ def auto_format_text(text: str, processed_data: dict = None) -> str:
             continue
 
         # Normalize markdown bold (**text**) to Slack bold (*text*)
+        stripped = re.sub(r'^\*{2}([^*]+)\*{2}:\s*(Release\s+\d+\.\d+)$', r'*\1*: \2', stripped)
         stripped = re.sub(r'\*\*([^*]+)\*\*', r'*\1*', stripped)
         stripped = stripped.replace("**", "")
 
@@ -456,7 +457,10 @@ def auto_format_text(text: str, processed_data: dict = None) -> str:
         else:
             formatted_lines.append(stripped)
 
-    return '\n'.join(formatted_lines)
+    formatted_text = '\n'.join(formatted_lines)
+    formatted_text = formatted_text.replace("**", "*")
+    formatted_text = re.sub(r'\*{3,}', '*', formatted_text)
+    return formatted_text
 
 
 def run_async(target, *args, **kwargs):
