@@ -1470,6 +1470,13 @@ def handle_edit_announcement(ack, command, respond):
                     'message_ts': last.get('message_ts')
                 }),
                 "blocks": [
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": "Note: For non-today releases, use Slack link format `<url|text>` to ensure hyperlinks render correctly."
+                        }
+                    },
                     _input_block("announcement_text_1", "text_input_1", "Announcement Text (Part 1)", part1),
                     _input_block("announcement_text_2", "text_input_2", "Announcement Text (Part 2)", part2),
                     _input_block("announcement_text_3", "text_input_3", "Announcement Text (Part 3)", part3)
