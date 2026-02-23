@@ -896,12 +896,7 @@ def _open_defer_modal(trigger_id: str, pl_name: str, message_ts: str, channel: s
     body_text = notes_by_pl.get(pl_key, "")
     epics = _extract_epics_from_body(body_text)
 
-    epic_options = [
-        {"text": {"type": "plain_text", "text": epic[:75]}, "value": epic[:75]}
-        for epic in epics
-    ]
-    if not epic_options:
-        epic_options = [{"text": {"type": "plain_text", "text": "No epics found"}, "value": "__none__"}]
+    epic_options = [{"text": {"type": "plain_text", "text": "Select Partial to load epics"}, "value": "__none__"}]
 
     view = {
         "type": "modal",
@@ -919,6 +914,7 @@ def _open_defer_modal(trigger_id: str, pl_name: str, message_ts: str, channel: s
                 "type": "input",
                 "block_id": "defer_scope_block",
                 "label": {"type": "plain_text", "text": "Defer scope"},
+                "dispatch_action": True,
                 "element": {
                     "type": "radio_buttons",
                     "action_id": "defer_scope",
@@ -944,6 +940,77 @@ def _open_defer_modal(trigger_id: str, pl_name: str, message_ts: str, channel: s
     }
 
     client.views_open(trigger_id=trigger_id, view=view)
+
+
+@app.action("defer_scope")
+def handle_defer_scope_change(ack, body, action):
+    ack()
+    try:
+        view = body.get("view", {})
+        state_value = action.get("selected_option", {}).get("value")
+        if not state_value:
+            state_value = (
+                view.get("state", {})
+                .get("values", {})
+                .get("defer_scope_block", {})
+                .get("defer_scope", {})
+                .get("selected_option", {})
+                .get("value")
+            )
+        meta = json.loads(view.get("private_metadata", "{}"))
+        pl_name = meta.get("pl_name")
+        message_ts = meta.get("message_ts")
+
+        epics = []
+        if pl_name and message_ts:
+            message_metadata = load_message_metadata()
+            notes_by_pl = message_metadata.get(message_ts, {}).get("notes_by_pl", {})
+            pl_key = _resolve_pl_key(pl_name, notes_by_pl)
+            body_text = notes_by_pl.get(pl_key, "")
+            epics = _extract_epics_from_body(body_text)
+
+        epic_options = [
+            {"text": {"type": "plain_text", "text": epic[:75]}, "value": epic[:75]}
+            for epic in epics
+        ]
+        if not epic_options:
+            epic_options = [{"text": {"type": "plain_text", "text": "No epics found"}, "value": "__none__"}]
+
+        blocks = view.get("blocks", [])
+        def _epics_block(options):
+            return {
+                "type": "section",
+                "block_id": "defer_epics_block",
+                "text": {"type": "mrkdwn", "text": "*Select epics to defer (if deferring specific epics)*"},
+                "accessory": {
+                    "type": "multi_static_select",
+                    "action_id": "defer_epics",
+                    "placeholder": {"type": "plain_text", "text": "Choose epics"},
+                    "options": options
+                }
+            }
+
+        blocks = [b for b in blocks if b.get("block_id") != "defer_epics_block"]
+        if state_value == "partial":
+            blocks.append(_epics_block(epic_options))
+        else:
+            blocks.append(_epics_block([{"text": {"type": "plain_text", "text": "Select Partial to load epics"}, "value": "__none__"}]))
+
+        client.views_update(
+            view_id=view.get("id"),
+            hash=view.get("hash"),
+            view={
+                "type": view.get("type"),
+                "callback_id": view.get("callback_id"),
+                "title": view.get("title"),
+                "submit": view.get("submit"),
+                "close": view.get("close"),
+                "private_metadata": view.get("private_metadata"),
+                "blocks": blocks
+            }
+        )
+    except Exception:
+        pass
 
 
 @app.action(re.compile(r"^defer_.+$"))
