@@ -1175,6 +1175,18 @@ def refresh_release_versions(message_ts: str = None) -> Dict:
 
         print(f"[Refresh] Current PLs in release: {existing_pls}")
 
+        # Exclude PLs moved to tomorrow (do not re-add on refresh)
+        excluded_pls_clean = set()
+        if message_ts:
+            try:
+                from slack_socket_mode import load_approval_states
+                approval_states = load_approval_states()
+                for pl, state in approval_states.get(message_ts, {}).items():
+                    if state.get('status') == 'tomorrow':
+                        excluded_pls_clean.add(clean_pl_name(pl).lower())
+            except Exception:
+                pass
+
         # Fetch new versions from Jira
         fetch_result = fetch_new_versions(existing_pls, release_date)
 
@@ -1186,6 +1198,8 @@ def refresh_release_versions(message_ts: str = None) -> Dict:
             }
 
         new_pls = fetch_result.get('new_pls', [])
+        if excluded_pls_clean:
+            new_pls = [pl for pl in new_pls if clean_pl_name(pl).lower() not in excluded_pls_clean]
         all_tickets = fetch_result.get('all_tickets', [])
         release_summary = fetch_result.get('release_summary')
         release_key = fetch_result.get('release_key')
@@ -1201,6 +1215,8 @@ def refresh_release_versions(message_ts: str = None) -> Dict:
                 content = google_docs.get_document_content()
                 if content:
                     for pl in existing_pls:
+                        if clean_pl_name(pl).lower() in excluded_pls_clean:
+                            continue
                         if not _pl_present_in_doc(content, pl):
                             missing_pls.append(pl)
         except Exception as e:
@@ -1222,6 +1238,12 @@ def refresh_release_versions(message_ts: str = None) -> Dict:
 
         # Process new tickets (new PLs + missing PLs)
         new_tickets = fetch_result.get('new_tickets', {})
+        if excluded_pls_clean:
+            new_tickets = {
+                pl: tickets
+                for pl, tickets in new_tickets.items()
+                if clean_pl_name(pl).lower() not in excluded_pls_clean
+            }
         # New tickets within existing PLs
         delta_existing = {}
         if delta_tickets:
@@ -1232,6 +1254,8 @@ def refresh_release_versions(message_ts: str = None) -> Dict:
                     continue
                 pl_name, _ = extract_pl_from_fix_version(fix_version)
                 pl_clean = clean_pl_name(pl_name).lower()
+                if pl_clean in excluded_pls_clean:
+                    continue
                 if pl_clean in existing_pls_clean:
                     original_pl = existing_pls_clean[pl_clean]
                     delta_existing.setdefault(original_pl, []).append(ticket)
