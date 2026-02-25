@@ -44,7 +44,11 @@ class SchedulerConfig:
     SLACK_CHANNEL_ID = os.getenv('SLACK_DM_CHANNEL', '')
 
     # Command to execute
-    COMMAND = ['python', 'main.py', '--skip-approval']
+    RUN_MODE = os.getenv('RUN_MODE', 'direct')  # direct | local_socket
+    if RUN_MODE == 'local_socket':
+        COMMAND = ['python', 'local_full_run.py']
+    else:
+        COMMAND = ['python', 'main.py', '--skip-approval']
 
     @classmethod
     def get_log_path(cls) -> str:

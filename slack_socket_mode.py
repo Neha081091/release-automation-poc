@@ -1018,8 +1018,8 @@ def handle_defer_scope_change(ack, body, action):
             {"text": {"type": "plain_text", "text": epic[:75]}, "value": epic[:75]}
             for epic in epics
         ]
-        if not epic_options:
-            epic_options = [{"text": {"type": "plain_text", "text": "No epics found"}, "value": "__none__"}]
+        if len(epic_options) <= 1:
+            epic_options = [{"text": {"type": "plain_text", "text": "No epics to defer"}, "value": "__none__"}]
 
         blocks = view.get("blocks", [])
         def _epics_block(options):
