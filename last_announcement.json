@@ -1,6 +1,0 @@
-{
-  "channel": "C0ACFUAT0DQ",
-  "message_ts": "1771354364.379719",
-  "text": "*Daily Deployment Summary: 17th February 2026*\n\n------------------TL;DR:------------------\n\n*Key Deployments:*\n\u25cf *Data Ingress* - IQVIA ELAAD Plus Daily Pipeline: Process data with 1-day delay ( Day before yesterday ) ; Update the IQVIA monthly dag to load daily data ; Backfill Data for Iqvia Elaad Plus daily ; Ingest Updated Creative ID Report\n\n------------------Data Ingress------------------\n#### [IQVIA ELAAD Plus : Rolling Window Data Refresh](https://deepintent.atlassian.net/browse/DI-88119)\n**Value Add**:\n* IQVIA ELAAD Plus Daily Pipeline: Process data with 1-day delay ( Day before yesterday ) \n* Update the IQVIA monthly dag to load daily data \n* Backfill Data for Iqvia Elaad Plus daily \n\n#### [STAQ 2026 Improvements ](https://deepintent.atlassian.net/browse/DI-88078)\n**Value Add**:\n* Ingest Updated Creative ID Report\n\n\n\n",
-  "posted_at": "2026-02-18T00:22:44.499990"
-}
