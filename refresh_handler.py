@@ -291,11 +291,18 @@ def update_tldr_lines_for_existing_pls(tldr_updates: Dict[str, str], release_dat
                 if not bounds:
                     continue
                 _, section_end, section_start = bounds
-                insert_idx = _text_pos_to_doc_index(section_end, segments)
-                insert_req = {"insertText": {"location": {"index": insert_idx}, "text": new_line}}
+                insert_pos = section_end
+                key_line = _find_key_deployments_line_range(content)
+                if key_line:
+                    insert_pos = key_line[1]
+                insert_idx = _text_pos_to_doc_index(insert_pos, segments)
+                prefix = ""
+                if insert_pos > 0 and content[insert_pos - 1:insert_pos] != "\n":
+                    prefix = "\n"
+                insert_req = {"insertText": {"location": {"index": insert_idx}, "text": prefix + new_line}}
                 format_reqs = [
-                    {"updateTextStyle": {"range": {"startIndex": insert_idx, "endIndex": insert_idx + len(new_line)}, "textStyle": {"bold": False}, "fields": "bold"}},
-                    {"updateTextStyle": {"range": {"startIndex": insert_idx + len("• "), "endIndex": insert_idx + len("• ") + len(pl_clean)}, "textStyle": {"bold": True}, "fields": "bold"}}
+                    {"updateTextStyle": {"range": {"startIndex": insert_idx, "endIndex": insert_idx + len(prefix + new_line)}, "textStyle": {"bold": False}, "fields": "bold"}},
+                    {"updateTextStyle": {"range": {"startIndex": insert_idx + len(prefix + "• "), "endIndex": insert_idx + len(prefix + "• ") + len(pl_clean)}, "textStyle": {"bold": True}, "fields": "bold"}}
                 ]
                 jobs.append((insert_idx, [insert_req], format_reqs))
 
@@ -356,7 +363,7 @@ def extract_pl_from_fix_version(fix_version: str) -> Tuple[str, str]:
     return fix_version, ""
 
 
-def fetch_new_versions(existing_pls: List[str], release_date: str = None) -> Dict:
+def fetch_new_versions(existing_pls: List[str], release_date: str = None, release_key: str = None) -> Dict:
     """
     Fetch Jira tickets and identify new PLs not already processed.
 
@@ -384,16 +391,24 @@ def fetch_new_versions(existing_pls: List[str], release_date: str = None) -> Dic
 
         # Prefer release ticket fix versions (more reliable than date matching)
         all_tickets = []
-        release_key = None
         release_summary = f"Release {release_date}"
-        release_ticket = jira.find_release_ticket(release_summary)
-        if release_ticket:
-            release_key = release_ticket.get("key")
-            print(f"[Refresh] Found release ticket: {release_key}")
+        resolved_release_key = release_key
+
+        if release_key:
+            print(f"[Refresh] Using release ticket key: {release_key}")
             all_tickets = jira.get_linked_tickets(release_key)
-        else:
-            print("[Refresh] Release ticket not found; falling back to date-based search")
-            all_tickets = jira.get_all_tickets_for_release_date(release_date)
+            if not all_tickets:
+                print("[Refresh] No tickets found via release key; retrying by summary")
+
+        if not all_tickets:
+            release_ticket = jira.find_release_ticket(release_summary)
+            if release_ticket:
+                resolved_release_key = release_ticket.get("key")
+                print(f"[Refresh] Found release ticket: {resolved_release_key}")
+                all_tickets = jira.get_linked_tickets(resolved_release_key)
+            else:
+                print("[Refresh] Release ticket not found; skipping date-based search")
+                return {"error": f"Release ticket not found for '{release_summary}'", "new_tickets": [], "new_pls": []}
 
         if not all_tickets:
             print(f"[Refresh] No tickets found for {release_date}")
@@ -436,7 +451,7 @@ def fetch_new_versions(existing_pls: List[str], release_date: str = None) -> Dic
             "release_date": release_date,
             "all_tickets": all_tickets,
             "release_summary": release_summary,
-            "release_key": release_key
+            "release_key": resolved_release_key
         }
 
     except Exception as e:
@@ -1159,12 +1174,25 @@ def refresh_release_versions(message_ts: str = None) -> Dict:
         # Load existing processed notes to get current PLs
         existing_pls = []
         release_date = None
+        release_key = None
 
         if os.path.exists('processed_notes.json'):
             with open('processed_notes.json', 'r') as f:
                 existing = json.load(f)
                 existing_pls = existing.get('product_lines', [])
                 release_date = existing.get('release_summary', '').replace('Release ', '')
+
+        if os.path.exists('tickets_export.json'):
+            try:
+                with open('tickets_export.json', 'r') as f:
+                    export_data = json.load(f)
+                release_key = export_data.get('release_key') or release_key
+                if not release_date:
+                    release_summary = export_data.get('release_summary')
+                    if release_summary:
+                        release_date = release_summary.replace('Release ', '')
+            except Exception:
+                pass
 
         if not existing_pls:
             return {
@@ -1188,7 +1216,7 @@ def refresh_release_versions(message_ts: str = None) -> Dict:
                 pass
 
         # Fetch new versions from Jira
-        fetch_result = fetch_new_versions(existing_pls, release_date)
+        fetch_result = fetch_new_versions(existing_pls, release_date, release_key=release_key)
 
         if fetch_result.get('error'):
             return {

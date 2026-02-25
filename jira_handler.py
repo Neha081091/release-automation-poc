@@ -186,24 +186,23 @@ class JiraHandler:
 
         print(f"[Jira] Found {len(linked_keys)} directly linked tickets")
 
-        # If no linked tickets, try searching by Fix Version(s)
-        if not linked_keys:
-            fix_versions = result.get("fields", {}).get("fixVersions", [])
-            if fix_versions:
-                # Get all fix version names, excluding Hotfix versions
-                fix_version_names = [
-                    fv.get("name") for fv in fix_versions
-                    if fv.get("name") and "hotfix" not in fv.get("name", "").lower()
-                ]
-                excluded = [fv.get("name") for fv in fix_versions if fv.get("name") and "hotfix" in fv.get("name", "").lower()]
-                if excluded:
-                    print(f"[Jira] Excluding Hotfix versions: {excluded}")
-                print(f"[Jira] No links found. Searching by {len(fix_version_names)} Fix Versions: {fix_version_names}")
-                return self.get_tickets_by_fix_versions(fix_version_names, issue_key)
-            else:
-                print("[Jira] No Fix Version found on release ticket. Trying to search by date...")
-                # Try to extract date from ticket summary and search
-                return self.get_tickets_by_release_date(issue_key)
+        # Always consider Fix Versions on the release ticket (in addition to links)
+        fix_versions = result.get("fields", {}).get("fixVersions", [])
+        fix_version_tickets = []
+        if fix_versions:
+            fix_version_names = [
+                fv.get("name") for fv in fix_versions
+                if fv.get("name") and "hotfix" not in fv.get("name", "").lower()
+            ]
+            excluded = [fv.get("name") for fv in fix_versions if fv.get("name") and "hotfix" in fv.get("name", "").lower()]
+            if excluded:
+                print(f"[Jira] Excluding Hotfix versions: {excluded}")
+            if fix_version_names:
+                print(f"[Jira] Searching by {len(fix_version_names)} Fix Versions: {fix_version_names}")
+                fix_version_tickets = self.get_tickets_by_fix_versions(fix_version_names, issue_key)
+        elif not linked_keys:
+            print("[Jira] No Fix Version found on release ticket. Trying to search by date...")
+            return self.get_tickets_by_release_date(issue_key)
 
         # Fetch full details for each linked ticket
         linked_tickets = []
@@ -211,6 +210,17 @@ class JiraHandler:
             ticket = self.get_ticket_details(key)
             if ticket:
                 linked_tickets.append(ticket)
+
+        # Merge linked tickets with fix-version tickets (unique by key)
+        if fix_version_tickets:
+            merged = {t.get("key"): t for t in linked_tickets if t.get("key")}
+            for ticket in fix_version_tickets:
+                key = ticket.get("key")
+                if key and key not in merged:
+                    merged[key] = ticket
+            merged_list = list(merged.values())
+            print(f"[Jira] Total tickets after merging links + fixVersions: {len(merged_list)}")
+            return merged_list
 
         return linked_tickets
 
