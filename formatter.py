@@ -402,11 +402,17 @@ class ReleaseNotesFormatter:
             if self._is_release_ticket(ticket):
                 continue
 
+            # Skip tickets whose epic name contains "Deployment Tracker"
+            epic_name = ticket.get("epic_name") or ""
+            if epic_name and "Deployment Tracker" in epic_name:
+                continue
+
             # Determine product line
             product_line = self._determine_product_line(ticket)
 
-            # Get epic info
-            epic_name = ticket.get("epic_name") or "Uncategorized"
+            # Get epic info (use "Uncategorized" if empty after filter)
+            if not epic_name:
+                epic_name = "Uncategorized"
             epic_key = ticket.get("epic_key")
             epic_url = ticket.get("epic_url")
 

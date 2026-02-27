@@ -15,19 +15,110 @@ The script will:
 """
 
 import os
+import signal
 import sys
 import threading
 import time
 from datetime import datetime
 from dotenv import load_dotenv
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
+
+# Ignore SIGPIPE so writes to closed stdout/sockets don't kill the process (e.g. nohup > log)
+try:
+    signal.signal(signal.SIGPIPE, signal.SIG_IGN)
+except (AttributeError, OSError):
+    pass  # Windows or unsupported
 
 load_dotenv()
+
+# --- Install logging filter FIRST: block at Logger.callHandlers so NO handler ever sees the record ---
+def _install_logging_filter():
+    import logging
+    def _should_suppress(record):
+        try:
+            msg = record.getMessage()
+        except Exception:
+            msg = ""
+        return "on_error invoked" in msg and "Broken pipe" in msg
+
+    _orig_call_handlers = logging.Logger.callHandlers
+    def _filtered_call_handlers(self, record):
+        if _should_suppress(record):
+            return
+        _orig_call_handlers(self, record)
+    logging.Logger.callHandlers = _filtered_call_handlers
+_install_logging_filter()
+
+# Replace stderr so any direct writes are also filtered
+class _FilteredStream:
+    """Drops Bolt's 'on_error invoked' BrokenPipeError lines; forwards everything else."""
+    def __init__(self, stream):
+        self._stream = stream
+    def write(self, s):
+        if s and "on_error invoked" in s:
+            return
+        try:
+            self._stream.write(s)
+        except BrokenPipeError:
+            pass
+    def flush(self):
+        try:
+            self._stream.flush()
+        except BrokenPipeError:
+            pass
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+# Always install filter so Bolt's "on_error invoked" BrokenPipeError lines are dropped
+sys.stdout = _FilteredStream(sys.stdout)
+sys.stderr = _FilteredStream(sys.stderr)
+
+# --- Suppress at source (SDK client) so the error handler never logs ---
+def _patch_slack_sdk_on_error():
+    import errno
+    try:
+        from slack_sdk.socket_mode.builtin import client as _sm_client
+
+        def _is_broken_pipe(e):
+            if e is None:
+                return False
+            if isinstance(e, BrokenPipeError):
+                return True
+            if isinstance(e, OSError) and getattr(e, "errno", None) == errno.EPIPE:
+                return True
+            return False
+
+        _orig_on_error = _sm_client.SocketModeClient._on_error
+        def _on_error_suppress_broken_pipe(self, error):
+            if _is_broken_pipe(error):
+                return
+            _orig_on_error(self, error)
+        _sm_client.SocketModeClient._on_error = _on_error_suppress_broken_pipe
+
+        _orig_connect = _sm_client.SocketModeClient.connect
+        def _connect_wrap_error_listener(self):
+            _real_on_error = self._on_error
+            def _wrapped_listener(e):
+                if _is_broken_pipe(e):
+                    return
+                _real_on_error(e)
+            self._on_error = _wrapped_listener
+            try:
+                return _orig_connect(self)
+            finally:
+                self._on_error = _real_on_error
+        _sm_client.SocketModeClient.connect = _connect_wrap_error_listener
+    except Exception:
+        pass
+_patch_slack_sdk_on_error()
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 # Import the pipeline components
 from slack_socket_mode import post_approval_message, app
 from slack_bolt.adapter.socket_mode import SocketModeHandler
+from scheduler_config import SchedulerConfig
 
 # Import the hybrid step modules
 import subprocess
@@ -139,25 +230,30 @@ def main(daemon_mode=False):
     # Give Socket Mode time to connect
     time.sleep(2)
 
-    # Set up the scheduler
-    scheduler = BackgroundScheduler()
+    # Set up the scheduler with explicit timezone (IST) so 12:00 fires at 12:00 PM IST
+    # even when the machine or nohup env uses a different TZ (e.g. UTC)
+    scheduler = BackgroundScheduler(timezone=SchedulerConfig.TIMEZONE)
+    hour = SchedulerConfig.SCHEDULE_HOUR
+    minute = SchedulerConfig.SCHEDULE_MINUTE
 
-    # Schedule pipeline to run at 12:00 PM daily
     scheduler.add_job(
         run_pipeline,
-        CronTrigger(hour=12, minute=0),
+        CronTrigger(hour=hour, minute=minute, timezone=SchedulerConfig.TIMEZONE),
         id='daily_pipeline',
         name='Daily Release Notes Pipeline'
     )
 
     scheduler.start()
 
-    print(f"[Scheduler] Pipeline scheduled to run daily at 12:00 PM")
-    print(f"[Scheduler] Next run: {scheduler.get_job('daily_pipeline').next_run_time}")
+    job = scheduler.get_job('daily_pipeline')
+    next_run = job.next_run_time if job else "N/A"
+    print(f"[Scheduler] Pipeline scheduled daily at {hour:02d}:{minute:02d} {SchedulerConfig.TIMEZONE}")
+    print(f"[Scheduler] Next run: {next_run}")
     print(f"\n[Ready] Listening for Slack button clicks...")
 
-    # Check if running in interactive mode (terminal) or background
-    if not daemon_mode and sys.stdin.isatty():
+    # Interactive only if stdin and stdout are both a TTY (real terminal).
+    # With nohup ... > file & stdout is not a TTY, so we skip input() and avoid suspend.
+    if not daemon_mode and sys.stdin.isatty() and sys.stdout.isatty():
         print("[Ready] Press Enter to run pipeline manually, or type 'quit' to exit\n")
         try:
             while True:

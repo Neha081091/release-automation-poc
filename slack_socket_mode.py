@@ -43,6 +43,17 @@ app = App(token=os.getenv("SLACK_BOT_TOKEN"))
 client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
 
 
+@app.error
+def handle_broken_pipe(error, body, logger):
+    """Ignore BrokenPipeError when running with redirected stdout (e.g. nohup)."""
+    import errno
+    if isinstance(error, BrokenPipeError):
+        return  # Do not log; avoids spam when stdout is redirected
+    if isinstance(error, OSError) and getattr(error, "errno", None) == errno.EPIPE:
+        return
+    logger.exception(f"Slack Bolt error: {error}")
+
+
 def get_ordered_pls(pl_list: list) -> list:
     ordered = []
     for pl in PRODUCT_LINE_ORDER:

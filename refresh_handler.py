@@ -516,13 +516,15 @@ def process_new_tickets(new_tickets_by_pl: Dict[str, List]) -> Dict:
         if first_ticket.get('fix_version_url'):
             processed["fix_version_urls"][pl_name] = first_ticket['fix_version_url']
 
-        # Group tickets by epic
+        # Group tickets by epic (exclude tickets whose epic name contains "Deployment Tracker")
         epics = {}
         grouped_keys = {}
         for ticket in tickets:
             epic_name = ticket.get('epic_name', 'Other')
             if not epic_name:
                 epic_name = 'Other'
+            if "Deployment Tracker" in epic_name:
+                continue
 
             if epic_name not in epics:
                 epics[epic_name] = {
