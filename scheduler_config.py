@@ -50,7 +50,7 @@ class SchedulerConfig:
     SLACK_CHANNEL_ID = os.getenv('SLACK_DM_CHANNEL', '')
 
     # Command to execute
-    COMMAND = ['python', 'main.py', '--skip-approval']
+    COMMAND = ['python3', 'main.py', '--skip-approval']
 
     @classmethod
     def get_log_path(cls) -> str:
