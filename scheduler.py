@@ -201,6 +201,11 @@ def check_and_run_if_missed() -> bool:
         now = datetime.now(tz)
         today = now.date()
 
+        # Skip weekends (scheduler only runs Mon-Fri)
+        if now.weekday() >= 5:  # Saturday=5, Sunday=6
+            logger.info(f"Today is {now.strftime('%A')}, no catch-up on weekends")
+            return False
+
         # Check if we already ran today
         if os.path.exists(last_run_path):
             with open(last_run_path, 'r') as f:
