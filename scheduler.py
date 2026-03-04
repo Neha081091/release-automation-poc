@@ -26,8 +26,9 @@ import json
 import time
 import logging
 import subprocess
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional
+import pytz
 
 import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -153,6 +154,109 @@ def update_metrics(success: bool, duration: float, error: str = None) -> None:
         logger.error(f"Error updating metrics: {str(e)}")
 
 
+def save_last_run_date() -> None:
+    """
+    Save the current date as the last successful run date.
+    Used for catch-up functionality on startup.
+    """
+    last_run_path = Config.get_last_run_path()
+
+    try:
+        # Get current date in configured timezone
+        tz = pytz.timezone(Config.TIMEZONE)
+        now = datetime.now(tz)
+
+        last_run_data = {
+            "last_run_date": now.strftime("%Y-%m-%d"),
+            "last_run_timestamp": now.isoformat(),
+            "timezone": Config.TIMEZONE
+        }
+
+        with open(last_run_path, 'w') as f:
+            json.dump(last_run_data, f, indent=2)
+
+        logger.info(f"Last run date saved: {last_run_data['last_run_date']}")
+
+    except Exception as e:
+        logger.error(f"Error saving last run date: {str(e)}")
+
+
+def check_and_run_if_missed() -> bool:
+    """
+    Check if today's scheduled run was missed and run if necessary.
+    This is called on startup to catch up on missed runs.
+
+    Returns:
+        True if catch-up run was triggered, False otherwise
+    """
+    if not Config.ENABLE_STARTUP_CATCHUP:
+        logger.info("Startup catch-up is disabled")
+        return False
+
+    last_run_path = Config.get_last_run_path()
+
+    try:
+        # Get current time in configured timezone
+        tz = pytz.timezone(Config.TIMEZONE)
+        now = datetime.now(tz)
+        today = now.date()
+
+        # Check if we already ran today
+        if os.path.exists(last_run_path):
+            with open(last_run_path, 'r') as f:
+                last_run_data = json.load(f)
+
+            last_run_date_str = last_run_data.get("last_run_date")
+            if last_run_date_str:
+                last_run_date = datetime.strptime(last_run_date_str, "%Y-%m-%d").date()
+
+                if last_run_date >= today:
+                    logger.info(f"Already ran today ({last_run_date_str}), no catch-up needed")
+                    return False
+
+        # Check if we're past the scheduled time
+        scheduled_time = now.replace(
+            hour=Config.SCHEDULE_HOUR,
+            minute=Config.SCHEDULE_MINUTE,
+            second=0,
+            microsecond=0
+        )
+
+        if now >= scheduled_time:
+            logger.info("=" * 60)
+            logger.info("STARTUP CATCH-UP: Scheduled time was missed!")
+            logger.info(f"Scheduled time: {Config.SCHEDULE_HOUR:02d}:{Config.SCHEDULE_MINUTE:02d}")
+            logger.info(f"Current time: {now.strftime('%H:%M:%S')}")
+            logger.info("Running release automation now...")
+            logger.info("=" * 60)
+
+            # Send notification about catch-up
+            send_slack_notification(
+                f"🔄 *Startup Catch-up*\n"
+                f"Laptop was off at scheduled time ({Config.SCHEDULE_HOUR:02d}:{Config.SCHEDULE_MINUTE:02d})\n"
+                f"Running release automation now...",
+                is_error=False
+            )
+
+            # Run the automation
+            success = run_release_automation()
+
+            if success:
+                logger.info("Startup catch-up completed successfully")
+            else:
+                logger.error("Startup catch-up failed")
+
+            return True
+        else:
+            logger.info(f"Current time ({now.strftime('%H:%M')}) is before scheduled time "
+                       f"({Config.SCHEDULE_HOUR:02d}:{Config.SCHEDULE_MINUTE:02d}), no catch-up needed")
+            return False
+
+    except Exception as e:
+        logger.error(f"Error checking for missed runs: {str(e)}")
+        return False
+
+
 def run_release_automation() -> bool:
     """
     Execute the release automation script with retry logic.
@@ -197,6 +301,9 @@ def run_release_automation() -> bool:
 
                 # Update metrics
                 update_metrics(success=True, duration=duration)
+
+                # Save last run date for catch-up tracking
+                save_last_run_date()
 
                 # Send success notification
                 send_slack_notification(
@@ -267,6 +374,13 @@ def main():
     # Print configuration
     Config.print_config()
 
+    # Check for startup catch-up (run if scheduled time was missed while laptop was off)
+    if Config.ENABLE_STARTUP_CATCHUP:
+        logger.info("Checking for missed scheduled runs...")
+        catch_up_triggered = check_and_run_if_missed()
+        if catch_up_triggered:
+            logger.info("Catch-up run completed, continuing with scheduler...")
+
     # Check for command line arguments
     if len(sys.argv) > 1:
         if sys.argv[1] == '--run-now':
@@ -298,6 +412,13 @@ Stop:
 
 View logs:
     tail -f logs/release_automation.log
+
+Startup Catch-up Feature:
+    When the scheduler starts, it checks if the scheduled time was missed
+    (e.g., laptop was off at 12:00 PM). If missed, it automatically runs
+    the release automation immediately.
+
+    To disable: Set ENABLE_STARTUP_CATCHUP=false in environment
             """)
             return
 

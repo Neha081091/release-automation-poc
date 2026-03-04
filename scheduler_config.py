@@ -31,6 +31,12 @@ class SchedulerConfig:
     # Metrics file for tracking runs
     METRICS_FILE = os.getenv('METRICS_FILE', 'metrics.json')
 
+    # Last run tracking file (for catch-up on startup)
+    LAST_RUN_FILE = os.getenv('LAST_RUN_FILE', 'last_run.json')
+
+    # Enable catch-up on startup (run if scheduled time was missed)
+    ENABLE_STARTUP_CATCHUP = os.getenv('ENABLE_STARTUP_CATCHUP', 'true').lower() == 'true'
+
     # Retry configuration
     MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))
     RETRY_DELAY_SECONDS = int(os.getenv('RETRY_DELAY_SECONDS', '60'))
@@ -57,6 +63,11 @@ class SchedulerConfig:
         return os.path.join(cls.LOG_DIRECTORY, cls.METRICS_FILE)
 
     @classmethod
+    def get_last_run_path(cls) -> str:
+        """Get the full path to the last run tracking file."""
+        return os.path.join(cls.LOG_DIRECTORY, cls.LAST_RUN_FILE)
+
+    @classmethod
     def ensure_log_directory(cls) -> None:
         """Create the log directory if it doesn't exist."""
         if not os.path.exists(cls.LOG_DIRECTORY):
@@ -75,6 +86,7 @@ class SchedulerConfig:
         print(f"  Max retries: {cls.MAX_RETRIES}")
         print(f"  Timeout: {cls.EXECUTION_TIMEOUT}s")
         print(f"  Slack notifications: {'Enabled' if cls.SLACK_WEBHOOK_URL else 'Disabled'}")
+        print(f"  Startup catch-up: {'Enabled' if cls.ENABLE_STARTUP_CATCHUP else 'Disabled'}")
         print("=" * 50 + "\n")
 
 
