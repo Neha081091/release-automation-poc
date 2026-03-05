@@ -132,6 +132,17 @@ def export_jira_tickets(release_date_str: str = None):
     hotfix_count = original_count - len(linked_tickets)
     if hotfix_count > 0:
         print(f"[Step 1] Filtered out {hotfix_count} Hotfix ticket(s)")
+
+    # Filter out Deployment Tracker epic tickets (internal, not for release notes)
+    before_dt = len(linked_tickets)
+    linked_tickets = [
+        t for t in linked_tickets
+        if "deployment tracker" not in (t.get("epic_name") or "").lower()
+    ]
+    dt_count = before_dt - len(linked_tickets)
+    if dt_count > 0:
+        print(f"[Step 1] Filtered out {dt_count} Deployment Tracker ticket(s)")
+    if hotfix_count > 0 or dt_count > 0:
         print(f"[Step 1] Remaining: {len(linked_tickets)} tickets")
 
     # Export to JSON

@@ -79,6 +79,7 @@ PRODUCT_LINE_ORDER = [
     "DSP Core PL1",
     "DSP Core PL2",
     "DSP Core PL3",
+    "DSP Core PL4",
     "DSP Core PL5",
     "DSP PL1",
     "DSP PL2",
@@ -431,8 +432,12 @@ class ReleaseNotesFormatter:
         summary = ticket.get("summary", "").lower()
         issue_type = ticket.get("issue_type", "").lower()
         fix_version = ticket.get("fix_version", "").lower()
+        epic_name = (ticket.get("epic_name") or "").strip()
 
-        # Exclude Deployment Tracker tickets
+        # Exclude tickets whose epic name contains "Deployment Tracker" (internal, not for release notes)
+        if epic_name and "deployment tracker" in epic_name.lower():
+            return True
+        # Exclude by issue type if it literally is a deployment tracker type
         if "deployment" in issue_type and "tracker" in issue_type:
             return True
 

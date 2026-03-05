@@ -527,7 +527,10 @@ def process_tickets_with_claude():
     epic_urls_by_pl = defaultdict(dict)
 
     for ticket in tickets:
-        # Skip Deployment Tracker tickets — they are internal and should not appear in release notes
+        # Skip Deployment Tracker epic tickets — they are internal and should not appear in release notes
+        epic_name_val = (ticket.get("epic_name") or "").strip()
+        if epic_name_val and "deployment tracker" in epic_name_val.lower():
+            continue
         issue_type = ticket.get("issue_type", "").lower()
         if "deployment" in issue_type and "tracker" in issue_type:
             continue

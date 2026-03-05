@@ -30,7 +30,8 @@ class SlackHandler:
             default_channel: Default channel ID for messages
             webhook_url: Slack webhook URL (preferred for simple posting)
         """
-        self.webhook_url = webhook_url or os.getenv('SLACK_WEBHOOK_URL')
+        # Allow explicit webhook_url='' to force bot-only (e.g. for release note post from PMO app)
+        self.webhook_url = webhook_url if webhook_url is not None else os.getenv('SLACK_WEBHOOK_URL')
         self.bot_token = bot_token or os.getenv('SLACK_BOT_TOKEN')
         self.default_channel = default_channel or os.getenv('SLACK_DM_CHANNEL')
 
@@ -356,14 +357,13 @@ class SlackHandler:
         """
         print("[Slack] Posting final release notes...")
 
-        # Create rich formatted message
+        # Create rich formatted message (use section + bold for title to avoid huge header font)
         blocks = [
             {
-                "type": "header",
+                "type": "section",
                 "text": {
-                    "type": "plain_text",
-                    "text": f"RELEASE DEPLOYED: {release_date}",
-                    "emoji": True
+                    "type": "mrkdwn",
+                    "text": f"*Daily Deployment Summary: {release_date}*"
                 }
             },
             {
@@ -402,7 +402,7 @@ class SlackHandler:
             ]
         })
 
-        fallback_text = f"""RELEASE DEPLOYED: {release_date}
+        fallback_text = f"""Daily Deployment Summary: {release_date}
 
 {release_notes}
 

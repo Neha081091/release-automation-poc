@@ -904,17 +904,19 @@ def create_formatted_requests(release_date: str, grouped_data: Dict,
             "text": title
         }
     })
-    # Style title as heading
+    # Style title as bold, 14pt (avoid huge HEADING_1)
+    title_end = current_index + len(title) - 1
     requests.append({
-        "updateParagraphStyle": {
+        "updateTextStyle": {
             "range": {
                 "startIndex": current_index,
-                "endIndex": current_index + len(title) - 1
+                "endIndex": title_end
             },
-            "paragraphStyle": {
-                "namedStyleType": "HEADING_1"
+            "textStyle": {
+                "bold": True,
+                "fontSize": {"magnitude": 14, "unit": "PT"}
             },
-            "fields": "namedStyleType"
+            "fields": "bold,fontSize"
         }
     })
     current_index += len(title)

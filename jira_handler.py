@@ -150,23 +150,19 @@ class JiraHandler:
 
     def get_linked_tickets(self, issue_key: str) -> List[Dict]:
         """
-        Get all tickets linked to the specified issue.
-        Falls back to searching by Fix Version if no direct links found.
+        Get all tickets for the release using the release ticket's Fix Version(s).
+        Excludes the release ticket itself and hotfix versions.
 
         Args:
-            issue_key: The Jira issue key (e.g., DI-12345)
+            issue_key: The Jira release issue key (e.g., DI-92010)
 
         Returns:
-            List of linked ticket data
+            List of ticket data for all issues with the release's fix versions
         """
-        print(f"[Jira] Fetching linked tickets for {issue_key}")
+        print(f"[Jira] Fetching tickets by Fix Version(s) for {issue_key}")
 
-        # Get issue with links and fix versions
         endpoint = f"issue/{issue_key}"
-        params = {
-            "fields": "issuelinks,fixVersions",
-            "expand": "names"
-        }
+        params = {"fields": "fixVersions"}
 
         result = self._make_request("GET", endpoint, params=params)
 
@@ -174,45 +170,21 @@ class JiraHandler:
             print(f"[Jira] Could not fetch issue {issue_key}")
             return []
 
-        links = result.get("fields", {}).get("issuelinks", [])
-        linked_keys = []
+        fix_versions = result.get("fields", {}).get("fixVersions", [])
+        fix_version_names = [
+            fv.get("name") for fv in fix_versions
+            if fv.get("name") and "hotfix" not in fv.get("name", "").lower()
+        ]
 
-        for link in links:
-            # Links can have inwardIssue or outwardIssue
-            if "inwardIssue" in link:
-                linked_keys.append(link["inwardIssue"]["key"])
-            if "outwardIssue" in link:
-                linked_keys.append(link["outwardIssue"]["key"])
+        if not fix_version_names:
+            print("[Jira] No Fix Version found on release ticket. Trying to search by date...")
+            return self.get_tickets_by_release_date(issue_key)
 
-        print(f"[Jira] Found {len(linked_keys)} directly linked tickets")
-
-        # If no linked tickets, try searching by Fix Version(s)
-        if not linked_keys:
-            fix_versions = result.get("fields", {}).get("fixVersions", [])
-            if fix_versions:
-                # Get all fix version names, excluding Hotfix versions
-                fix_version_names = [
-                    fv.get("name") for fv in fix_versions
-                    if fv.get("name") and "hotfix" not in fv.get("name", "").lower()
-                ]
-                excluded = [fv.get("name") for fv in fix_versions if fv.get("name") and "hotfix" in fv.get("name", "").lower()]
-                if excluded:
-                    print(f"[Jira] Excluding Hotfix versions: {excluded}")
-                print(f"[Jira] No links found. Searching by {len(fix_version_names)} Fix Versions: {fix_version_names}")
-                return self.get_tickets_by_fix_versions(fix_version_names, issue_key)
-            else:
-                print("[Jira] No Fix Version found on release ticket. Trying to search by date...")
-                # Try to extract date from ticket summary and search
-                return self.get_tickets_by_release_date(issue_key)
-
-        # Fetch full details for each linked ticket
-        linked_tickets = []
-        for key in linked_keys:
-            ticket = self.get_ticket_details(key)
-            if ticket:
-                linked_tickets.append(ticket)
-
-        return linked_tickets
+        excluded = [fv.get("name") for fv in fix_versions if fv.get("name") and "hotfix" in fv.get("name", "").lower()]
+        if excluded:
+            print(f"[Jira] Excluding Hotfix versions: {excluded}")
+        print(f"[Jira] Using {len(fix_version_names)} Fix Version(s): {fix_version_names[:5]}{'...' if len(fix_version_names) > 5 else ''}")
+        return self.get_tickets_by_fix_versions(fix_version_names, issue_key)
 
     def get_fix_versions_for_ticket(self, issue_key: str) -> List[str]:
         """

@@ -43,6 +43,11 @@ def _today_date_str() -> str:
     return f"{_ordinal(today.day)} {today.strftime('%B %Y')}"
 
 
+def _today_release_summary() -> str:
+    """Return today's release summary for Jira, e.g. 'Release 4th March 2026'. Auto-detect when RELEASE_TICKET_SUMMARY is not set."""
+    return f"Release {_today_date_str()}"
+
+
 def is_weekday() -> bool:
     """Return True if today is Monday-Friday."""
     return datetime.now().weekday() < 5  # 0=Mon … 4=Fri
@@ -80,7 +85,7 @@ def step1_fetch_jira_tickets(release_summary: str = None) -> Tuple[Optional[Dict
     """
     print_step(1, "FETCH JIRA TICKETS")
 
-    release_summary = release_summary or os.getenv('RELEASE_TICKET_SUMMARY', 'Release 2nd February 2026')
+    release_summary = release_summary or os.getenv('RELEASE_TICKET_SUMMARY') or _today_release_summary()
     project_key = os.getenv('JIRA_PROJECT_KEY', 'DI')
 
     try:
@@ -150,11 +155,11 @@ def step2_create_release_notes(tickets: list, release_date: str = None) -> Tuple
         print("[Step 2] ERROR: No tickets provided")
         return None, ""
 
-    # Parse release date from environment or use default
+    # Parse release date from environment or use auto-detected today
     if not release_date:
-        release_summary = os.getenv('RELEASE_TICKET_SUMMARY', 'Release 2nd February 2026')
-        # Extract date from "Release 2nd February 2026"
-        if 'Release ' in release_summary:
+        release_summary = os.getenv('RELEASE_TICKET_SUMMARY') or _today_release_summary()
+        # Extract date from "Release 4th March 2026"
+        if release_summary and 'Release ' in release_summary:
             release_date = release_summary.replace('Release ', '')
         else:
             release_date = datetime.now().strftime("%d %B %Y")
@@ -400,8 +405,8 @@ def step6_post_to_release_channel(release_date: str, release_notes: str,
     print_step(6, "POST TO RELEASE CHANNEL")
 
     try:
-        # Initialize Slack handler
-        slack = SlackHandler()
+        # Force bot token so the release note is posted by the PMO app (not incoming-webhook)
+        slack = SlackHandler(webhook_url='')
 
         # Get release channel (for PoC, using default DM channel)
         release_channel = os.getenv('SLACK_RELEASE_CHANNEL', os.getenv('SLACK_DM_CHANNEL'))
@@ -469,9 +474,11 @@ def run_release_automation(release_date: str = None, skip_approval: bool = False
     if not linked_tickets:
         print("\n[WORKFLOW] No release found for today. Sending Slack notification...")
         try:
-            slack = SlackHandler()
+            slack = SlackHandler(webhook_url='')  # Use PMO bot, not webhook
             if slack.test_connection():
-                slack.send_no_release_notification(_today_date_str())
+                # Use review channel so the bot can post (avoids channel_not_found for DM IDs)
+                channel = os.getenv('SLACK_REVIEW_CHANNEL') or os.getenv('SLACK_DM_CHANNEL')
+                slack.send_no_release_notification(_today_date_str(), channel=channel)
         except Exception as e:
             print(f"[WORKFLOW] Could not send no-release Slack notification: {e}")
         results["error"] = "No tickets found"
@@ -646,7 +653,7 @@ Examples:
             sys.exit(1)
 
         # Build formatter to get TL;DR
-        release_summary = os.getenv('RELEASE_TICKET_SUMMARY', 'Release 2nd February 2026')
+        release_summary = os.getenv('RELEASE_TICKET_SUMMARY') or _today_release_summary()
         release_date = args.release_date
         if not release_date:
             if 'Release ' in release_summary:
