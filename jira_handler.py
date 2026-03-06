@@ -498,6 +498,20 @@ class JiraHandler:
         return False
 
 
+def _ordinal(day: int) -> str:
+    """Return day with ordinal suffix."""
+    if 11 <= day <= 13:
+        return f"{day}th"
+    return f"{day}{['th','st','nd','rd','th','th','th','th','th','th'][day % 10]}"
+
+
+def _today_release_summary() -> str:
+    """Return today's release summary like 'Release 4th March 2026'."""
+    from datetime import datetime
+    today = datetime.now()
+    return f"Release {_ordinal(today.day)} {today.strftime('%B %Y')}"
+
+
 def main():
     """Test the Jira handler."""
     from dotenv import load_dotenv
@@ -511,8 +525,8 @@ def main():
             print("Failed to connect to Jira")
             return
 
-        # Find release ticket
-        release_summary = os.getenv('RELEASE_TICKET_SUMMARY', 'Release 2nd February 2026')
+        # Find release ticket - auto-detect today's date if not in env
+        release_summary = os.getenv('RELEASE_TICKET_SUMMARY') or _today_release_summary()
         release_ticket = handler.find_release_ticket(release_summary)
 
         if release_ticket:

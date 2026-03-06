@@ -162,7 +162,7 @@ def step2_create_release_notes(tickets: list, release_date: str = None) -> Tuple
         if release_summary and 'Release ' in release_summary:
             release_date = release_summary.replace('Release ', '')
         else:
-            release_date = datetime.now().strftime("%d %B %Y")
+            release_date = _today_date_str()
 
     print(f"[Step 2] Release date: {release_date}")
     print(f"[Step 2] Processing {len(tickets)} tickets...")
