@@ -22,6 +22,9 @@ from slack_sdk.errors import SlackApiError
 
 load_dotenv()
 
+# Use script directory for JSON files so step 3 and socket app share the same data (same cwd)
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Product Line order - grouped by category for consistent display
 PRODUCT_LINE_ORDER = [
     "Media PL1", "Media PL2", "Media",
@@ -34,10 +37,10 @@ PRODUCT_LINE_ORDER = [
     "Data Governance", "Other",
 ]
 
-APPROVAL_STATES_FILE = 'approval_states.json'
-MESSAGE_METADATA_FILE = 'message_metadata.json'
-DEFERRED_PLS_FILE = 'deferred_pls.json'
-LAST_ANNOUNCEMENT_FILE = 'last_announcement.json'
+APPROVAL_STATES_FILE = os.path.join(_SCRIPT_DIR, 'approval_states.json')
+MESSAGE_METADATA_FILE = os.path.join(_SCRIPT_DIR, 'message_metadata.json')
+DEFERRED_PLS_FILE = os.path.join(_SCRIPT_DIR, 'deferred_pls.json')
+LAST_ANNOUNCEMENT_FILE = os.path.join(_SCRIPT_DIR, 'last_announcement.json')
 
 app = App(token=os.getenv("SLACK_BOT_TOKEN"))
 client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
@@ -142,14 +145,25 @@ def _resolve_pl_key_from_processed(pl_name: str, processed_data: dict) -> str:
 
 
 def _build_text_blocks(text: str, chunk_size: int = 3000):
+    """Split text into Slack blocks at newline boundaries so format is preserved."""
+    if not (text or "").strip():
+        return [{"type": "section", "text": {"type": "mrkdwn", "text": ""}}]
     chunks = []
-    remaining = text or ""
+    remaining = (text or "").strip()
     while remaining:
-        chunks.append(remaining[:chunk_size])
-        remaining = remaining[chunk_size:]
-    return [{"type": "section", "text": {"type": "mrkdwn", "text": chunk}} for chunk in chunks] or [
-        {"type": "section", "text": {"type": "mrkdwn", "text": ""}}
-    ]
+        if len(remaining) <= chunk_size:
+            chunks.append(remaining)
+            break
+        # Split at last newline before chunk_size so we don't break mid-line
+        segment = remaining[:chunk_size]
+        last_nl = segment.rfind("\n")
+        if last_nl > 0:
+            chunks.append(remaining[: last_nl + 1])
+            remaining = remaining[last_nl + 1 :]
+        else:
+            chunks.append(segment)
+            remaining = remaining[chunk_size:]
+    return [{"type": "section", "text": {"type": "mrkdwn", "text": chunk}} for chunk in chunks]
 
 
 def _extract_epics_from_body(body_text: str) -> list:
@@ -271,7 +285,7 @@ def _filter_body_by_deferred_epics(body_text: str, deferred_epics: list) -> str:
 def auto_format_text(text: str, processed_data: dict = None) -> str:
     if processed_data is None:
         try:
-            with open('processed_notes.json', 'r') as f:
+            with open(os.path.join(_SCRIPT_DIR, 'processed_notes.json'), 'r') as f:
                 processed_data = json.load(f)
         except Exception:
             processed_data = {}
@@ -619,20 +633,65 @@ def restore_pl_to_google_doc(pl_name: str, deferred_pl_data: dict, message_ts: s
         separator_match = re.search(r'\n═{20,}\n', section_text)
         section_end = release_start + separator_match.start() if separator_match else len(full_text)
 
-        tldr_summary = deferred_pl_data.get('tldr') or deferred_pl_data.get('notes') or "Updates added"
+        # Use same TL;DR source as Slack: deferred data first, then processed_notes.json
+        tldr_summary = (deferred_pl_data.get('tldr') or deferred_pl_data.get('notes') or '').strip()
+        if not tldr_summary:
+            try:
+                with open(os.path.join(_SCRIPT_DIR, 'processed_notes.json'), 'r') as f:
+                    proc = json.load(f)
+                tldr_raw = (proc.get('tldr_by_pl') or {})
+                rk = _resolve_pl_key_from_processed(pl_name, proc)
+                tldr_summary = (tldr_raw.get(rk) or tldr_raw.get(pl_name) or tldr_raw.get(pl_name.replace(' 2026', '').replace(' 2025', ''), '') or '').strip()
+            except Exception:
+                pass
+        tldr_summary = tldr_summary or "Updates added"
         pl_clean = _clean_pl_name_for_doc(pl_name)
-        tldr_line = f"• {pl_clean} - {tldr_summary}\n"
-
+        # Will set tldr_line and tldr_insert_text_pos; prefer under "Key Deployments:" to match reference format
         tldr_insert_text_pos = None
-        tldr_header_match = re.search(r'-{10,}\s*TL;DR:?\s*-{10,}', section_text, re.IGNORECASE)
-        if tldr_header_match:
-            after_tldr_header = tldr_header_match.end()
-            rest = section_text[after_tldr_header:]
-            next_header = re.search(r'\n-{10,}[^-]+-{10,}', rest)
-            if next_header:
-                tldr_insert_text_pos = release_start + after_tldr_header + next_header.start()
-            else:
-                tldr_insert_text_pos = release_start + len(section_text)
+        tldr_line = None
+        tldr_has_leading_newline = False  # for bold range: prefix is "• " (2) or "\n• " (3)
+
+        # 1) Prefer: insert right after "Key Deployments:\n" so layout is TL;DR -> Key Deployments -> bullet (reference Image 2)
+        key_deploy_in_section = section_text.find("Key Deployments:")
+        if key_deploy_in_section != -1:
+            nl_after = section_text.find("\n", key_deploy_in_section)
+            if nl_after != -1:
+                tldr_insert_text_pos = release_start + nl_after + 1
+                tldr_line = f"• {pl_clean} - {tldr_summary}\n"
+                tldr_has_leading_newline = False
+        # 2) Match Doc format "------------------TL;DR:------------------" then insert after that line
+        if tldr_insert_text_pos is None:
+            tldr_header_match = re.search(r'-{5,}\s*TL;DR:?\s*-{5,}', section_text, re.IGNORECASE)
+            if tldr_header_match:
+                after_tldr_header = tldr_header_match.end()
+                rest = section_text[after_tldr_header:]
+                next_header = re.search(r'\n-{5,}[^-]+-{5,}', rest)
+                if next_header:
+                    tldr_insert_text_pos = release_start + after_tldr_header + next_header.start()
+                else:
+                    tldr_insert_text_pos = release_start + after_tldr_header
+                tldr_line = f"\n• {pl_clean} - {tldr_summary}\n"
+                tldr_has_leading_newline = True
+        # 3) Fallback: "Key Deployments:" elsewhere in full_text
+        if tldr_insert_text_pos is None:
+            key_deploy = full_text.find("Key Deployments:")
+            if key_deploy != -1:
+                after_key = full_text.find("\n", key_deploy) + 1
+                if after_key > 0:
+                    next_dash = full_text.find("------------------", after_key)
+                    tldr_insert_text_pos = next_dash if (next_dash != -1) else after_key
+                    tldr_line = tldr_line or f"• {pl_clean} - {tldr_summary}\n"
+                    tldr_has_leading_newline = False
+        # 4) Fallback: insert before first category header
+        if tldr_insert_text_pos is None:
+            first_cat = re.search(r'\n-{5,}(?:DSP|Media|Audiences|Developer|Data Ingress|Data Governance|Helix)[^-]*-{5,}', section_text, re.IGNORECASE)
+            if first_cat:
+                tldr_insert_text_pos = release_start + first_cat.start()
+                tldr_line = tldr_line or f"\n• {pl_clean} - {tldr_summary}\n"
+                tldr_has_leading_newline = True
+        if tldr_line is None:
+            tldr_line = f"• {pl_clean} - {tldr_summary}\n"
+            tldr_has_leading_newline = False
 
         def _get_pl_category(name: str) -> str:
             lower = name.lower()
@@ -707,7 +766,7 @@ def restore_pl_to_google_doc(pl_name: str, deferred_pl_data: dict, message_ts: s
             category_insert_text_pos = section_end
 
         if header_text not in section_text:
-            formatter._insert_text(f"\n{header_text}\n\n")
+            formatter._insert_text(f"\n{header_text}\n")
 
         formatter._insert_text("\n")
         formatter._insert_text(f"{pl_clean}: ")
@@ -791,15 +850,20 @@ def restore_pl_to_google_doc(pl_name: str, deferred_pl_data: dict, message_ts: s
         body_insert_index = _text_pos_to_doc_index(category_insert_text_pos)
         tldr_insert_index = _text_pos_to_doc_index(tldr_insert_text_pos) if tldr_insert_text_pos is not None else None
 
-        jobs = []
+        # Apply TL;DR insert first in its own batch so it is never skipped
         if tldr_insert_index is not None and tldr_line:
             tldr_requests = [{"insertText": {"location": {"index": tldr_insert_index}, "text": tldr_line}}]
+            google_docs.update_document(tldr_requests)
+            tldr_prefix_len = 3 if tldr_has_leading_newline else 2  # "\n• " or "• "
             tldr_format = [
                 {"updateTextStyle": {"range": {"startIndex": tldr_insert_index, "endIndex": tldr_insert_index + len(tldr_line)}, "textStyle": {"bold": False}, "fields": "bold"}},
-                {"updateTextStyle": {"range": {"startIndex": tldr_insert_index + len("• "), "endIndex": tldr_insert_index + len("• ") + len(pl_clean)}, "textStyle": {"bold": True}, "fields": "bold"}}
+                {"updateTextStyle": {"range": {"startIndex": tldr_insert_index + tldr_prefix_len, "endIndex": tldr_insert_index + tldr_prefix_len + len(pl_clean)}, "textStyle": {"bold": True}, "fields": "bold"}}
             ]
-            jobs.append((tldr_insert_index, tldr_requests, tldr_format))
+            google_docs.update_document(tldr_format)
+            # Body insert position shifts by len(tldr_line) after TL;DR insert
+            body_insert_index += len(tldr_line)
 
+        # Then apply body insert
         if formatter.insert_requests:
             offset = body_insert_index - 1
             body_insert_requests = []
@@ -807,6 +871,7 @@ def restore_pl_to_google_doc(pl_name: str, deferred_pl_data: dict, message_ts: s
                 new_req = json.loads(json.dumps(req))
                 new_req["insertText"]["location"]["index"] += offset
                 body_insert_requests.append(new_req)
+            google_docs.update_document(body_insert_requests)
 
             body_format_requests = []
             for req in formatter.format_requests:
@@ -818,17 +883,26 @@ def restore_pl_to_google_doc(pl_name: str, deferred_pl_data: dict, message_ts: s
                     new_req["updateParagraphStyle"]["range"]["startIndex"] += offset
                     new_req["updateParagraphStyle"]["range"]["endIndex"] += offset
                 body_format_requests.append(new_req)
-            jobs.append((body_insert_index, body_insert_requests, body_format_requests))
+            google_docs.update_document(body_format_requests)
 
-        jobs.sort(key=lambda x: x[0], reverse=True)
-        for _, insert_reqs, format_reqs in jobs:
-            if insert_reqs:
-                google_docs.update_document(insert_reqs)
-            if format_reqs:
-                google_docs.update_document(format_reqs)
+        # Backup: ensure pl_content and notes/tldr are in message_metadata (primary write is in handle_reset)
+        try:
+            msg_meta = load_message_metadata()
+            if message_ts in msg_meta:
+                body_val = (deferred_pl_data.get('body') or deferred_pl_data.get('notes') or '').strip()
+                tldr_val = (deferred_pl_data.get('tldr') or '').strip()
+                msg_meta[message_ts].setdefault('notes_by_pl', {})[pl_name] = body_val or ''
+                msg_meta[message_ts].setdefault('tldr_by_pl', {})[pl_name] = tldr_val or ''
+                msg_meta[message_ts].setdefault('pl_content', {})[pl_name] = {'body': body_val or '', 'tldr': tldr_val or ''}
+                save_message_metadata(msg_meta)
+        except Exception:
+            pass
 
         return True
-    except Exception:
+    except Exception as e:
+        print(f"[restore_pl_to_google_doc] Error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -868,6 +942,33 @@ def handle_reject(ack, body, action):
     run_async(_work)
 
 
+def _defer_modal_epics_block(scope: str, epics: list):
+    """Return the epics block: for Full show hint only (no select); for Partial show multi-select. Section type for both."""
+    if scope == "full":
+        return {
+            "type": "section",
+            "block_id": "defer_epics_block",
+            "text": {"type": "mrkdwn", "text": "_No epic selection needed for full defer._"}
+        }
+    epic_options = [
+        {"text": {"type": "plain_text", "text": epic[:75]}, "value": epic[:75]}
+        for epic in epics
+    ]
+    if not epic_options:
+        epic_options = [{"text": {"type": "plain_text", "text": "No epics found"}, "value": "__none__"}]
+    return {
+        "type": "section",
+        "block_id": "defer_epics_block",
+        "text": {"type": "mrkdwn", "text": "*Select epics to defer* _(only used when Partial is selected above)_"},
+        "accessory": {
+            "type": "multi_static_select",
+            "action_id": "defer_epics",
+            "placeholder": {"type": "plain_text", "text": "Choose epics"},
+            "options": epic_options
+        }
+    }
+
+
 def _open_defer_modal(trigger_id: str, pl_name: str, message_ts: str, channel: str):
     message_metadata = load_message_metadata()
     notes_by_pl = message_metadata.get(message_ts, {}).get("notes_by_pl", {})
@@ -875,13 +976,8 @@ def _open_defer_modal(trigger_id: str, pl_name: str, message_ts: str, channel: s
     body_text = notes_by_pl.get(pl_key, "")
     epics = _extract_epics_from_body(body_text)
 
-    epic_options = [
-        {"text": {"type": "plain_text", "text": epic[:75]}, "value": epic[:75]}
-        for epic in epics
-    ]
-    if not epic_options:
-        epic_options = [{"text": {"type": "plain_text", "text": "No epics found"}, "value": "__none__"}]
-
+    # Show Full by default. Epic dropdown is always visible so it works for Partial without relying on views_update.
+    # When Full is selected, helper text explains epics are ignored; on submit we ignore selected_epics for Full.
     view = {
         "type": "modal",
         "callback_id": "defer_details",
@@ -908,26 +1004,91 @@ def _open_defer_modal(trigger_id: str, pl_name: str, message_ts: str, channel: s
                     ]
                 }
             },
-            {
-                "type": "section",
-                "block_id": "defer_epics_block",
-                "text": {"type": "mrkdwn", "text": "*Select epics to defer (if deferring specific epics)*"},
-                "accessory": {
-                    "type": "multi_static_select",
-                    "action_id": "defer_epics",
-                    "placeholder": {"type": "plain_text", "text": "Choose epics"},
-                    "options": epic_options
-                }
-            }
+            # Always show epic selector so Partial works; when Full we ignore selection on submit
+            _defer_modal_epics_block("partial", epics)
         ]
     }
 
     client.views_open(trigger_id=trigger_id, view=view)
 
 
+def _build_defer_modal_blocks(scope: str, epics: list):
+    """Build the two blocks for the defer modal (scope radio + epics section)."""
+    return [
+        {
+            "type": "input",
+            "block_id": "defer_scope_block",
+            "label": {"type": "plain_text", "text": "Defer scope"},
+            "element": {
+                "type": "radio_buttons",
+                "action_id": "defer_scope",
+                "initial_option": {"text": {"type": "plain_text", "text": "Full" if scope == "full" else "Partial"}, "value": scope},
+                "options": [
+                    {"text": {"type": "plain_text", "text": "Full"}, "value": "full"},
+                    {"text": {"type": "plain_text", "text": "Partial"}, "value": "partial"}
+                ]
+            }
+        },
+        _defer_modal_epics_block(scope, epics)
+    ]
+
+
+@app.action({"block_id": "defer_scope_block", "action_id": "defer_scope"})
+def handle_defer_scope_change(ack, body, action):
+    """When user changes Full/Partial: try views_update first; if Partial, also try views_push as fallback."""
+    ack()
+    view = body.get("view")
+    if not view or view.get("type") != "modal" or view.get("callback_id") != "defer_details":
+        return
+    selected = (action.get("selected_option") or {}).get("value", "full")
+    try:
+        meta = json.loads(view.get("private_metadata", "{}"))
+        pl_name = meta.get("pl_name")
+        message_ts = meta.get("message_ts")
+        message_metadata = load_message_metadata()
+        notes_by_pl = message_metadata.get(message_ts, {}).get("notes_by_pl", {})
+        pl_key = _resolve_pl_key(pl_name, notes_by_pl)
+        body_text = notes_by_pl.get(pl_key, "")
+        epics = _extract_epics_from_body(body_text)
+    except Exception:
+        epics = []
+    new_view = {
+        "type": "modal",
+        "callback_id": "defer_details",
+        "title": view.get("title"),
+        "submit": view.get("submit"),
+        "close": view.get("close"),
+        "private_metadata": view.get("private_metadata"),
+        "blocks": _build_defer_modal_blocks(selected, epics)
+    }
+    updated = False
+    try:
+        kwargs = {"view_id": view["id"], "view": new_view}
+        if view.get("hash"):
+            kwargs["hash"] = view["hash"]
+        client.views_update(**kwargs)
+        updated = True
+    except Exception as e:
+        print(f"[Defer Modal] views_update error: {e}")
+        try:
+            err = getattr(e, "response", None)
+            if err is not None and hasattr(err, "data"):
+                print(f"[Defer Modal] response data: {getattr(err, 'data', err)}")
+        except Exception:
+            pass
+    if not updated and selected == "partial" and body.get("trigger_id"):
+        try:
+            client.views_push(trigger_id=body["trigger_id"], view=new_view)
+        except Exception as e:
+            print(f"[Defer Modal] views_push error: {e}")
+
+
 @app.action(re.compile(r"^defer_.+$"))
 def handle_defer(ack, body, action):
     ack()
+    # Defer scope radio inside the modal is handled by handle_defer_scope_change
+    if action.get("action_id") == "defer_scope" and body.get("view"):
+        return
     trigger_id = body.get("trigger_id")
     pl_name = get_pl_name_from_action(action['action_id'])
     message_ts = body.get("message", {}).get("ts") or body.get("container", {}).get("message_ts")
@@ -1045,22 +1206,20 @@ def handle_tomorrow(ack, body, action):
         pl_data = {'pl': pl_name, 'notes': pl_notes, 'deferred_by': user, 'deferred_at': datetime.now().isoformat()}
 
         try:
-            with open('processed_notes.json', 'r') as f:
+            with open(os.path.join(_SCRIPT_DIR, 'processed_notes.json'), 'r') as f:
                 processed_data = json.load(f)
-            original_pl = None
-            for pl in processed_data.get('product_lines', []):
-                if pl_name in pl or pl in pl_name or pl.replace(' 2026', '').replace(' 2025', '') == pl_name:
-                    original_pl = pl
-                    break
-            if original_pl:
-                pl_data['tldr'] = processed_data.get('tldr_by_pl', {}).get(original_pl, '')
-                pl_data['body'] = processed_data.get('body_by_pl', {}).get(original_pl, '')
-                pl_data['release_version'] = processed_data.get('release_versions', {}).get(original_pl, 'Release 1.0')
-                pl_data['fix_version_url'] = processed_data.get('fix_version_urls', {}).get(original_pl, '')
-                epic_urls_by_pl = processed_data.get('epic_urls_by_pl', {}).get(original_pl, {})
-                if not epic_urls_by_pl:
-                    epic_urls_by_pl = processed_data.get('epic_urls', {}) or {}
-                pl_data['epic_urls'] = epic_urls_by_pl
+            # Use same key resolution as Good to Announce so TL;DR/body are found regardless of year suffix
+            resolved_key = _resolve_pl_key_from_processed(pl_name, processed_data)
+            tldr_raw = processed_data.get('tldr_by_pl', {}) or {}
+            body_raw = processed_data.get('body_by_pl', {}) or {}
+            pl_data['tldr'] = tldr_raw.get(resolved_key, '') or tldr_raw.get(pl_name, '') or tldr_raw.get(pl_name.replace(' 2026', '').replace(' 2025', ''), '')
+            pl_data['body'] = body_raw.get(resolved_key, '') or body_raw.get(pl_name, '') or body_raw.get(pl_name.replace(' 2026', '').replace(' 2025', ''), '')
+            pl_data['release_version'] = (processed_data.get('release_versions', {}) or {}).get(resolved_key, '') or (processed_data.get('release_versions', {}) or {}).get(pl_name, 'Release 1.0')
+            pl_data['fix_version_url'] = (processed_data.get('fix_version_urls', {}) or {}).get(resolved_key, '') or (processed_data.get('fix_version_urls', {}) or {}).get(pl_name, '')
+            epic_urls_by_pl = (processed_data.get('epic_urls_by_pl', {}) or {}).get(resolved_key, {}) or (processed_data.get('epic_urls_by_pl', {}) or {}).get(pl_name, {})
+            if not epic_urls_by_pl:
+                epic_urls_by_pl = processed_data.get('epic_urls', {}) or {}
+            pl_data['epic_urls'] = epic_urls_by_pl
         except Exception:
             pass
 
@@ -1130,6 +1289,28 @@ def handle_reset(ack, body, action):
                 deferred_pls[tomorrow] = [d for d in deferred_pls[tomorrow] if d.get('pl') != pl_name]
                 save_deferred_pls(deferred_pls)
             if deferred_pl_data:
+                # Persist body and TL;DR in one place (pl_content) so Good to Announce reads both the same way.
+                body_val = (deferred_pl_data.get('body') or deferred_pl_data.get('notes') or '').strip()
+                tldr_val = (deferred_pl_data.get('tldr') or '').strip()
+                if not tldr_val:
+                    try:
+                        with open(os.path.join(_SCRIPT_DIR, 'processed_notes.json'), 'r') as f:
+                            proc = json.load(f)
+                        tldr_raw = (proc.get('tldr_by_pl') or {})
+                        rk = _resolve_pl_key_from_processed(pl_name, proc)
+                        tldr_val = (tldr_raw.get(rk) or tldr_raw.get(pl_name) or tldr_raw.get(pl_name.replace(' 2026', '').replace(' 2025', ''), '') or '').strip()
+                    except Exception:
+                        pass
+                try:
+                    msg_meta = load_message_metadata()
+                    if message_ts in msg_meta:
+                        msg_meta[message_ts].setdefault('notes_by_pl', {})[pl_name] = body_val or ''
+                        msg_meta[message_ts].setdefault('tldr_by_pl', {})[pl_name] = (tldr_val or '').strip()
+                        # Single source: pl_content[pl] = {body, tldr} — Good to Announce reads this first
+                        msg_meta[message_ts].setdefault('pl_content', {})[pl_name] = {'body': body_val or '', 'tldr': (tldr_val or '').strip()}
+                        save_message_metadata(msg_meta)
+                except Exception:
+                    pass
                 run_async(restore_pl_to_google_doc, pl_name, deferred_pl_data, message_ts)
 
         update_message_with_status(channel, message_ts, user_id)
@@ -1249,54 +1430,113 @@ def handle_good_to_announce(ack, body):
     release_date = message_metadata.get(message_ts, {}).get('release_date', datetime.now().strftime('%d %B %Y'))
 
     try:
-        with open('processed_notes.json', 'r') as f:
+        with open(os.path.join(_SCRIPT_DIR, 'processed_notes.json'), 'r') as f:
             processed_data = json.load(f)
     except Exception:
         processed_data = {}
 
     tldr_by_pl = processed_data.get('tldr_by_pl', {})
-    body_by_pl = processed_data.get('body_by_pl', {})
-    release_versions = processed_data.get('release_versions', {})
+    body_by_pl_raw = processed_data.get('body_by_pl', {})
+    release_versions_raw = processed_data.get('release_versions', {})
+    fix_version_urls_raw = processed_data.get('fix_version_urls', {})
+    epic_urls_by_pl_raw = processed_data.get('epic_urls_by_pl', {})
 
     announced_pls = []
     body_for_pl = {}
+    tldr_for_pl = {}
     resolved_by_pl = {}
-    notes_by_pl = message_metadata.get(message_ts, {}).get('notes_by_pl', {}) if message_metadata else {}
+    meta = (message_metadata or {}).get(message_ts) or {}
+    notes_by_pl = meta.get('notes_by_pl', {}) or {}
+    tldr_by_pl_meta = meta.get('tldr_by_pl', {}) or {}
+    pl_content = meta.get('pl_content', {}) or {}  # single source written on Reset: {pl: {body, tldr}}
     for pl in approved_pls:
         resolved_key = _resolve_pl_key_from_processed(pl, processed_data)
         resolved_by_pl[pl] = resolved_key
-        body = body_by_pl.get(resolved_key, "") or body_by_pl.get(pl, "") or body_by_pl.get(pl.replace(' 2026', ''), "")
+        # Prefer pl_content (set on Reset) so body and tldr come from the same place
+        pc = pl_content.get(pl) or pl_content.get(_resolve_pl_key(pl, pl_content)) or {}
+        body = (pc.get('body') or '').strip()
+        if not body:
+            body = body_by_pl_raw.get(resolved_key, "") or body_by_pl_raw.get(pl, "") or body_by_pl_raw.get(pl.replace(' 2026', ''), "")
         if not body and notes_by_pl:
             notes_key = _resolve_pl_key(pl, notes_by_pl)
             body = notes_by_pl.get(notes_key, "")
         if pl in deferred_partial and body:
             body = _filter_body_by_deferred_epics(body, deferred_partial.get(pl, []))
+        tldr = (pc.get('tldr') or '').strip()
+        if not tldr:
+            tldr = tldr_by_pl.get(resolved_key, "") or tldr_by_pl.get(pl, "") or tldr_by_pl.get(pl.replace(' 2026', ''), "")
+        if not tldr and tldr_by_pl_meta:
+            tldr_key = _resolve_pl_key(pl, tldr_by_pl_meta)
+            tldr = (tldr_by_pl_meta.get(tldr_key) or "").strip()
         if body and body.strip():
             announced_pls.append(pl)
             body_for_pl[pl] = body
+            tldr_for_pl[pl] = (tldr or "").strip()
 
-    announcement_text = f"*Daily Deployment Summary: {release_date}*\n\n"
-    announcement_text += "------------------TL;DR:------------------\n\n"
-    announcement_text += "*Key Deployments:*\n"
-    for pl in announced_pls:
-        resolved_key = resolved_by_pl.get(pl, pl)
-        tldr = tldr_by_pl.get(resolved_key) or tldr_by_pl.get(pl) or tldr_by_pl.get(pl.replace(' 2026', ''))
-        if tldr:
-            announcement_text += f"● *{pl}* - {tldr}\n"
-    announcement_text += "\n"
+    # Nothing to announce: all PLs deferred or no content — do not post release note; show clear message
+    if not announced_pls:
+        deferred_partial_pls = list(deferred_partial.keys())
+        try:
+            client.chat_update(
+                channel=channel,
+                ts=message_ts,
+                blocks=[
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f"ℹ️ *There is no release to announce*\n\nAll product lines were deferred, rejected, or have no content. Nothing was posted to the release channel."}},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f"• Approved: {', '.join(approved_pls) if approved_pls else 'None'}\n• Deferred (Full): {', '.join(deferred_full_pls) if deferred_full_pls else 'None'}\n• Deferred (Partial): {', '.join(deferred_partial_pls) if deferred_partial_pls else 'None'}\n• Tomorrow: {', '.join(tomorrow_pls) if tomorrow_pls else 'None'}"}}
+                ],
+                text="There is no release to announce."
+            )
+        except Exception as e:
+            print(f"[Socket Mode] Error updating message (no release to announce): {e}")
+        return
 
-    for pl in announced_pls:
-        resolved_key = resolved_by_pl.get(pl, pl)
-        version = release_versions.get(resolved_key, "") or release_versions.get(pl, "") or release_versions.get(pl.replace(' 2026', ''), "")
-        announcement_text += f"------------------{pl}------------------\n"
-        if version:
-            announcement_text += f"{pl}: {version}\n"
-        body = body_for_pl.get(pl, "")
-        if body:
-            announcement_text += f"{body}\n\n"
+    # Build announcement text in the exact same structure as Google Docs (same separators, bold, bullets)
+    # tldr_for_pl was built in the same loop as body_for_pl using the same resolution (processed + message_metadata)
+    try:
+        from google_docs_formatter import GoogleDocsFormatter
+        formatter = GoogleDocsFormatter()
+        release_versions_for_announce = {
+            pl: (release_versions_raw.get(resolved_by_pl.get(pl, pl)) or release_versions_raw.get(pl) or release_versions_raw.get(pl.replace(' 2026', ''), "Release 1.0"))
+            for pl in announced_pls
+        }
+        fix_version_urls_for_announce = {
+            pl: (fix_version_urls_raw.get(resolved_by_pl.get(pl, pl)) or fix_version_urls_raw.get(pl) or fix_version_urls_raw.get(pl.replace(' 2026', ''), ""))
+            for pl in announced_pls
+        }
+        epic_urls_for_announce = {
+            pl: (epic_urls_by_pl_raw.get(resolved_by_pl.get(pl, pl)) or epic_urls_by_pl_raw.get(pl) or epic_urls_by_pl_raw.get(pl.replace(' 2026', ''), {}) or {})
+            for pl in announced_pls
+        }
+        announcement_text = formatter.build_announcement_plain_text(
+            release_date=release_date,
+            tldr_by_pl=tldr_for_pl,
+            body_by_pl=body_for_pl,
+            product_lines=announced_pls,
+            release_versions=release_versions_for_announce,
+            fix_version_urls=fix_version_urls_for_announce,
+            epic_urls_by_pl=epic_urls_for_announce,
+        )
+    except Exception as _build_err:
+        # Fallback: build text manually (may not match Docs exactly)
+        announcement_text = f"*Daily Deployment Summary: {release_date}*\n\n"
+        announcement_text += "------------------TL;DR:------------------\n\n"
+        announcement_text += "*Key Deployments:*\n"
+        for pl in announced_pls:
+            tldr = tldr_for_pl.get(pl, "") or tldr_by_pl.get(resolved_by_pl.get(pl, pl)) or tldr_by_pl.get(pl) or tldr_by_pl.get(pl.replace(' 2026', ''))
+            if tldr:
+                announcement_text += f"• *{pl}* - {tldr}\n"
+        announcement_text += "\n"
+        for pl in announced_pls:
+            resolved_key = resolved_by_pl.get(pl, pl)
+            version = release_versions_raw.get(resolved_key, "") or release_versions_raw.get(pl, "") or release_versions_raw.get(pl.replace(' 2026', ''), "")
+            announcement_text += f"------------------{pl}------------------\n"
+            if version:
+                announcement_text += f"{pl}: {version}\n"
+            body = body_for_pl.get(pl, "")
+            if body:
+                announcement_text += f"{body}\n\n"
 
     try:
-        announcement_text = auto_format_text(announcement_text, processed_data)
         blocks = _build_text_blocks(announcement_text)
         result = client.chat_postMessage(
             channel=announce_channel,
@@ -1466,7 +1706,7 @@ def handle_edit_modal_submission(ack, body, view):
 
     # Load fix version and epic URLs for auto-formatting
     try:
-        with open('processed_notes.json', 'r') as f:
+        with open(os.path.join(_SCRIPT_DIR, 'processed_notes.json'), 'r') as f:
             processed_data = json.load(f)
     except Exception:
         processed_data = {}
@@ -1646,14 +1886,15 @@ def handle_edit_modal_submission(ack, body, view):
         print(f"[Socket Mode] Error updating announcement: {e}")
 
 
-def post_approval_message(pls: list = None, doc_url: str = None, release_date: str = None, notes_by_pl: dict = None):
+def post_approval_message(pls: list = None, doc_url: str = None, release_date: str = None, notes_by_pl: dict = None, tldr_by_pl: dict = None):
     channel = os.getenv('SLACK_REVIEW_CHANNEL')
     if not channel:
         return None
 
+    tldr_by_pl_clean = {}
     if not pls:
         try:
-            with open('processed_notes.json', 'r') as f:
+            with open(os.path.join(_SCRIPT_DIR, 'processed_notes.json'), 'r') as f:
                 data = json.load(f)
                 pls = data.get('product_lines', [])
                 if not doc_url:
@@ -1664,10 +1905,22 @@ def post_approval_message(pls: list = None, doc_url: str = None, release_date: s
                     release_date = data.get('release_summary', '').replace('Release ', '')
                 if not notes_by_pl:
                     notes_by_pl = data.get('body_by_pl', {})
+                # Persist TL;DR keyed by clean PL name so Reset + Good to Announce can restore it
+                raw_tldr = data.get('tldr_by_pl', {}) or {}
+                for pl in pls:
+                    clean = re.sub(r'\s+20\d{2}$', '', pl).strip()
+                    if clean and clean not in tldr_by_pl_clean:
+                        tldr_by_pl_clean[clean] = raw_tldr.get(pl, '') or ''
         except Exception:
             pls = []
 
-    clean_pls = [re.sub(r'\s+20\d{2}$', '', pl) for pl in pls]
+    clean_pls = [re.sub(r'\s+20\d{2}$', '', pl).strip() for pl in pls]
+    # If caller passed tldr_by_pl (e.g. step 3), persist it keyed by clean PL name
+    if tldr_by_pl and not tldr_by_pl_clean:
+        for pl in pls:
+            clean = re.sub(r'\s+20\d{2}$', '', pl).strip()
+            if clean:
+                tldr_by_pl_clean.setdefault(clean, tldr_by_pl.get(pl, '') or '')
 
     today = datetime.now().strftime('%Y-%m-%d')
     deferred_data = load_deferred_pls()
@@ -1691,12 +1944,21 @@ def post_approval_message(pls: list = None, doc_url: str = None, release_date: s
     result = client.chat_postMessage(channel=channel, text=f"Release Notes Review - {release_date}", blocks=blocks)
     message_ts = result['ts']
 
+    # pl_content: single source {pl: {body, tldr}} so Good to Announce and Reset use the same structure
+    pl_content = {}
+    notes = notes_by_pl or {}
+    for cpl in clean_pls:
+        nk = _resolve_pl_key(cpl, notes)
+        pl_content[cpl] = {'body': (notes.get(nk) or '').strip(), 'tldr': (tldr_by_pl_clean.get(cpl) or '').strip()}
+
     message_metadata = load_message_metadata()
     message_metadata[message_ts] = {
         'pls': clean_pls,
         'doc_url': doc_url,
         'release_date': release_date,
         'notes_by_pl': notes_by_pl or {},
+        'tldr_by_pl': tldr_by_pl_clean,
+        'pl_content': pl_content,
         'channel': channel
     }
     save_message_metadata(message_metadata)

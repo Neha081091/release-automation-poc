@@ -626,9 +626,9 @@ class GoogleDocsHandler:
             tldr_section = full_text[tldr_header_end:tldr_section_end]
             print(f"[Google Docs] TL;DR section preview: {tldr_section[:300]}...")
 
-            # Patterns to find the TL;DR bullet line
-            # Try multiple patterns from strict to flexible
+            # Patterns to find the TL;DR bullet line (include leading newline when present so we remove full line)
             patterns = [
+                rf'\n[•●]\s*{re.escape(pl_clean)}(?:\s+20\d{{2}})?\s*[-–—]\s*[^\n]+\n?',  # Leading newline (restore format)
                 rf'[•●]\s*{re.escape(pl_clean)}(?:\s+20\d{{2}})?\s*[-–—]\s*[^\n]+\n?',  # Unicode bullet
                 rf'[•●\*\-]\s*\*?{re.escape(pl_clean)}(?:\s+20\d{{2}})?\*?\s*[-–—]\s*[^\n]+\n?',  # With bold
                 rf'{re.escape(pl_clean)}(?:\s+20\d{{2}})?\s*[-–—]\s*[^\n]+\n?',  # No bullet
@@ -646,13 +646,8 @@ class GoogleDocsHandler:
                 print(f"[Google Docs] PL clean name: '{pl_clean}'")
                 return None
 
-            # Find the full line (from line start to line end)
-            line_start_in_section = tldr_section.rfind('\n', 0, match.start())
-            if line_start_in_section == -1:
-                line_start_in_section = 0
-            else:
-                line_start_in_section += 1  # Skip the newline
-
+            # Use match span so we delete the whole line (including any leading newline we matched)
+            line_start_in_section = match.start()
             line_end_in_section = match.end()
 
             # Convert to full text positions
