@@ -97,7 +97,7 @@ python main.py --step 3    # Jira + Google Doc + Slack notification
 | `SLACK_WEBHOOK_URL` | Slack incoming webhook URL | `https://hooks.slack.com/services/...` |
 | `SLACK_DM_CHANNEL` | Slack channel for PoC notifications | `D0694CZAXAA` |
 | `SLACK_REVIEW_CHANNEL` | Slack channel for PMO review | `C123ABC456` |
-| `SLACK_ANNOUNCE_CHANNEL` | Slack channel for final announcements | `C789DEF012` |
+| `SLACK_ANNOUNCE_CHANNEL` | Final announcements (**must be channel ID** `C…`/`G…`, not `#name`; app must be **invited** to that channel). Leave unset to post in the same channel as the review message | `C789DEF012` |
 | `SLACK_RELEASE_CHANNEL` | Legacy final release channel | `C789DEF012` |
 | `SCHEDULE_TIME` | Daily automation time | `12:00` |
 

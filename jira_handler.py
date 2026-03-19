@@ -11,8 +11,52 @@ This module handles all Jira-related operations:
 import os
 import requests
 from requests.auth import HTTPBasicAuth
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 import time
+
+
+def _is_hotfix_version_name(name: str) -> bool:
+    return bool(name) and "hotfix" in name.lower()
+
+
+def _is_pending_release_version_name(name: str) -> bool:
+    """True if this fix version should be ignored when a concrete release version exists."""
+    return bool(name) and "pending release" in name.lower()
+
+
+def filter_release_fix_version_names(names: List[str]) -> List[str]:
+    """
+    Fix version names used for release scope / JQL: exclude Hotfix and Pending Release.
+    """
+    out: List[str] = []
+    for n in names or []:
+        if not n:
+            continue
+        if _is_hotfix_version_name(n):
+            continue
+        if _is_pending_release_version_name(n):
+            continue
+        out.append(n)
+    return out
+
+
+def pick_display_fix_version(fix_version_objs: Optional[List[Dict]]) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Choose fix version name and id for a ticket's export row.
+
+    If multiple fix versions exist and one is "Pending Release", prefer any other
+    (non-hotfix) version. Falls back to hotfix-only or pending-only like first match.
+    """
+    if not fix_version_objs:
+        return None, None
+    objs = [fv for fv in fix_version_objs if fv and fv.get("name")]
+    if not objs:
+        return None, None
+    non_hotfix = [fv for fv in objs if not _is_hotfix_version_name(fv["name"])]
+    candidates = non_hotfix if non_hotfix else objs
+    preferred = [fv for fv in candidates if not _is_pending_release_version_name(fv["name"])]
+    chosen = preferred[0] if preferred else candidates[0]
+    return chosen.get("name"), chosen.get("id")
 
 
 class JiraHandler:
@@ -150,23 +194,21 @@ class JiraHandler:
 
     def get_linked_tickets(self, issue_key: str) -> List[Dict]:
         """
-        Get all tickets linked to the specified issue.
-        Falls back to searching by Fix Version if no direct links found.
+        Get all tickets in the release by Fix Version only (no issue-link merge).
+
+        Uses fix versions on the release ticket; ignores Hotfix and "Pending Release"
+        version names when building the JQL. Falls back to date-based search if none apply.
 
         Args:
             issue_key: The Jira issue key (e.g., DI-12345)
 
         Returns:
-            List of linked ticket data
+            List of ticket data for issues matching those fix versions
         """
-        print(f"[Jira] Fetching linked tickets for {issue_key}")
+        print(f"[Jira] Fetching tickets by Fix Version(s) only for {issue_key}")
 
-        # Get issue with links and fix versions
         endpoint = f"issue/{issue_key}"
-        params = {
-            "fields": "issuelinks,fixVersions",
-            "expand": "names"
-        }
+        params = {"fields": "fixVersions", "expand": "names"}
 
         result = self._make_request("GET", endpoint, params=params)
 
@@ -174,55 +216,30 @@ class JiraHandler:
             print(f"[Jira] Could not fetch issue {issue_key}")
             return []
 
-        links = result.get("fields", {}).get("issuelinks", [])
-        linked_keys = []
-
-        for link in links:
-            # Links can have inwardIssue or outwardIssue
-            if "inwardIssue" in link:
-                linked_keys.append(link["inwardIssue"]["key"])
-            if "outwardIssue" in link:
-                linked_keys.append(link["outwardIssue"]["key"])
-
-        print(f"[Jira] Found {len(linked_keys)} directly linked tickets")
-
-        # Always consider Fix Versions on the release ticket (in addition to links)
         fix_versions = result.get("fields", {}).get("fixVersions", [])
-        fix_version_tickets = []
-        if fix_versions:
-            fix_version_names = [
-                fv.get("name") for fv in fix_versions
-                if fv.get("name") and "hotfix" not in fv.get("name", "").lower()
-            ]
-            excluded = [fv.get("name") for fv in fix_versions if fv.get("name") and "hotfix" in fv.get("name", "").lower()]
-            if excluded:
-                print(f"[Jira] Excluding Hotfix versions: {excluded}")
-            if fix_version_names:
-                print(f"[Jira] Searching by {len(fix_version_names)} Fix Versions: {fix_version_names}")
-                fix_version_tickets = self.get_tickets_by_fix_versions(fix_version_names, issue_key)
-        elif not linked_keys:
+        all_names = [fv.get("name") for fv in fix_versions if fv.get("name")]
+        fix_version_names = filter_release_fix_version_names(all_names)
+
+        excluded_hotfix = [n for n in all_names if _is_hotfix_version_name(n)]
+        excluded_pending = [n for n in all_names if _is_pending_release_version_name(n)]
+        if excluded_hotfix:
+            print(f"[Jira] Excluding Hotfix versions from release scope: {excluded_hotfix}")
+        if excluded_pending:
+            print(f"[Jira] Ignoring Pending Release version(s) on release ticket: {excluded_pending}")
+
+        if not fix_versions:
             print("[Jira] No Fix Version found on release ticket. Trying to search by date...")
             return self.get_tickets_by_release_date(issue_key)
 
-        # Fetch full details for each linked ticket
-        linked_tickets = []
-        for key in linked_keys:
-            ticket = self.get_ticket_details(key)
-            if ticket:
-                linked_tickets.append(ticket)
+        if not fix_version_names:
+            print(
+                "[Jira] No usable Fix Versions (all Hotfix or Pending Release). "
+                "Trying to search by date..."
+            )
+            return self.get_tickets_by_release_date(issue_key)
 
-        # Merge linked tickets with fix-version tickets (unique by key)
-        if fix_version_tickets:
-            merged = {t.get("key"): t for t in linked_tickets if t.get("key")}
-            for ticket in fix_version_tickets:
-                key = ticket.get("key")
-                if key and key not in merged:
-                    merged[key] = ticket
-            merged_list = list(merged.values())
-            print(f"[Jira] Total tickets after merging links + fixVersions: {len(merged_list)}")
-            return merged_list
-
-        return linked_tickets
+        print(f"[Jira] Searching by {len(fix_version_names)} Fix Version(s): {fix_version_names}")
+        return self.get_tickets_by_fix_versions(fix_version_names, issue_key)
 
     def get_fix_versions_for_ticket(self, issue_key: str) -> List[str]:
         """
@@ -234,7 +251,7 @@ class JiraHandler:
             issue_key: The Jira issue key (e.g., DI-12345)
 
         Returns:
-            List of fix version name strings (excluding Hotfix versions)
+            List of fix version name strings (excluding Hotfix and Pending Release)
         """
         endpoint = f"issue/{issue_key}"
         params = {"fields": "fixVersions"}
@@ -244,11 +261,8 @@ class JiraHandler:
             return []
 
         fix_versions = result.get("fields", {}).get("fixVersions", [])
-        names = [
-            fv.get("name") for fv in fix_versions
-            if fv.get("name") and "hotfix" not in fv.get("name", "").lower()
-        ]
-        return names
+        raw = [fv.get("name") for fv in fix_versions if fv.get("name")]
+        return filter_release_fix_version_names(raw)
 
     def get_tickets_by_fix_versions(self, fix_versions: List[str], exclude_key: str = None) -> List[Dict]:
         """
@@ -410,10 +424,9 @@ class JiraHandler:
         if epic_key:
             epic_url = f"{self.base_url}/browse/{epic_key}"
 
-        # Extract fix version
+        # Extract fix version (ignore Pending Release when another version exists)
         fix_versions = fields.get("fixVersions", [])
-        fix_version = fix_versions[0].get("name") if fix_versions else None
-        fix_version_id = fix_versions[0].get("id") if fix_versions else None
+        fix_version, fix_version_id = pick_display_fix_version(fix_versions)
 
         # Build fix version URL
         fix_version_url = None

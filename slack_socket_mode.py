@@ -43,6 +43,30 @@ app = App(token=os.getenv("SLACK_BOT_TOKEN"))
 client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
 
 
+def resolve_announce_channel_id(fallback_channel_id: str) -> str:
+    """
+    Channel for "Good to Announce" posts.
+
+    Uses SLACK_ANNOUNCE_CHANNEL only if it looks like a real Slack channel ID.
+    Empty/whitespace counts as unset. Values starting with # are channel names — the
+    Web API requires an ID (e.g. C0...), so we fall back to the review message channel.
+    """
+    raw = os.getenv("SLACK_ANNOUNCE_CHANNEL")
+    if raw is None:
+        return fallback_channel_id
+    cleaned = raw.strip()
+    if not cleaned:
+        return fallback_channel_id
+    if cleaned.startswith("#"):
+        print(
+            "[Socket Mode] SLACK_ANNOUNCE_CHANNEL is a #name, not an ID. "
+            "Open the channel in Slack → name → View channel details → scroll to bottom → Copy channel ID. "
+            f"Using the review thread channel ({fallback_channel_id}) for this post."
+        )
+        return fallback_channel_id
+    return cleaned
+
+
 @app.error
 def handle_broken_pipe(error, body, logger):
     """Ignore BrokenPipeError when running with redirected stdout (e.g. nohup)."""
@@ -339,6 +363,14 @@ def auto_format_text(text: str, processed_data: dict = None) -> str:
         stripped = re.sub(r'^\*{2}([^*]+)\*{2}:\s*(Release\s+\d+\.\d+)$', r'*\1*: \2', stripped)
         stripped = re.sub(r'\*\*([^*]+)\*\*', r'*\1*', stripped)
         stripped = stripped.replace("**", "")
+
+        # Key Deployments TL;DR lines: "● *PL Name* - summary" — must not run through epic
+        # word-overlap logic below, or a TL;DR that mentions an epic title becomes one big link.
+        if re.match(r"^[●•]\s*\*[^*]+\*\s*[-–—]\s*.+", stripped):
+            formatted_lines.append(stripped)
+            in_value_add = False
+            in_bug_fixes = False
+            continue
 
         parsed_link = _parse_slack_link(stripped)
         if parsed_link:
@@ -1389,7 +1421,14 @@ def handle_good_to_announce(ack, body):
             tomorrow_pls.append(pl)
 
     approved_pls = get_ordered_pls(approved_pls)
-    announce_channel = os.getenv('SLACK_ANNOUNCE_CHANNEL', channel)
+    announce_channel = resolve_announce_channel_id(channel)
+    if announce_channel != channel:
+        print(f"[Socket Mode] Announcement target: SLACK_ANNOUNCE_CHANNEL → {announce_channel}")
+    else:
+        print(
+            f"[Socket Mode] Announcement target: review message channel {announce_channel} "
+            "(set SLACK_ANNOUNCE_CHANNEL to a Channel ID to post elsewhere)"
+        )
     release_date = message_metadata.get(message_ts, {}).get('release_date', datetime.now().strftime('%d %B %Y'))
 
     try:
@@ -1453,12 +1492,29 @@ def handle_good_to_announce(ack, body):
 
     try:
         announcement_text = auto_format_text(announcement_text, processed_data)
-        # Post as plain text to match typed-message layout
-        result = client.chat_postMessage(
-            channel=announce_channel,
-            text=announcement_text[:40000]
-        )
-        announcement_ts = result.get('ts')
+        text_out = announcement_text[:40000]
+
+        def _post_announce(target: str):
+            return client.chat_postMessage(channel=target, text=text_out)
+
+        try:
+            result = _post_announce(announce_channel)
+        except SlackApiError as first_err:
+            err = (first_err.response or {}).get("error", "")
+            configured = os.getenv("SLACK_ANNOUNCE_CHANNEL", "").strip()
+            if err == "channel_not_found" and announce_channel != channel:
+                print(
+                    "[Socket Mode] channel_not_found for SLACK_ANNOUNCE_CHANNEL. "
+                    "Check: (1) value is the Channel ID (C…/G…), not a name; "
+                    "(2) the app is invited to that channel (/invite @YourApp). "
+                    f"Retrying post to review channel {channel}."
+                )
+                result = _post_announce(channel)
+                announce_channel = channel  # so save_last_announcement matches actual post
+            else:
+                raise first_err
+
+        announcement_ts = result.get("ts")
         if announcement_ts:
             save_last_announcement(announce_channel, announcement_ts, announcement_text)
     except Exception as e:
@@ -1530,7 +1586,12 @@ def handle_delete_announcement(ack, command, respond):
             channel = parts[0]
             message_ts = parts[1]
         else:
-            channel = os.getenv('SLACK_ANNOUNCE_CHANNEL', command['channel_id'])
+            raw_ac = os.getenv('SLACK_ANNOUNCE_CHANNEL')
+            channel = (
+                raw_ac.strip()
+                if raw_ac and raw_ac.strip()
+                else command['channel_id']
+            )
             message_ts = parts[0]
     else:
         last = load_last_announcement()
@@ -1696,6 +1757,12 @@ def post_approval_message(pls: list = None, doc_url: str = None, release_date: s
         for deferred in deferred_data[today]:
             if deferred['pl'] not in clean_pls:
                 clean_pls.append(deferred['pl'])
+
+    # Match Google Doc (google_docs_formatter): skip "Other" PL — not shown in the doc
+    clean_pls = [
+        pl for pl in clean_pls
+        if re.sub(r'\s+20\d{2}$', '', (pl or '').strip()).lower() != "other"
+    ]
 
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": "Release Notes Review", "emoji": True}},
